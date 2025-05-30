@@ -1,2 +1,2 @@
 # PythonLibraries
-Simple yet effective collection of libraries that help a developer keep things simple. These are all developed by me with some help from chatgpt/ai where needed
+This repository will serve as a bug tracker for a PDF Utility program for now.
