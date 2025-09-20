@@ -18,13 +18,28 @@
 # - If you later change labels on one side, they’ll be created/updated on the other automatically.
 # - Comment edits and deletes are mirrored too.
 
-name: Issue Mirror 
+name: Issue Mirror
 
 on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to sync (from this repo)"
+        required: true
+        type: string
+      target_owner:
+        description: "Override target owner/org (optional; defaults to repo var)"
+        required: false
+        type: string
+      target_repo:
+        description: "Override target repo name (optional; defaults to repo var)"
+        required: false
+        type: string
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled]
   issue_comment:
     types: [created, edited, deleted]
+workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -37,8 +52,7 @@ env:
 jobs:
   mirror:
     runs-on: ubuntu-latest
-    if: ${{ vars.MIRROR_TARGET_OWNER != '' && vars.MIRROR_TARGET_REPO != '' }}
-
+    if: ${{ github.event_name == 'workflow_dispatch' || (vars.MIRROR_TARGET_OWNER != '' && vars.MIRROR_TARGET_REPO != '') }}
     steps:
       - name: Mirror issue and comments
         uses: actions/github-script@v7
@@ -48,21 +62,27 @@ jobs:
             const crypto = require('crypto');
 
             // ---- Helpers ----
-            const TARGET_OWNER = process.env.MIRROR_TARGET_OWNER;
-            const TARGET_REPO  = process.env.MIRROR_TARGET_REPO;
+            const inputs = context.payload.inputs || {};
+            const TARGET_OWNER = inputs.target_owner || process.env.MIRROR_TARGET_OWNER;
+            const TARGET_REPO  = inputs.target_repo  || process.env.MIRROR_TARGET_REPO;
 
             if (!TARGET_OWNER || !TARGET_REPO) {
-              core.setFailed('MIRROR_TARGET_OWNER or MIRROR_TARGET_REPO not configured.');
+              core.setFailed('Target owner/repo not configured. Set repo variables or pass target_owner/target_repo via workflow_dispatch inputs.');
+              return;
+            }
+            if (isManual && !SRC_ISSUE_NUMBER) {
+              core.setFailed('Manual run requires an issue_number input.');
               return;
             }
 
             const ctx = context; // github context
             const isIssueEvent = !!ctx.payload.issue;
             const isCommentEvent = !!ctx.payload.comment;
+            const isManual = ctx.eventName === 'workflow_dispatch';
 
             const SRC_OWNER = ctx.repo.owner;
             const SRC_REPO  = ctx.repo.repo;
-            const SRC_ISSUE_NUMBER = isIssueEvent ? ctx.payload.issue.number : ctx.payload.issue.number;
+            const SRC_ISSUE_NUMBER = isManual ? parseInt((inputs.issue_number || ''), 10) : ctx.payload.issue.number;
 
             const MIRROR_TAG_RE = /<!--\s*MIRROR:\s*([^#\s\/]+)\/(\S+?)#(\d+)\s*\|\s*hash:\s*([a-f0-9]{40})\s*-->/i;
             const COMMENT_ORIG_TAG_RE = /<!--\s*ORIG_COMMENT_ID:(\d+)\s*-->/i;
@@ -90,7 +110,6 @@ jobs:
             }
 
             async function ensureLabelsExist(target, labels) {
-              // labels: array of {name, color, description} or strings
               const byName = {};
               for (const l of labels) {
                 const name = typeof l === 'string' ? l : l.name;
@@ -116,8 +135,6 @@ jobs:
 
             async function findOrCreateTargetIssue(source, target) {
               const srcIssue = (await github.rest.issues.get({ ...source })).data;
-
-              // Try to read existing mirror tag to discover counterpart
               const m = MIRROR_TAG_RE.exec(srcIssue.body || '');
               if (m) {
                 const [, towner, trepo, tnum] = m;
@@ -125,12 +142,9 @@ jobs:
                 try {
                   const tgtIssue = (await github.rest.issues.get({ owner: towner, repo: trepo, issue_number: num })).data;
                   return { srcIssue, tgtIssue, existing: true };
-                } catch (e) {
-                  // Fall-through to recreate if counterpart was deleted
-                }
+                } catch (e) {}
               }
 
-              // No counterpart found -> create one
               const labels = srcIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
               await ensureLabelsExist(target, labels);
 
@@ -149,7 +163,6 @@ jobs:
                 state: srcIssue.state
               })).data;
 
-              // Update source to include back-reference
               const tgtHash = computeIssueHash({
                 title: created.title,
                 body: created.body,
@@ -168,8 +181,6 @@ jobs:
             async function syncIssueCore(source, target, srcIssue, tgtIssue) {
               const srcLabels = srcIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
               const tgtLabels = tgtIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
-
-              // Ensure labels exist on target
               await ensureLabelsExist(target, srcLabels);
 
               const desired = {
@@ -195,7 +206,6 @@ jobs:
               const wantLabels = desired.labels.slice().sort().join(',');
               const needLabels = haveLabels !== wantLabels;
 
-              // Skip if hashes already match (prevents loops)
               if (currentHash && currentHash === desiredHash && !needLabels) {
                 core.info('Target already up to date (hash match).');
               } else {
@@ -207,7 +217,6 @@ jobs:
             }
 
             async function syncComments(source, target, srcIssue, tgtIssue) {
-              // Build maps by original comment id marker to avoid duplicates
               const srcComments = await github.paginate(github.rest.issues.listComments, { ...source, per_page: 100 });
               const tgtComments = await github.paginate(github.rest.issues.listComments, { ...target, issue_number: tgtIssue.number, per_page: 100 });
 
@@ -218,12 +227,9 @@ jobs:
               }
 
               for (const c of srcComments) {
-                // Ignore system/actor: if the body already has our tag with this original id
                 const origId = String(c.id);
                 if (tgtByOrigId.has(origId)) {
-                  // Possibly update if edited
                   const existing = tgtByOrigId.get(origId);
-                  // Compare content without tag
                   const srcBodyCore = (c.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
                   const tgtBodyCore = (existing.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
                   if (srcBodyCore !== tgtBodyCore) {
@@ -235,7 +241,6 @@ jobs:
                 }
               }
 
-              // Handle deletions: if a comment exists on target with ORIG id that no longer exists on source, delete it
               const srcIds = new Set(srcComments.map(c => String(c.id)));
               for (const [origId, existing] of tgtByOrigId.entries()) {
                 if (!srcIds.has(origId)) {
@@ -248,19 +253,14 @@ jobs:
               const source = { owner: SRC_OWNER, repo: SRC_REPO, issue_number: SRC_ISSUE_NUMBER };
               const target = { owner: TARGET_OWNER, repo: TARGET_REPO };
 
-              // Find or create counterpart
               const { srcIssue, tgtIssue } = await findOrCreateTargetIssue(source, target);
 
-              // If event is comment-only, just sync comments one way
               if (isCommentEvent) {
                 await syncComments(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
                 return;
               }
 
-              // Sync core fields
               await syncIssueCore(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
-
-              // Sync comments too (covers edits/deletes on issue edits)
               await syncComments(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
             }
 
