@@ -18,7 +18,7 @@
 # - If you later change labels on one side, they’ll be created/updated on the other automatically.
 # - Comment edits and deletes are mirrored too.
 
-name: Issue Mirror
+name: Issue Mirror 
 
 on:
   issues:
