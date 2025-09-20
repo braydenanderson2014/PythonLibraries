@@ -1,31 +1,12 @@
 # .github/workflows/issue-mirror.yml
-# Bi-directional issue mirroring between two repositories (public/private)
-# - Mirrors title, body, state (open/closed), labels, and comments
-# - Creates missing labels in the target with source color/description
-# - Prevents infinite loops using a content hash embedded in a hidden marker
-# - Idempotent comment syncing using a hidden original-comment-id marker
-#
-# ✅ Setup (do this in BOTH repos):
-# 1) Create a classic Personal Access Token (PAT) with at least `repo` scope that can access BOTH repos.
-#    Save it as a secret named: MIRROR_TOKEN
-# 2) Add repository variables (or edit `env:` below) to point to the counterpart repo:
-#      MIRROR_TARGET_OWNER = "other-owner-or-org"
-#      MIRROR_TARGET_REPO  = "other-repo-name"
-# 3) Commit this workflow file to BOTH repos. Each should point to the other via variables above.
-#
-# Notes:
-# - If assignees/milestones/users differ across repos, this action ignores them by default (labels + state + text + comments sync).
-# - If you later change labels on one side, they’ll be created/updated on the other automatically.
-# - Comment edits and deletes are mirrored too.
-
 name: Issue Mirror
 
 on:
   workflow_dispatch:
     inputs:
-      # Option A: sync FROM THIS repo to another
+      # Option A: sync FROM THIS repo → target repo
       issue_number:
-        description: "Issue number to sync from THIS repo (to target)"
+        description: "Issue number in THIS repo to mirror to the target"
         required: false
         type: string
       target_owner:
@@ -36,22 +17,23 @@ on:
         description: "Override target repo (optional; defaults to repo var)"
         required: false
         type: string
-      # Option B: sync FROM ANOTHER repo INTO THIS repo
+      # Option B: sync FROM ANOTHER repo → THIS repo
       source_owner:
-        description: "Source owner/org for external issue (optional; defaults to MIRROR_TARGET_OWNER or this owner)"
+        description: "Source owner/org (optional; defaults to MIRROR_TARGET_OWNER or this owner)"
         required: false
         type: string
       source_repo:
-        description: "Source repo for external issue (optional; defaults to MIRROR_TARGET_REPO or this repo)"
+        description: "Source repo (optional; defaults to MIRROR_TARGET_REPO or this repo)"
         required: false
         type: string
       source_issue:
-        description: "Issue number in the SOURCE repo to sync INTO this repo"
+        description: "Issue number in SOURCE repo to mirror into THIS repo"
         required: false
         type: string
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
   issue_comment:
     types: [created, edited, deleted]
-workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -64,6 +46,7 @@ env:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    # Allow manual runs even if repo vars aren't set (inputs can provide them)
     if: ${{ github.event_name == 'workflow_dispatch' || (vars.MIRROR_TARGET_OWNER != '' && vars.MIRROR_TARGET_REPO != '') }}
     steps:
       - name: Mirror issue and comments
@@ -72,71 +55,63 @@ jobs:
           github-token: ${{ secrets.MIRROR_TOKEN }}
           script: |
             const crypto = require('crypto');
-
-            // ---- Helpers ----
-            const inputs = context.payload.inputs || {};
-            const DEFAULT_TARGET_OWNER = process.env.MIRROR_TARGET_OWNER;
-            const DEFAULT_TARGET_REPO  = process.env.MIRROR_TARGET_REPO;
-
-            let source = null;        // { owner, repo, issue_number }
-            let targetBase = null;    // { owner, repo }
-
-            if (isManual) {
-              if (inputs.source_issue) {
-                // Sync FROM external repo INTO this repo
-                const sOwner = inputs.source_owner || DEFAULT_TARGET_OWNER || ctx.repo.owner;
-                const sRepo  = inputs.source_repo  || DEFAULT_TARGET_REPO  || ctx.repo.repo;
-                const sNum   = parseInt((inputs.source_issue || ''), 10);
-                if (!sNum) {
-                  core.setFailed('Manual run: source_issue must be a number when syncing from another repo.');
-                  return;
-                }
-                source = { owner: sOwner, repo: sRepo, issue_number: sNum };
-                targetBase = { owner: ctx.repo.owner, repo: ctx.repo.repo };
-              } else if (inputs.issue_number) {
-                // Sync FROM this repo TO target
-                const sNum = parseInt((inputs.issue_number || ''), 10);
-                if (!sNum) {
-                  core.setFailed('Manual run: issue_number must be a number.');
-                  return;
-                }
-                source = { owner: ctx.repo.owner, repo: ctx.repo.repo, issue_number: sNum };
-                const tOwner = inputs.target_owner || DEFAULT_TARGET_OWNER;
-                const tRepo  = inputs.target_repo  || DEFAULT_TARGET_REPO;
-                if (!tOwner || !tRepo) {
-                  core.setFailed('Manual run: target owner/repo not configured. Set repo variables or pass target_owner/target_repo.');
-                  return;
-                }
-                targetBase = { owner: tOwner, repo: tRepo };
-              } else {
-                core.setFailed('Manual run: provide either issue_number (from this repo) or source_issue (from another repo).');
-                return;
-              }
-            } else {
-              // Event-driven (issues/comments from this repo) -> mirror to target vars
-              const tOwner = DEFAULT_TARGET_OWNER;
-              const tRepo  = DEFAULT_TARGET_REPO;
-              if (!tOwner || !tRepo) {
-                core.setFailed('Target owner/repo not configured via repo variables.');
-                return;
-              }
-              source = { owner: ctx.repo.owner, repo: ctx.repo.repo, issue_number: ctx.payload.issue.number };
-              targetBase = { owner: tOwner, repo: tRepo };
-            }
-            if (isManual && !SRC_ISSUE_NUMBER) {
-              core.setFailed('Manual run requires an issue_number input.');
-              return;
-            }
-
-            const ctx = context; // github context
+            const ctx = context;
             const inputs = ctx.payload.inputs || {};
             const isManual = ctx.eventName === 'workflow_dispatch';
             const isIssueEvent = !!ctx.payload.issue;
             const isCommentEvent = !!ctx.payload.comment;
-            const isManual = ctx.eventName === 'workflow_dispatch';
 
-            // We'll resolve source/target dynamically below
+            // Defaults from repo vars
+            const DEFAULT_TARGET_OWNER = process.env.MIRROR_TARGET_OWNER;
+            const DEFAULT_TARGET_REPO  = process.env.MIRROR_TARGET_REPO;
 
+            // Resolve source/target depending on trigger
+            let source = null;      // { owner, repo, issue_number }
+            let targetBase = null;  // { owner, repo }
+
+            if (isManual) {
+              const hasSourcePull = !!inputs.source_issue;
+              const hasThisPush   = !!inputs.issue_number;
+
+              if (hasSourcePull && hasThisPush) {
+                core.setFailed('Provide either source_issue (pull into this repo) OR issue_number (push to target), not both.');
+                return;
+              }
+
+              if (hasSourcePull) {
+                // Pull: FROM external -> THIS repo
+                const sOwner = inputs.source_owner || DEFAULT_TARGET_OWNER || ctx.repo.owner;
+                const sRepo  = inputs.source_repo  || DEFAULT_TARGET_REPO  || ctx.repo.repo;
+                const sNum   = parseInt((inputs.source_issue || ''), 10);
+                if (!sNum) { core.setFailed('Manual pull requires a numeric source_issue.'); return; }
+                source = { owner: sOwner, repo: sRepo, issue_number: sNum };
+                targetBase = { owner: ctx.repo.owner, repo: ctx.repo.repo };
+              } else if (hasThisPush) {
+                // Push: FROM this repo -> target
+                const sNum = parseInt((inputs.issue_number || ''), 10);
+                if (!sNum) { core.setFailed('Manual push requires a numeric issue_number.'); return; }
+                source = { owner: ctx.repo.owner, repo: ctx.repo.repo, issue_number: sNum };
+                const tOwner = inputs.target_owner || DEFAULT_TARGET_OWNER;
+                const tRepo  = inputs.target_repo  || DEFAULT_TARGET_REPO;
+                if (!tOwner || !tRepo) {
+                  core.setFailed('Target repo not configured. Set repo variables MIRROR_TARGET_OWNER/MIRROR_TARGET_REPO or pass target_owner/target_repo.');
+                  return;
+                }
+                targetBase = { owner: tOwner, repo: tRepo };
+              } else {
+                core.setFailed('Manual run: provide either issue_number (push) OR source_issue (pull).');
+                return;
+              }
+            } else {
+              // Event-driven: this repo -> configured target
+              const tOwner = DEFAULT_TARGET_OWNER;
+              const tRepo  = DEFAULT_TARGET_REPO;
+              if (!tOwner || !tRepo) { core.setFailed('Target repo not configured via repo variables.'); return; }
+              source = { owner: ctx.repo.owner, repo: ctx.repo.repo, issue_number: ctx.payload.issue.number };
+              targetBase = { owner: tOwner, repo: tRepo };
+            }
+
+            // --- Helpers for mirroring ---
             const MIRROR_TAG_RE = /<!--\s*MIRROR:\s*([^#\s\/]+)\/(\S+?)#(\d+)\s*\|\s*hash:\s*([a-f0-9]{40})\s*-->/i;
             const COMMENT_ORIG_TAG_RE = /<!--\s*ORIG_COMMENT_ID:(\d+)\s*-->/i;
 
@@ -162,7 +137,7 @@ jobs:
               return `${clean}\n\n${tag}`.trim();
             }
 
-            async function ensureLabelsExist(target, labels) {
+            async function ensureLabelsExist(targetRepoRef, labels) {
               const byName = {};
               for (const l of labels) {
                 const name = typeof l === 'string' ? l : l.name;
@@ -172,13 +147,12 @@ jobs:
                 if (byName[name]) continue;
                 byName[name] = { color, description };
               }
-
               for (const [name, meta] of Object.entries(byName)) {
                 try {
-                  await github.rest.issues.getLabel({ ...target, name });
+                  await github.rest.issues.getLabel({ ...targetRepoRef, name });
                 } catch (e) {
                   if (e.status === 404) {
-                    await github.rest.issues.createLabel({ ...target, name, color: meta.color, description: meta.description });
+                    await github.rest.issues.createLabel({ ...targetRepoRef, name, color: meta.color, description: meta.description });
                   } else {
                     throw e;
                   }
@@ -186,8 +160,10 @@ jobs:
               }
             }
 
-            async function findOrCreateTargetIssue(source, target) {
+            async function findOrCreateTargetIssue(source, targetBase) {
               const srcIssue = (await github.rest.issues.get({ ...source })).data;
+
+              // Check if the source already points to a counterpart
               const m = MIRROR_TAG_RE.exec(srcIssue.body || '');
               if (m) {
                 const [, towner, trepo, tnum] = m;
@@ -195,27 +171,31 @@ jobs:
                 try {
                   const tgtIssue = (await github.rest.issues.get({ owner: towner, repo: trepo, issue_number: num })).data;
                   return { srcIssue, tgtIssue, existing: true };
-                } catch (e) {}
+                } catch {
+                  // counterpart missing; will recreate
+                }
               }
 
+              // Create new counterpart
               const labels = srcIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
-              await ensureLabelsExist(target, labels);
+              await ensureLabelsExist(targetBase, labels);
 
               const srcHash = computeIssueHash({
                 title: srcIssue.title,
                 body: srcIssue.body,
-                labels: labels.map(l=>l.name),
+                labels: labels.map(l => l.name),
                 state: srcIssue.state
               });
 
               const created = (await github.rest.issues.create({
-                ...target,
+                ...targetBase,
                 title: srcIssue.title,
                 body: embedMirrorTag(srcIssue.body || '', source.owner, source.repo, source.issue_number, srcHash),
                 labels: labels.map(l => l.name),
                 state: srcIssue.state
               })).data;
 
+              // Add back-reference on source
               const tgtHash = computeIssueHash({
                 title: created.title,
                 body: created.body,
@@ -225,44 +205,62 @@ jobs:
 
               await github.rest.issues.update({
                 ...source,
-                body: embedMirrorTag(srcIssue.body || '', target.owner, target.repo, created.number, tgtHash)
+                body: embedMirrorTag(srcIssue.body || '', targetBase.owner, targetBase.repo, created.number, tgtHash)
               });
 
-              return { srcIssue: (await github.rest.issues.get({ ...source })).data, tgtIssue: created, existing: false };
+              const reloaded = (await github.rest.issues.get({ ...source })).data;
+              return { srcIssue: reloaded, tgtIssue: created, existing: false };
             }
 
             async function syncIssueCore(source, target, srcIssue, tgtIssue) {
               const srcLabels = srcIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
               const tgtLabels = tgtIssue.labels.map(l => ({ name: l.name, color: l.color, description: l.description }));
-              await ensureLabelsExist(target, srcLabels);
+
+              await ensureLabelsExist({ owner: target.owner, repo: target.repo }, srcLabels);
 
               const desired = {
                 title: srcIssue.title,
-                body: embedMirrorTag(srcIssue.body || '', target.owner, target.repo, tgtIssue.number, computeIssueHash({
-                  title: srcIssue.title,
-                  body: srcIssue.body,
-                  labels: srcLabels.map(l=>l.name),
-                  state: srcIssue.state
-                })),
+                body: embedMirrorTag(
+                  srcIssue.body || '',
+                  target.owner, target.repo, tgtIssue.number,
+                  computeIssueHash({
+                    title: srcIssue.title,
+                    body: srcIssue.body,
+                    labels: srcLabels.map(l=>l.name),
+                    state: srcIssue.state
+                  })
+                ),
                 labels: srcLabels.map(l => l.name),
                 state: srcIssue.state
               };
 
-              const currentHashMatch = MIRROR_TAG_RE.exec(tgtIssue.body || '');
+              const MIRROR_TAG_RE_LOCAL = /<!--\s*MIRROR:\s*([^#\s\/]+)\/(\S+?)#(\d+)\s*\|\s*hash:\s*([a-f0-9]{40})\s*-->/i;
+              const currentHashMatch = MIRROR_TAG_RE_LOCAL.exec(tgtIssue.body || '');
               const currentHash = currentHashMatch ? currentHashMatch[4] : null;
-              const desiredHash = computeIssueHash({ title: desired.title, body: desired.body, labels: desired.labels, state: desired.state });
+              const desiredHash = computeIssueHash({
+                title: desired.title,
+                body: desired.body,
+                labels: desired.labels,
+                state: desired.state
+              });
 
-              const needTitle = tgtIssue.title !== desired.title;
               const needBody  = stripMirrorTag(tgtIssue.body || '') !== stripMirrorTag(desired.body || '');
+              const needTitle = tgtIssue.title !== desired.title;
               const needState = tgtIssue.state !== desired.state;
               const haveLabels = tgtLabels.map(l=>l.name).sort().join(',');
               const wantLabels = desired.labels.slice().sort().join(',');
               const needLabels = haveLabels !== wantLabels;
 
-              if (currentHash && currentHash === desiredHash && !needLabels) {
+              if (currentHash && currentHash === desiredHash && !needLabels && !needTitle && !needState) {
                 core.info('Target already up to date (hash match).');
               } else {
-                await github.rest.issues.update({ ...target, issue_number: tgtIssue.number, title: desired.title, body: desired.body, state: desired.state });
+                await github.rest.issues.update({
+                  ...target,
+                  issue_number: tgtIssue.number,
+                  title: desired.title,
+                  body: desired.body,
+                  state: desired.state
+                });
                 if (needLabels) {
                   await github.rest.issues.setLabels({ ...target, issue_number: tgtIssue.number, labels: desired.labels });
                 }
@@ -279,21 +277,22 @@ jobs:
                 if (m) tgtByOrigId.set(m[1], c);
               }
 
+              // Create/update
               for (const c of srcComments) {
                 const origId = String(c.id);
+                const srcBodyCore = (c.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
                 if (tgtByOrigId.has(origId)) {
                   const existing = tgtByOrigId.get(origId);
-                  const srcBodyCore = (c.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
                   const tgtBodyCore = (existing.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
                   if (srcBodyCore !== tgtBodyCore) {
                     await github.rest.issues.updateComment({ ...target, comment_id: existing.id, body: `${srcBodyCore}\n\n<!-- ORIG_COMMENT_ID:${origId} -->` });
                   }
                 } else {
-                  const coreBody = (c.body || '').replace(COMMENT_ORIG_TAG_RE, '').trim();
-                  await github.rest.issues.createComment({ ...target, issue_number: tgtIssue.number, body: `${coreBody}\n\n<!-- ORIG_COMMENT_ID:${origId} -->` });
+                  await github.rest.issues.createComment({ ...target, issue_number: tgtIssue.number, body: `${srcBodyCore}\n\n<!-- ORIG_COMMENT_ID:${origId} -->` });
                 }
               }
 
+              // Deletions
               const srcIds = new Set(srcComments.map(c => String(c.id)));
               for (const [origId, existing] of tgtByOrigId.entries()) {
                 if (!srcIds.has(origId)) {
@@ -312,20 +311,6 @@ jobs:
 
               await syncIssueCore(source, { ...targetBase, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
               await syncComments(source, { ...targetBase, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
-            }
-
-            await mirrorFlow();;
-              const target = { owner: TARGET_OWNER, repo: TARGET_REPO };
-
-              const { srcIssue, tgtIssue } = await findOrCreateTargetIssue(source, target);
-
-              if (isCommentEvent) {
-                await syncComments(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
-                return;
-              }
-
-              await syncIssueCore(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
-              await syncComments(source, { ...target, issue_number: tgtIssue.number }, srcIssue, tgtIssue);
             }
 
             await mirrorFlow();
