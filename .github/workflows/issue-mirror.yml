@@ -37,7 +37,8 @@ env:
 jobs:
   mirror:
     runs-on: ubuntu-latest
-    if: env.MIRROR_TARGET_OWNER != '' && env.MIRROR_TARGET_REPO != ''
+    if: ${{ vars.MIRROR_TARGET_OWNER != '' && vars.MIRROR_TARGET_REPO != '' }}
+
     steps:
       - name: Mirror issue and comments
         uses: actions/github-script@v7
