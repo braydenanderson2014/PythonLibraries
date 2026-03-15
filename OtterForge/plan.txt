@@ -1,0 +1,1243 @@
+Name : OtterForge
+
+OtterForge Build Plan
+
+Objective
+Build a Python application named OtterForge that helps users scan projects, understand project structure, build Python executables and packages, and create installers on Windows, Linux, and macOS. The product must be CLI-first, must also provide a PyQt desktop UI, and must preserve persistent memory so users can reuse previous project settings, tool selections, arguments, project descriptions, and build history.
+
+This document is written for AI implementation agents. Treat it as a build specification, not as marketing copy.
+
+Core Product Definition
+OtterForge is a build orchestration tool for Python applications and Python-based software delivery workflows. It also supports building executables and packages from C-style compiled languages such as C, C++, Rust, and Go through the same adapter and manifest-controlled module system.
+
+OtterForge is not only a wrapper around PyInstaller. It must support multiple executable builders, packagers, and installer generators through a plugin or adapter system. PyInstaller is the default and must be the first fully implemented adapter. All other builders must be supported through exactly the same adapter architecture so adding any new tool never requires changes to the core system.
+
+OtterForge must also support package-oriented workflows where the desired output is not only an executable. It should be able to orchestrate common packaging tools such as build, setuptools, hatchling, poetry, briefcase, or other relevant tools when those tools are present and appropriate for the project.
+
+OtterForge must also support installer creation workflows. Installer generation should be handled through dedicated adapters for tools appropriate to the target platform, such as Inno Setup, NSIS, WiX, pkgbuild or productbuild, DMG tooling, AppImage tooling, or similar common installer systems.
+
+OtterForge must be able to work with both automatically discovered project structure and a user-supplied JSON description of project layout. The JSON description must allow OtterForge to understand folders, entry points, assets, dependencies, packaging intent, installer intent, and platform-specific rules for projects that do not follow common conventions.
+
+OtterForge must have three interfaces:
+1. A CLI for scripting, automation, CI, and power users.
+2. A PyQt GUI that uses the same backend services as the CLI.
+3. A Python API layer so future automation or integrations can call the engine directly.
+
+Module Manifest System
+OtterForge uses a module manifest to track the availability of every optional capability at runtime. The manifest is the authoritative record of what is present, what is installed, and what is enabled. The core application must never crash, produce an error dialog, or raise an unhandled exception because an optional module, adapter, or tool is absent.
+
+Manifest structure:
+The manifest is a JSON file named otterforge.manifest.json stored in OtterForge's data directory. It is generated or refreshed at startup and on demand via otterforge manifest refresh.
+
+Each entry in the manifest covers one capability. Entry fields:
+1. id: Unique string identifier for the capability, e.g. builder.pyinstaller or lang.rust.
+2. category: One of builder, packager, installer, language, service, plugin.
+3. display_name: Human-readable name.
+4. description: One-line description of what the capability provides.
+5. available: Boolean. True if the required tool or module is found on the current machine.
+6. enabled: Boolean. Allows the user to disable a capability even if it is available.
+7. requires: List of external tool names or Python packages required for this capability.
+8. missing: List of requirements that were not found during the last refresh.
+9. platform_support: List of platforms this capability works on, e.g. windows, linux, macos.
+10. adapter_module: Dotted Python module path to the adapter class.
+11. version_detected: The version string of the detected tool, or null if not found.
+12. last_checked: ISO 8601 timestamp of the last availability check.
+
+Manifest behavior rules:
+1. At startup OtterForge calls manifest.refresh() which probes each registered capability for availability without importing optional dependencies eagerly.
+2. Any registry, the CLI listings, and the GUI builder selector all read from the manifest rather than probing tools directly.
+3. A capability that is unavailable is shown in the GUI as grayed out with a tooltip listing the missing requirements.
+4. A capability that fails to load at runtime logs the failure, marks the manifest entry as available=false, and continues. The rest of the application is unaffected.
+5. The user can view the full manifest at any time with otterforge manifest show.
+6. otterforge manifest refresh re-probes all capabilities and updates the manifest.
+7. Individual entries can be disabled with otterforge manifest disable <id> and re-enabled with otterforge manifest enable <id>.
+8. The manifest is also the hook point for plugins: when a plugin is installed, it writes its entries into the manifest and they are probed on the next refresh.
+9. The manifest must be human-readable and hand-editable in emergencies. Validate it on load and surface clear parse errors.
+
+Relationship to the plugin system:
+The plugin loader and the manifest system are complementary. The plugin loader discovers adapter classes. The manifest system tracks their real-world availability. Every adapter discovered by any loader, built-in or plugin, must have a manifest entry.
+
+C-Style and Compiled Language Support
+OtterForge supports building executables from compiled languages through dedicated language adapters. These adapters are first-class modular addons governed by the manifest system. They are completely optional and the core Python build workflows must work without them.
+
+Supported compiled languages:
+
+C and C++
+Adapter builds using the system compiler toolchain via a normalized invocation. On Windows the adapter looks for MSVC (cl.exe) or MinGW (gcc, g++). On Linux and macOS it uses gcc or clang. The adapter normalizes common options such as source files, output name, include paths, library paths, linked libraries, optimization level, debug symbols, and standard version such as C17 or C++20. CMake is treated as an optional higher-level front-end: if a CMakeLists.txt is present and cmake is available, the adapter generates and runs the appropriate cmake and cmake --build commands instead of invoking the compiler directly. A Makefile front-end is also provided for projects using make.
+
+Rust
+Adapter builds using cargo. The normalized options are the package or workspace path, the binary target name, the profile (debug or release), target triple for cross-compilation, feature flags, and extra cargo build arguments. The adapter checks for cargo in PATH. If cargo is absent the manifest marks the Rust adapter as unavailable.
+
+Go
+Adapter builds using the go toolchain. Normalized options are the main package path, the output binary name, GOOS and GOARCH for cross-compilation, build tags, CGO enabled or disabled, and extra go build arguments. The adapter checks for go in PATH. If go is absent the manifest marks the Go adapter as unavailable.
+
+Language adapter design rules:
+1. Every language adapter implements the same Tool Adapter Contract as Python executable builders.
+2. Each language adapter has its own manifest entry with category language.
+3. The CommandTranslator is not involved; language adapters produce their own command directly because there is no Python-specific memory config to translate.
+4. Language adapters expose the same dry-run mode, raw pass-through arguments, and raw argument delimiter that Python builders use.
+5. A build request for a compiled language must carry language-specific fields in an extension dict rather than sharing the Python-centric BuildRequest fields. A base LanguageBuildRequest model is defined separately.
+6. Language adapters integrate with all shared services: pre and post hooks, code signing, artifact checksums, size analysis, git integration, and build notifications.
+7. The GUI shows language adapters in the builder selector grouped separately from Python builders, labeled as Native Language Adapters.
+8. The CLI accepts otterforge build --lang c, --lang cpp, --lang rust, or --lang go to invoke a language adapter.
+9. Language adapters are disabled by default and must be explicitly enabled by the user or enabled automatically when the required toolchain is detected and the user has run otterforge manifest refresh.
+10. Each language adapter is implemented in otterforge/langs/ as a standalone module: c_cpp.py, rust.py, go.py. Each must implement the standard Tool Adapter Contract. Each is optional at runtime and must degrade gracefully when not installed. The module manifest system (described in a later section) is the single source of truth for which adapters are present, available, and enabled on the current machine.
+
+PyInstaller
+PyInstaller is the default builder and the first one implemented. It works on Windows, Linux, and macOS. It produces standalone executables from Python scripts. Its key options include onefile or onedir output mode, noconsole or console, hidden imports, additional data files, UPX compression, splash screen support, icon embedding, spec file support, and a clean flag. OtterForge should normalize all these as first-class fields. Raw pass-through must also be supported for any PyInstaller flag not normalized.
+
+Nuitka
+Nuitka is a Python-to-C compiler. It works on Windows, Linux, and macOS. It produces fast native executables by compiling Python to C and then to machine code. It requires a C compiler such as MSVC on Windows, GCC, or Clang on Linux and macOS. Key options include standalone mode, onefile mode, module mode, plugin system, follow imports, show progress, windows icon, windows company name, and LTO. These should be normalized where equivalent to PyInstaller options. Nuitka has a rich plugin system; raw pass-through is important here.
+
+cx_Freeze
+cx_Freeze works on Windows, Linux, and macOS. It freezes Python scripts into executables by bundling the interpreter. Its configuration can be expressed through setup scripts or command-line options. Key options include target name, base class for windowed apps, include files, excludes, includes, zip include packages, and build directory. cx_Freeze supports pyproject.toml configuration. OtterForge should support both command-line and a generated setup hook approach.
+
+py2app
+py2app is macOS-only. It creates macOS application bundles in .app format. It can also produce .dmg files. Key options include the main script, name, icon, plist customization, packages to include, frameworks, dyld includes, and recipe system. OtterForge must surface py2app only when the host is macOS and only invoke it on macOS CI runners.
+
+py2exe
+py2exe is Windows-only. It bundles Python programs into Windows executables. Key options include console and windows targets, optimization level, bundle level, and dist directory. OtterForge must surface py2exe only when the host is Windows and only invoke it on Windows CI runners.
+
+briefcase
+briefcase is cross-platform but produces platform-native packages rather than only executables. On Windows it produces MSI installers. On macOS it produces .app and .dmg. On Linux it produces AppImage, Flatpak, or Snap. It uses a pyproject.toml configuration section. Key options include app identifier, display name, version, author, icon, and platform-specific extras. Briefcase bridges the builder and installer categories and should be registered in both the builders and the installer registries.
+
+shiv
+shiv creates self-contained Python zipapps. It targets platforms where Python is already installed. It is not a standalone executable builder but is useful for CLI tool distribution. Key options include the entry point, output file, and pip constraints. OtterForge should register shiv as an alternative builder with a clear note that it requires Python on the target machine.
+
+zipapp
+zipapp is part of the Python standard library. It creates a .pyz archive that can be run with any compatible Python interpreter. It is the simplest distribution format and requires no extra dependencies. OtterForge should register zipapp as a built-in builder requiring zero tool installation.
+
+Platform Availability Matrix
+The platform availability matrix describes which builder runs on which host platform.
+
+1. PyInstaller: Windows, Linux, macOS.
+2. Nuitka: Windows, Linux, macOS.
+3. cx_Freeze: Windows, Linux, macOS.
+4. py2app: macOS only.
+5. py2exe: Windows only.
+6. briefcase: Windows, Linux, macOS as host, but each host produces only its own platform target.
+7. shiv: Windows, Linux, macOS where Python is on the target.
+8. zipapp: Windows, Linux, macOS where Python is on the target.
+
+The system must read the platform availability matrix at build time and suppress or warn for builders that cannot run on the current host.
+
+Hard Requirements
+1. The program must run on Windows, Linux, and macOS.
+2. The program must be able to invoke common Python executable builders, packagers, and installer generators if they are installed in the active environment.
+3. The program must support arbitrary tool-specific flags and arguments.
+4. The program must remember prior builds, packaging settings, installer settings, discovered entry points, output locations, project descriptions, and reusable profiles.
+5. The CLI and GUI must share one backend so behavior stays consistent.
+6. The system must be designed for local use and CI use, including GitHub Actions or similar cloud runners.
+7. The plan must assume incremental delivery. Build the architecture first, then add builders.
+8. The system must be able to understand nonstandard project layouts from a JSON structure supplied by the user.
+9. The system must support project scanning for projects that are script-based, package-based, GUI-based, service-based, or multi-entrypoint.
+10. The scanner must support scope-based discovery for files, folders, projects, and user-defined groups, and must classify assets and documentation by file type.
+
+Important Technical Constraint
+Do not design this as if one machine can always produce native executables for every other operating system.
+
+Accurate rule:
+1. OtterForge must run on any major platform.
+2. OtterForge should build native executables on the current host platform.
+3. OtterForge should be able to orchestrate multi-platform builds through CI or remote runners.
+4. OtterForge should not promise universal cross-compilation when the underlying builder does not support it.
+
+Example:
+1. A Linux host should be able to build Linux targets locally.
+2. A Windows host should be able to build Windows targets locally.
+3. Multi-platform output should be handled through a matrix build workflow when required.
+
+Design Principles
+1. CLI-first architecture.
+2. Backend services are framework-agnostic.
+3. Tool support is adapter-based, not hard-coded into one command.
+4. Common options should be normalized where useful, but raw pass-through must always be available.
+5. Persistent memory should be explicit, inspectable, and editable.
+6. Every operation should be traceable through logs and stored build records.
+7. The GUI should be a thin client over the same command or service layer.
+8. Auto-discovery and user-provided project schemas must both be first-class inputs.
+
+System Architecture
+Implement the project in layers.
+
+Layer 1: Core Domain
+Create plain Python services and models for:
+1. Project discovery.
+2. Project schema ingestion.
+3. Build and packaging profiles.
+4. Tool registry.
+5. Persistent memory.
+6. Artifact tracking.
+7. Logging and structured event output.
+8. Installer definitions.
+9. Workflow orchestration jobs.
+
+Layer 2: Tool Adapters
+Each supported executable builder, packager, and installer generator must be implemented as an adapter with a common interface.
+
+Each adapter must be able to:
+1. Report its tool name and tool category.
+2. Detect whether the builder is installed.
+3. Return builder version information.
+4. Expose normalized common options when available.
+5. Accept raw tool-specific arguments without losing fidelity.
+6. Produce the final command list to execute.
+7. Validate obvious conflicts before execution.
+8. Parse or summarize build output when possible.
+9. Report supported platforms and output artifact types.
+
+Layer 3: Interfaces
+1. CLI interface.
+2. PyQt GUI interface.
+3. Python API interface.
+
+Layer 4: Integrations
+1. CI workflow generation.
+2. Environment inspection.
+3. Optional virtual environment helpers.
+4. Optional template generation for common project types.
+5. Pre and post build hook execution.
+6. Code signing for executables and installers.
+7. Dependency vulnerability auditing.
+8. Git integration for version reading and release tagging.
+9. Container or Docker build mode for clean-room builds.
+10. Desktop build notifications.
+11. Icon and asset pipeline for format conversion.
+12. Artifact checksum generation and release manifest.
+13. Artifact size analysis and report.
+14. Local build matrix runner.
+15. Plugin system for user-supplied adapters.
+16. Layer 4 Integrations: Windows Sandbox, git integration, container/Docker build mode, code signing, dependency auditing, notification system, icon/asset pipeline, plugin system.
+17. Module Manifest System: the manifest tracks all optional capabilities and is the single source for what is present and enabled.
+18. MCP server integration for AI-agent orchestration of OtterForge capabilities.
+
+Tool Strategy
+The architecture must separate normalized arguments from raw pass-through arguments.
+
+Required behavior:
+1. Common options such as entry script, app name, onefile or onedir, console or noconsole, icon, splash, clean build, output directory, hidden imports, data files, extra paths, package metadata, and installer metadata should be represented in a normalized internal model.
+2. Every tool adapter must also accept raw arguments exactly as the user entered them.
+3. The CLI must support a safe delimiter so everything after that delimiter is passed directly to the selected tool.
+4. The GUI must expose both structured fields and an advanced raw arguments field.
+5. The orchestration layer must allow multi-step workflows such as scan -> build executable -> package artifacts -> generate installer.
+
+Recommended CLI pattern:
+1. Use OtterForge flags before a delimiter.
+2. Pass builder-native flags after the delimiter.
+
+Example shape:
+otterforge build --builder pyinstaller --entry main.py --profile desktop -- --collect-all PyQt6 --hidden-import pkg_resources
+
+This design is required because no static hand-maintained option list will stay complete for every tool version.
+
+MCP Support Requirements
+OtterForge must support Model Context Protocol (MCP) so AI agents can use OtterForge through a structured tool interface instead of shell scraping.
+
+MCP server scope:
+1. Implement an MCP server mode that exposes selected OtterForge capabilities as MCP tools.
+2. The MCP server is optional and must not be required for normal CLI or GUI usage.
+3. The MCP server must use the same backend services as CLI and GUI so behavior is identical.
+4. stdio transport is required first. Network transport is optional and can be added later.
+
+MCP tool exposure rules:
+1. Expose read tools by default, such as scan, list builders, inspect tools, list artifacts, and read build history.
+2. Expose write or execution tools only when explicitly enabled by policy, such as build, package, installer create, and organize apply.
+3. Every exposed MCP tool must map to an existing service method, not duplicate business logic.
+4. MCP tool availability must honor the module manifest and backend capability checks.
+5. If a capability is unavailable or disabled in manifest, the MCP tool must be hidden or return a structured unavailable response.
+
+MCP security and safety rules:
+1. Default MCP mode is read-only.
+2. Destructive or mutation operations must require explicit enablement in config.
+3. All MCP requests must be validated with the same request models used by CLI and GUI.
+4. Secrets in responses must be redacted (tokens, certificate paths with passwords, signing secrets, webhook credentials).
+5. MCP calls must be fully logged with session id, tool id, timestamp, and result status for auditability.
+
+MCP configuration:
+1. Add an MCP config section that controls enabled state, transport, exposed tools allowlist, and mutation policy.
+2. The allowlist must support exposing only a subset of tools in sensitive environments.
+3. The MCP server should publish metadata describing available tools and required arguments.
+
+MCP non-goal for v1:
+1. Do not build custom AI logic inside OtterForge itself. OtterForge provides tools; external AI clients provide reasoning.
+
+Command Translation Layer
+This is the central mechanism that makes OtterForge work. The user never constructs tool commands by hand. Instead, the user specifies settings in OtterForge terms and the translation layer converts those settings into the exact tool-specific command at build time.
+
+How it works, step by step:
+1. The user sets options through CLI flags, the GUI, or a project schema file.
+2. OtterForge writes all settings into the active memory file immediately.
+3. When the user calls any build, package, or installer command, OtterForge reads settings from memory.
+4. The CommandTranslator service loads the correct adapter for the selected tool.
+5. The adapter receives a BuildRequest, PackageRequest, or InstallerRequest populated from memory.
+6. The adapter translates that request into the final tool-specific argument list.
+7. OtterForge prints the translated command to the console before executing.
+8. The executor runs the command with subprocess using that argument list.
+9. OtterForge writes the result, the final command, and environment metadata back into memory.
+
+The CommandTranslator must be implemented as an explicit, testable service class. It must not be embedded inside the CLI parser, the GUI, or any adapter. It sits between the stored settings and the adapter.
+
+CommandTranslator responsibilities:
+1. Read the active project's settings from memory.
+2. Merge in any run-time overrides from the CLI or GUI.
+3. Apply the override precedence order.
+4. Construct the appropriate request model.
+5. Resolve which adapter to use.
+6. Call the adapter's build_command() method to produce the argument list.
+7. Append raw pass-through args from the delimiter section.
+8. Return the final command as a list of strings.
+
+Override precedence applied by the translator:
+Run-time CLI or GUI override > active profile settings > project settings > global user settings > adapter defaults
+
+The translator must produce identical output whether called from the CLI, the GUI, or the Python API. This is the guarantee that all three interfaces behave the same way.
+
+Dry-run requirement:
+When dry_run is true, the translator must still produce and print the full translated command but must not invoke the executor. This allows users to preview the exact tool command before committing to a build.
+
+Examples of what the translator produces for different builders given the same normalized input:
+
+Input settings in memory:
+  entry: main.py
+  name: MyApp
+  mode: onefile
+  console: false
+  icon: assets/icon.ico
+  builder: pyinstaller
+
+PyInstaller translation output:
+  pyinstaller --onefile --noconsole --name MyApp --icon assets/icon.ico main.py
+
+Nuitka translation output:
+  python -m nuitka --standalone --onefile --disable-console --output-filename=MyApp --windows-icon-from-ico=assets/icon.ico main.py
+
+cx_Freeze translation output:
+  cxfreeze main.py --target-name=MyApp --base-name=Win32GUI --target-dir=dist
+
+The actual flag names differ per tool. The translation layer absorbs that difference entirely. The user always works in OtterForge terms.
+
+Project Schema Strategy
+OtterForge must support a user-supplied JSON project description for projects that cannot be reliably understood by scanning alone.
+
+The JSON schema should be able to describe:
+1. Project root.
+2. Named entry points.
+3. Source folders and asset folders.
+4. Package metadata.
+5. Runtime data files.
+6. Builder defaults.
+7. Packager defaults.
+8. Installer defaults.
+9. Platform-specific overrides.
+10. Multi-step workflow order.
+11. Expected output artifact types.
+
+Suggested schema file names:
+1. otterforge.project.json
+2. otterforge.profile.json
+
+Suggested schema sections:
+1. project
+2. layout
+3. entry_points
+4. assets
+5. build
+6. package
+7. installer
+8. workflows
+9. platform_overrides
+10. documentation
+11. file_groups
+12. organization_rules
+13. scan_catalog
+
+The scanner should be able to emit a starter JSON project description that the user can refine.
+
+Memory Requirements
+OtterForge memory is the single source of truth for all active settings. The CommandTranslator reads from memory at build time. Settings are never passed only as transient CLI arguments and then discarded; they are written to memory first and then read back by the translator.
+
+Memory storage format: The user must be able to choose a memory backend: JSON files or SQL database.
+
+Required backend behavior:
+1. JSON backend must remain supported.
+2. SQL backend must be supported as a first-class option using SQLite at minimum.
+3. All backend access must go through an abstract MemoryStore interface so core services are backend-agnostic.
+4. Backend choice can be set globally and overridden per project.
+5. Switching backend must not lose data; migration tooling is required.
+
+Memory must store:
+1. Known projects and their paths.
+2. Active project selection.
+3. Active builder, packager, and installer selection per project.
+4. All normalized build settings per project.
+5. All raw pass-through arguments per project and per tool.
+6. Saved named profiles.
+7. Last successful build per project and per target platform.
+8. Artifact paths per build.
+9. The exact final translated command from every past run.
+10. Environment snapshot from every past run.
+11. Build logs or build log file references.
+12. Tool usage history.
+13. Imported and generated project schema file paths.
+14. Installer generation history.
+15. Global user preferences.
+16. GUI state in a separate key so it never contaminates project settings.
+
+Memory write rules:
+1. Every time a user sets or changes any option, write it to memory immediately.
+2. Never require the user to explicitly save before a build.
+3. After every successful or failed build, append a record to build history.
+4. Every build record must include the final command list, timestamps, builder name, platform, and exit code.
+
+Memory clear commands:
+The system must provide the following wipe operations, each scoped precisely:
+1. otterforge memory clear --settings: Clears all active project settings and builder selection. Resets to defaults for the current project only.
+2. otterforge memory clear --history: Clears all build history records. Does not affect settings.
+3. otterforge memory clear --profiles: Removes all saved named profiles.
+4. otterforge memory clear --all: Wipes all memory files completely and resets to a blank state.
+5. otterforge memory clear --project <name>: Removes all memory associated with a specific project without affecting others.
+
+Each clear operation must prompt the user for confirmation unless a --yes flag is provided.
+
+The GUI must expose these same clear operations in a Settings or Memory management screen.
+
+Suggested memory files:
+1. user_settings.json
+2. projects.json
+3. build_history.json
+4. profiles.json
+
+Memory backend selection requirements:
+1. Backend can be selected at init and changed later.
+2. Default backend is JSON for zero-setup local usage.
+3. SQL backend stores equivalent records in normalized tables.
+4. A migration command must copy all memory data between backends safely.
+5. If SQL backend is unavailable, OtterForge must fail with a clear error and recovery instructions.
+6. GUI must expose backend selection, migration status, and a last-migration timestamp.
+
+CLI Requirements
+The CLI is the primary interface and must be fully usable without the GUI.
+
+Initial top-level commands:
+1. otterforge init
+2. otterforge scan [--scope files|folders|projects|groups] [--group <name>] [--include-ext <list>]
+3. otterforge schema import <file>
+4. otterforge schema export
+5. otterforge builders list
+6. otterforge builders inspect <builder>
+7. otterforge packagers list
+8. otterforge packagers inspect <packager>
+9. otterforge installers list
+10. otterforge installers inspect <installer>
+11. otterforge profile create
+12. otterforge profile list
+13. otterforge profile show <name>
+14. otterforge build
+15. otterforge package
+16. otterforge installer create
+17. otterforge workflow run <name>
+18. otterforge matrix run
+19. otterforge test
+20. otterforge audit
+21. otterforge sign
+22. otterforge version show
+23. otterforge version set <value>
+24. otterforge assets prepare-icon <source>
+25. otterforge artifacts list
+26. otterforge artifacts size-report
+27. otterforge hooks add
+28. otterforge hooks list
+29. otterforge hooks remove <name>
+30. otterforge plugins list
+31. otterforge plugins install <path_or_name>
+32. otterforge plugins remove <name>
+33. otterforge sandbox launch
+34. otterforge manifest show
+35. otterforge manifest refresh
+36. otterforge manifest enable <id>
+37. otterforge manifest disable <id>
+38. otterforge build --lang <language>
+39. otterforge build-history
+40. otterforge memory show
+41. otterforge memory clear
+42. otterforge ui
+43. otterforge organize plan [--mode copy|move] [--group <name>] [--output <plan_file>]
+44. otterforge organize apply <plan_file> [--yes]
+45. otterforge organize rollback <manifest_file> [--yes]
+46. otterforge memory backend show
+47. otterforge memory backend set <json|sql>
+48. otterforge memory migrate --to <json|sql>
+49. otterforge mcp status
+50. otterforge mcp server start
+51. otterforge mcp server stop
+52. otterforge mcp tools list
+53. otterforge mcp expose <tool_id>
+54. otterforge mcp hide <tool_id>
+
+CLI behavior rules:
+1. Commands must return meaningful exit codes.
+2. Commands must support JSON output for automation where practical.
+3. Commands must support verbose and quiet modes.
+4. Commands must support dry-run mode.
+5. The build command must print the exact command that will be executed.
+6. Failures must distinguish validation errors, missing tool errors, and builder runtime errors.
+7. scan must return structured classification output including file path, detected role, confidence score, and suggested target folder.
+8. organize plan must be non-destructive and must never change files.
+9. organize apply and organize rollback must both produce manifest records for auditing and recovery.
+10. memory backend set and memory migrate must validate compatibility before mutating state.
+11. MCP commands must return structured status including enabled state, transport, and exposed tool count.
+
+GUI Requirements
+Use PyQt. Prefer PyQt6 unless there is a repository-wide reason to target PyQt5.
+
+The GUI is not a separate product. It is a front-end for the same engine.
+
+Initial GUI screens:
+1. Project selection or creation.
+2. Builder selection with platform availability indicators.
+3. Entry point and output configuration.
+4. Structured common options.
+5. Advanced raw arguments editor.
+6. Saved profiles.
+7. Package configuration.
+8. Installer configuration.
+9. Code signing configuration.
+10. Pre and post hook management panel.
+11. Test gate configuration.
+12. Dependency audit panel.
+13. Version management panel.
+14. Icon and asset pipeline panel.
+15. Build matrix configuration.
+16. Build execution panel with live logs.
+17. Build history and artifact browser with size breakdown.
+18. Plugin management panel.
+19. Project schema editor or viewer.
+20. Memory and settings management panel.
+21. Settings and environment diagnostics.
+22. Deep scan explorer with file, folder, project, and group views.
+23. File classification review panel for icons, splash assets, docs, and scripts.
+24. Project organizer plan and apply panel with rollback controls.
+25. Memory backend management panel for JSON or SQL selection and migration.
+26. MCP server control panel showing server status and tool exposure policy.
+
+GUI behavior rules:
+1. The GUI must call backend services directly rather than duplicating build logic.
+2. Long-running builds must run in worker threads or processes so the UI stays responsive.
+3. Build logs must stream live to the interface.
+4. The user must be able to copy the final command.
+5. The user must be able to reuse a past build as a new profile.
+
+Python API Requirements
+Expose stable service methods so the backend can be used without the CLI or GUI.
+
+Minimum API surface:
+1. discover_project(path)
+2. import_project_schema(path)
+3. export_project_schema(project)
+4. list_builders()
+5. inspect_builder(name)
+6. list_packagers()
+7. inspect_packager(name)
+8. list_installers()
+9. inspect_installer(name)
+10. create_profile(...)
+11. run_build(request)
+12. run_package(request)
+13. run_installer(request)
+14. run_workflow(request)
+15. list_artifacts(project)
+16. get_build_history(project)
+17. load_memory()
+18. save_memory()
+19. scan_project(path, scope="projects", include_extensions=None)
+20. classify_project_files(path)
+21. create_organization_plan(project_or_group, mode="copy")
+22. apply_organization_plan(plan)
+23. rollback_organization(manifest_path)
+24. get_memory_backend()
+25. set_memory_backend(backend, config=None)
+26. migrate_memory_backend(target_backend)
+27. get_mcp_status()
+28. start_mcp_server(config=None)
+29. stop_mcp_server()
+30. list_mcp_tools()
+31. set_mcp_tool_visibility(tool_id, enabled)
+
+Suggested Project Structure
+Create the new program with a structure similar to this:
+
+OtterForge/
+	otterforge/
+		__init__.py
+		cli.py
+		api.py
+		models/
+		services/
+		builders/
+		storage/
+		ui/
+		utils/
+	tests/
+	docs/
+	pyproject.toml
+	README.md
+
+Suggested internal modules:
+1. otterforge/models/build_request.py
+2. otterforge/models/build_result.py
+3. otterforge/models/profile.py
+4. otterforge/models/project_schema.py
+5. otterforge/models/package_request.py
+6. otterforge/models/installer_request.py
+7. otterforge/services/command_translator.py
+8. otterforge/services/project_scanner.py
+9. otterforge/services/schema_service.py
+10. otterforge/services/build_runner.py
+11. otterforge/services/package_runner.py
+12. otterforge/services/installer_runner.py
+13. otterforge/services/workflow_runner.py
+14. otterforge/services/profile_service.py
+15. otterforge/services/history_service.py
+16. otterforge/storage/memory_store.py
+17. otterforge/services/hook_runner.py
+18. otterforge/services/signer.py
+19. otterforge/services/auditor.py
+20. otterforge/services/version_resolver.py
+21. otterforge/services/asset_pipeline.py
+22. otterforge/services/checksum_service.py
+23. otterforge/services/size_analyzer.py
+24. otterforge/services/git_service.py
+25. otterforge/services/container_runner.py
+26. otterforge/services/sandbox_launcher.py
+27. otterforge/services/notifier.py
+27. otterforge/services/matrix_runner.py
+28. otterforge/services/test_runner.py
+29. otterforge/plugins/registry.py
+30. otterforge/plugins/loader.py
+31. otterforge/manifest/manifest_store.py
+32. otterforge/manifest/prober.py
+33. otterforge/langs/base.py
+34. otterforge/langs/c_cpp.py
+35. otterforge/langs/rust.py
+36. otterforge/langs/go.py
+37. otterforge/langs/registry.py
+15. otterforge/builders/base.py
+16. otterforge/builders/pyinstaller.py
+17. otterforge/builders/nuitka.py
+18. otterforge/builders/cxfreeze.py
+19. otterforge/builders/py2app.py
+20. otterforge/builders/py2exe.py
+21. otterforge/builders/briefcase.py
+22. otterforge/builders/shiv.py
+23. otterforge/builders/zipapp.py
+24. otterforge/builders/registry.py
+25. otterforge/packagers/base.py
+26. otterforge/packagers/build.py
+27. otterforge/packagers/setuptools.py
+28. otterforge/packagers/hatch.py
+29. otterforge/packagers/poetry.py
+30. otterforge/packagers/registry.py
+31. otterforge/installers/base.py
+32. otterforge/installers/inno_setup.py
+33. otterforge/installers/nsis.py
+34. otterforge/installers/wix.py
+35. otterforge/installers/appimage.py
+36. otterforge/installers/pkgbuild.py
+37. otterforge/installers/registry.py
+38. otterforge/storage/json_store.py
+39. otterforge/ui/main_window.py
+40. otterforge/models/scan_result.py
+41. otterforge/models/organization_plan.py
+42. otterforge/services/file_classifier.py
+43. otterforge/services/project_organizer.py
+44. otterforge/services/organization_manifest.py
+45. otterforge/storage/sql_store.py
+46. otterforge/services/memory_backend_manager.py
+47. otterforge/services/memory_migrator.py
+48. otterforge/mcp/server.py
+49. otterforge/mcp/tool_registry.py
+50. otterforge/mcp/policy.py
+51. otterforge/mcp/session_logger.py
+
+Tool Adapter Contract
+Define a base adapter contract before implementing any executable builder, packager, or installer adapter.
+
+Each adapter should provide methods equivalent to:
+1. is_available()
+2. get_version()
+3. get_supported_common_options()
+4. build_command(build_request)
+5. validate_request(build_request)
+6. execute(build_request)
+7. summarize_result(process_result)
+8. get_tool_category()
+9. get_supported_platforms()
+10. get_output_types()
+
+Build Request Model
+The internal build request should be explicit.
+
+Minimum fields:
+1. project_path
+2. builder_name
+3. target_platform
+4. entry_script
+5. executable_name
+6. mode such as onefile or onedir
+7. console_mode
+8. icon_path
+9. splash_path
+10. data_files
+11. hidden_imports
+12. extra_search_paths
+13. output_dir
+14. clean
+15. raw_builder_args
+16. environment_overrides
+17. dry_run
+18. profile_name
+19. project_schema_path
+20. workflow_name
+
+Package Request Model
+The internal package request should be explicit.
+
+Minimum fields:
+1. project_path
+2. packager_name
+3. source_artifacts
+4. package_format
+5. package_metadata
+6. output_dir
+7. raw_packager_args
+8. environment_overrides
+9. dry_run
+10. profile_name
+11. project_schema_path
+
+Installer Request Model
+The internal installer request should be explicit.
+
+Minimum fields:
+1. project_path
+2. installer_name
+3. source_artifacts
+4. installer_format
+5. application_name
+6. version
+7. vendor
+8. install_root
+9. shortcuts
+10. license_file
+11. output_dir
+12. raw_installer_args
+13. environment_overrides
+14. dry_run
+15. profile_name
+16. project_schema_path
+
+Build Result Model
+Minimum fields:
+1. success
+2. exit_code
+3. final_command
+4. artifact_paths
+5. stdout
+6. stderr
+7. started_at
+8. finished_at
+9. duration_seconds
+10. builder_name
+11. target_platform
+12. environment_snapshot
+
+Project Discovery Requirements
+The scan process should inspect a Python project and suggest buildable entry points, packaging strategies, and installer candidates.
+
+Scan should detect:
+1. Scanner scopes: files, folders, projects, and logical groups.
+2. Candidate main scripts and executable entry points.
+3. Existing spec files.
+4. Existing pyproject.toml, setup.py, requirements files, and virtual environments.
+5. GUI frameworks such as PyQt, Tkinter, Kivy, or others when obvious.
+6. Asset folders and likely icon files.
+7. Icon candidates by extension, including .ico, .icns, .png, .svg, and .bmp.
+8. Splash screen candidates by extension, including .png, .jpg, .jpeg, .ico, .bmp, and .gif.
+9. Documentation candidates including .md, .txt, .rst, .docx, and .pdf.
+10. Known packaging hints from previous builds.
+11. Multi-package or monorepo-like layouts where possible.
+12. Service-style projects, desktop apps, CLI apps, libraries, and hybrid projects where possible.
+13. Existing installer scripts or packaging manifests.
+14. Data that can be transformed into a starter project JSON schema.
+15. Candidate groupings by purpose, such as source, tests, assets, docs, build scripts, installers, and generated output.
+16. Conflicts such as missing referenced files, duplicate icon candidates, and orphaned assets.
+
+Project Interpretation Requirements
+OtterForge must be able to build projects that do not follow a single standard layout.
+
+Supported interpretation modes:
+1. Automatic scan mode.
+2. Automatic scan plus user corrections.
+3. Fully schema-driven mode using a JSON project description.
+
+The schema-driven mode must support projects with:
+1. Multiple source roots.
+2. Nested application folders.
+3. Separate assets or resources folders.
+4. Multiple executable entry points.
+5. Multiple packaging outputs.
+6. Platform-specific files and exclusions.
+7. Custom installer resource files.
+
+Project Organizer Requirements
+OtterForge should include a project organizer that can gather files from configured source paths and arrange them into a normalized project layout according to purpose.
+
+Organizer behavior:
+1. Build an organization plan before making filesystem changes.
+2. Classify each file into a target group such as source, tests, assets, splash, icons, documentation, configs, scripts, installer resources, and output.
+3. Support path rules from schema section organization_rules and user overrides.
+4. Preview old path to new path mappings before apply.
+5. Support copy mode and move mode.
+6. Write a reorganization manifest with every moved file and timestamp.
+7. Support rollback by replaying the manifest in reverse.
+8. Never overwrite existing files unless a force flag is provided.
+9. Preserve relative references where possible by generating a post-organization report of files that may need path updates.
+10. Support organizing a single project or a group of projects in one operation.
+
+Default target folders for generated layout:
+1. src/
+2. tests/
+3. assets/icons/
+4. assets/splash/
+5. docs/
+6. config/
+7. scripts/
+8. installer/
+9. dist/
+
+Build Execution Requirements
+1. Execute tools through subprocess using argument lists, not shell-joined strings.
+2. Capture stdout and stderr separately.
+3. Support live log streaming.
+4. Persist result data after every run.
+5. Support cancellation where practical.
+6. Support dry-run without launching the process.
+7. Support chained workflows where later stages consume prior artifacts.
+
+Packaging and Installer Requirements
+1. Packaging must be treated as a first-class workflow, not only a post-build afterthought.
+2. Installer creation must consume explicit artifacts from prior steps or schema-defined inputs.
+3. The system must distinguish between executable builders, package generators, and installer generators in both UI and CLI.
+4. The system must record which tool produced which artifact.
+5. The system must support per-platform installer strategies.
+6. The system must allow raw pass-through arguments for packagers and installers the same way it does for executable builders.
+
+Additional Feature Specifications
+
+Pre and Post Build Hooks
+OtterForge must support user-defined scripts or commands that run before and after any build, package, or installer stage. Hooks are defined per project in memory or in the project schema.
+
+Hook types:
+1. pre_build: Runs after settings are validated but before the tool command is executed.
+2. post_build: Runs after the tool exits regardless of success or failure.
+3. post_success: Runs only after a successful build.
+4. post_failure: Runs only after a failed build.
+5. pre_package, post_package, pre_installer, post_installer: Same pattern for other stages.
+
+Hook rules:
+1. A hook is a shell command string or a path to a Python script.
+2. Hook failure by default halts the pipeline. A hook can be marked optional to continue on failure.
+3. The hook environment receives injected variables for artifact paths, builder name, platform, and exit code from prior steps.
+4. Hooks are listed and managed through otterforge hooks add, otterforge hooks list, and otterforge hooks remove.
+5. The GUI must show a hook management panel where hooks can be ordered, enabled, and disabled.
+
+Common use cases for hooks include: running tests before a build, bumping a version file, generating a changelog, notifying a webhook, uploading artifacts to a server, and cleaning temp files after a failed build.
+
+Test Runner Gate
+OtterForge must support running a test suite before any build and optionally gating the build on test results.
+
+Behavior:
+1. The user can configure a test command per project, such as pytest or python -m unittest.
+2. The user can enable or disable the gate flag per project.
+3. When the gate is enabled, a build will not start if the test command exits with a non-zero code.
+4. The test result is stored in build history alongside the build result.
+5. The CLI command is otterforge test and the gate is configured with otterforge set test.command and otterforge set test.gate true.
+
+Code Signing
+OtterForge must support signing executables and installers after they are produced.
+
+Platform-specific signing tools:
+1. Windows: signtool.exe. Requires a code signing certificate, PFX file or HSM reference, and timestamp server.
+2. macOS: codesign and optionally notarytool for Apple notarization. Requires a Developer ID certificate and an Apple ID credential.
+3. Linux: gpg for detached signature files of artifacts, or AppImage signing.
+
+Signing rules:
+1. Signing is a separate optional post-build stage, not part of the builder adapter.
+2. Signing configuration is stored in memory but sensitive credential details such as passwords and certificate paths must never be logged or printed.
+3. The user must be able to configure signing once per project and have it run automatically after every successful build.
+4. The system must surface a clear warning if signing is configured but the signing tool is not available.
+5. The CLI commands are otterforge sign and otterforge set signing.tool, otterforge set signing.cert, and so on.
+6. Signed artifact paths replace or supplement the unsigned artifact paths in the build result.
+
+Dependency Audit
+Before building, OtterForge should optionally audit project dependencies for known vulnerabilities.
+
+Supported audit tools:
+1. pip-audit: Primary recommended tool.
+2. safety: Alternative if pip-audit is not available.
+
+Audit behavior:
+1. The audit runs against the active environment or a requirements file.
+2. Results are shown in the CLI and GUI with severity levels.
+3. The user can configure a gate that blocks the build if any vulnerability of a given severity is found.
+4. Audit results are stored in build history.
+5. The CLI command is otterforge audit.
+
+Version Management
+OtterForge should be able to read, display, and optionally inject version information at build time.
+
+Version sources in priority order:
+1. Explicit value set with otterforge set version.
+2. Git tag from the current commit using git describe.
+3. Version field in pyproject.toml.
+4. __version__ variable in the entry script or __init__.py.
+
+Version injection:
+1. The resolved version is available to the builder as the executable name suffix or as a version metadata field.
+2. The version is stored in the build history record.
+3. The user can optionally auto-tag the git repository after a successful build with otterforge set version.auto_tag true.
+
+The CLI command is otterforge version show to display the resolved version and otterforge version set <value> to override it.
+
+Icon and Asset Pipeline
+OtterForge should help users prepare icon assets in the correct format for the target platform and builder without requiring manual conversion.
+
+Behavior:
+1. The user provides a source image in any common format such as PNG, SVG, or JPEG.
+2. OtterForge converts it to the correct format for the selected builder and platform.
+3. Windows builders require .ico format. macOS builders require .icns format. Linux builders typically accept PNG.
+4. Conversion uses the Pillow library if available.
+5. The converted icon is stored in a project asset cache folder and the path is written to memory.
+6. The CLI command is otterforge assets prepare-icon <source_path>.
+7. The GUI provides a drag-and-drop icon selector that triggers the same conversion pipeline.
+
+Artifact Checksums and Release Manifest
+After every successful build, package, or installer run, OtterForge must generate checksums and a release manifest.
+
+Behavior:
+1. Compute SHA256 checksum for every output artifact.
+2. Store checksums alongside artifacts in the output directory in a file named checksums.sha256.txt.
+3. Generate a release manifest file named release_manifest.json that contains artifact paths, checksums, builder name, version, platform, and timestamp.
+4. The manifest can be used by CI pipelines to attach artifacts to a GitHub release or similar publishing step.
+5. This behavior is on by default and can be disabled with otterforge set artifacts.checksums false.
+
+Artifact Size Analysis
+After a build completes, OtterForge should produce a size report showing what is contributing to the final executable or package size.
+
+Behavior:
+1. Walk the output directory or inspect the onefile executable structure where possible.
+2. Report the top contributors by file size: Python standard library, third-party packages, and application code.
+3. Where builders produce a spec or a dist folder, analyze that folder.
+4. The report is printed to the console when verbose mode is active and is always written to the build history record.
+5. The CLI command is otterforge artifacts size-report.
+6. The GUI shows a basic size breakdown in the build results panel.
+
+Git Integration
+OtterForge should integrate with git for version reading, release tagging, and build traceability.
+
+Behavior:
+1. At build time, capture the current git commit hash, branch name, and tag if any, and store them in the build history record.
+2. If version.auto_tag is enabled, create a git tag after a successful build.
+3. Surface a warning if the working tree is dirty and the user is running a production build.
+4. Allow the user to link a build record to a specific commit.
+5. The git integration is read-only by default. Write operations such as tagging require explicit configuration.
+
+Container and Docker Build Mode
+OtterForge should support building inside a Docker container for clean, reproducible, dependency-isolated builds. This is especially useful for Linux AppImage builds and for producing builds that do not depend on the developer machine's system libraries.
+
+Behavior:
+1. The user specifies a Docker image to use for the build.
+2. OtterForge mounts the project directory into the container and runs the translated build command inside it.
+3. Output artifacts are written back to the host output directory.
+4. The Docker image name and any extra volume mounts are stored in memory per project.
+5. This mode requires Docker to be installed and available in PATH.
+6. The CLI command is otterforge build --container or set with otterforge set build.container_image <image>.
+7. Container mode is listed as unavailable when Docker is not detected.
+
+Build Notifications
+OtterForge should notify the user when a long-running build finishes, whether it succeeded or failed.
+
+Behavior:
+1. Use the plyer library for cross-platform desktop notifications if it is installed.
+2. Fall back to a simple terminal bell or printed summary if plyer is not available.
+3. Notifications include the project name, builder name, build status, and duration.
+4. Notifications can be enabled or disabled with otterforge set notifications.enabled true.
+5. Optional webhook notification support: the user can configure a webhook URL and OtterForge posts a JSON build result summary to it after every build.
+
+Local Build Matrix
+OtterForge should support running multiple build configurations in a single local command without requiring CI.
+
+Behavior:
+1. The user defines a matrix in the project schema or memory as a list of profiles or builder-plus-options combinations.
+2. Calling otterforge matrix run executes each configuration in sequence and collects results.
+3. The matrix report shows a table of which configurations passed or failed.
+4. Parallel matrix execution is a future enhancement; sequential is required first.
+5. Each matrix run entry produces its own build history record.
+
+Plugin System
+OtterForge must support a plugin system that allows users to add their own builder, packager, installer, or hook adapters without modifying the core codebase.
+
+Behavior:
+1. A plugin is a Python package or a folder of Python files placed in a designated plugins directory.
+2. OtterForge scans the plugins directory at startup and registers any discovered adapters using the same registry mechanism as built-in adapters.
+3. Plugins can implement any adapter category: builder, packager, installer, or hook.
+4. The CLI command otterforge plugins list shows all installed plugins.
+5. The CLI command otterforge plugins install <path_or_name> installs a plugin from a local path or from PyPI if the package follows a naming convention.
+6. The CLI command otterforge plugins remove <name> removes a plugin.
+7. Plugins must not be required for the core system to function. If a plugin fails to load, OtterForge logs the error and continues.
+8. Document the plugin contract clearly so third parties can write compliant plugins without reading internal code.
+
+Windows Sandbox Testing
+OtterForge should support launching a Windows Sandbox session pre-loaded with a freshly built executable or installer so the user can verify it works in a clean Windows environment without affecting the host machine.
+
+Background:
+Windows Sandbox is a built-in lightweight VM available on Windows 10 and 11 Pro, Enterprise, and Education editions. It provides a disposable, isolated Windows instance that is destroyed after the session ends. It is ideal for testing installers that may write to the registry or system directories, and for confirming that executables do not have hidden dependencies on the developer machine.
+
+Behavior:
+1. After a successful build or installer creation, OtterForge can optionally open a Windows Sandbox session with the output artifact pre-copied into the sandbox.
+2. OtterForge generates a Windows Sandbox configuration file (.wsb) pointing to a mapped host folder containing the artifact and an optional startup script.
+3. The startup script can automatically run the installer or executable inside the sandbox so the user sees the result without manual steps.
+4. The user can configure whether the sandbox session starts automatically after a build or only on explicit request via otterforge sandbox launch.
+5. The sandbox configuration file is written to a temp folder and is cleaned up after the session ends.
+6. OtterForge detects whether Windows Sandbox is available by checking for WindowsSandbox.exe in the system path. If it is not available, the feature is listed as unavailable with a note that it requires Windows 10 or 11 Pro, Enterprise, or Education.
+7. The user can configure the startup command and any additional host folder mappings per project.
+8. Read-only sandbox folder mappings are used whenever possible to prevent the sandbox from modifying host files.
+9. The CLI command is otterforge sandbox launch to trigger a session with the most recent build artifact.
+10. The GUI includes a launch-in-sandbox button on the build results panel that is grayed out when the feature is unavailable.
+
+CI and Cloud Requirements
+OtterForge should support GitHub-hosted or similar runners.
+
+Required CI-related features:
+1. Generate a starter GitHub Actions workflow for matrix builds.
+2. Allow project profiles to declare intended target platforms.
+3. Persist enough metadata so CI builds can reproduce local builds.
+4. Export a profile to a portable config file.
+5. Support multi-stage CI workflows that can build, package, and create installers.
+
+Important CI note:
+Do not assume that every builder is available on every runner. The system must surface missing tools clearly.
+
+Configuration Strategy
+Use explicit config files. Avoid hidden magic.
+
+Suggested config layers:
+1. Global user config.
+2. Per-project config.
+3. Per-profile config.
+4. Per-run overrides from CLI or GUI.
+
+Override precedence should be:
+run overrides > profile config > project config > global config > adapter defaults
+
+Implementation Phases
+Phase 1: Foundation
+1. Create package structure.
+2. Define models and service boundaries.
+3. Implement abstract MemoryStore interface and JSON-backed implementation.
+4. Implement all memory clear commands with scoped wipe support.
+5. Implement logging and build history storage.
+6. Implement tool base classes and registry.
+7. Implement CLI skeleton with set, get, and memory subcommands.
+8. Implement project schema model and import or export helpers.
+
+Phase 2: Command Translation Layer and First Builder
+1. Implement CommandTranslator service.
+2. Implement PyInstaller adapter with full normalized option mapping.
+3. Wire the translator so calling otterforge build reads from memory and produces the PyInstaller command.
+4. Verify that dry-run prints the exact final command without executing.
+5. Implement project scan command.
+6. Implement profile save and load.
+7. Implement starter schema generation from scan results.
+
+The CommandTranslator must be complete and tested before any other builder is added.
+
+Phase 3: GUI
+1. Build PyQt main window.
+2. Add project selection, builder selection, structured options, raw arguments, and live logs.
+3. Connect GUI actions to backend services.
+4. Add build history and artifact browsing.
+5. Add project schema viewing and editing.
+
+Phase 4: More Executable Builder Adapters
+1. Add Nuitka adapter with normalized options for standalone, onefile, plugin system, and LTO.
+2. Add cx_Freeze adapter with normalized options for target name, includes, excludes, and build directory.
+3. Add py2app adapter with platform guard so it only appears on macOS hosts.
+4. Add py2exe adapter with platform guard so it only appears on Windows hosts.
+5. Add briefcase adapter registered in both builder and installer registries.
+6. Add shiv adapter with a note in the UI that Python must exist on the target machine.
+7. Add zipapp adapter using the Python standard library so it has no extra install requirement.
+8. Add adapter diagnostics for unsupported platform or missing dependency cases.
+9. Add at least one packager adapter such as build or hatchling.
+10. Add at least one installer adapter such as Inno Setup on Windows or AppImage on Linux.
+
+Phase 5: CI and Reproducibility
+1. Add workflow generation.
+2. Add exportable portable build profile files.
+3. Add environment snapshot comparison.
+4. Add reproducible build summary output.
+5. Add generated CI templates for installer-capable pipelines.
+
+Phase 6: Additional Features
+1. Implement module manifest store and prober. Register all existing built-in adapters with manifest entries.
+2. Update all registries to check the manifest before listing or running any adapter.
+3. Update the GUI to read the manifest for availability and show unavailable adapters as grayed out with tooltip hints.
+4. Implement pre and post build hook runner service.
+5. Implement test runner gate with configurable test command.
+6. Implement code signing service with Windows signtool, macOS codesign, and Linux gpg adapters.
+7. Implement dependency audit service wrapping pip-audit and safety.
+8. Implement version resolver reading from explicit value, git tag, pyproject.toml, and __version__.
+9. Implement icon and asset pipeline using Pillow for PNG to ICO and ICNS conversion.
+10. Implement artifact checksum generation and release manifest writer.
+11. Implement artifact size analyzer.
+12. Implement git service for commit capture, dirty-tree warning, and optional auto-tagging.
+13. Implement container build mode runner.
+14. Implement Windows Sandbox launcher service including wsb file generation, host folder mapping, optional startup script injection, and availability detection.
+15. Implement desktop notification service using plyer with webhook fallback.
+16. Implement local build matrix runner.
+17. Implement plugin system with scan-on-startup loader and install or remove CLI commands.
+18. Add hook management, signing configuration, audit gating, and version panel to the GUI.
+19. Add plugin management panel to the GUI.
+20. Implement the LanguageBuildRequest model and the base language adapter contract.
+21. Implement the C and C++ language adapter with direct compiler, CMake, and Makefile front-ends.
+22. Implement the Rust language adapter wrapping cargo.
+23. Implement the Go language adapter wrapping the go toolchain.
+24. Register all language adapters with the manifest system.
+25. Add language adapter selection to the GUI builder selector under a Native Language Adapters group.
+26. Add otterforge build --lang support to the CLI.
+27. Implement deep scanner modes for files, folders, projects, and groups.
+28. Implement file classifier for icons, splash assets, documentation, and install resources.
+29. Implement project organizer plan, apply, and rollback services with manifest output.
+30. Add organizer and scan classification screens to the GUI.
+31. Implement SQL memory backend and backend selection manager.
+32. Implement JSON-to-SQL and SQL-to-JSON memory migration tooling.
+33. Add memory backend controls to CLI and GUI.
+34. Implement MCP server mode with stdio transport.
+35. Implement MCP tool registry mapped to existing service layer methods.
+36. Implement MCP allowlist policy with read-only default and controlled mutation enablement.
+37. Add MCP status and tool exposure commands to CLI.
+
+Phase 7: Hardening
+1. Add tests across core services.
+2. Add integration tests for CLI flows.
+3. Add selected builder smoke tests where environment permits.
+4. Add hook runner tests with real and failing hook scripts.
+5. Add signing service unit tests with mock tool invocations.
+6. Add plugin loader tests covering well-formed and malformed plugins.
+7. Improve error messages and recovery guidance.
+
+Testing Requirements
+1. Unit test the memory store including all scoped clear operations.
+2. Unit test build request to command translation for every supported builder.
+3. Unit test adapter validation and platform availability gating.
+4. Integration test CLI command parsing including raw pass-through after delimiter.
+5. Test that GUI uses backend services rather than duplicating logic.
+6. Test profile serialization and restoration.
+7. Test schema import and export behavior.
+8. Test scan-to-schema generation.
+9. Test multi-step workflow chaining from build to package to installer.
+10. Test pre and post hook execution order and failure gating.
+11. Test code signing service with mocked signing tool invocations.
+12. Test audit service parsing of pip-audit and safety output.
+13. Test version resolver priority order across all four sources.
+14. Test icon pipeline conversion and cache behavior.
+15. Test checksum generation and release manifest content.
+16. Test size analyzer output structure.
+17. Test git service commit capture and dirty-tree detection.
+18. Test container mode command construction without requiring Docker.
+19. Test plugin loader with a valid plugin, a plugin that fails to load, and an empty plugins folder.
+20. Test local build matrix sequencing and result collection.
+21. Test Windows Sandbox launcher wsb file generation with correct host folder paths and startup script content.
+22. Test that sandbox availability detection correctly identifies presence and absence of WindowsSandbox.exe.
+23. Test that the manifest prober correctly marks capabilities as available or unavailable without importing optional adapter modules.
+24. Test that the manifest refresh command updates last_checked timestamps and version_detected fields.
+25. Test that any registry correctly returns only manifest-available adapters when unavailable ones are registered.
+26. Test the C and C++ adapter command construction for the direct compiler, CMake, and Makefile paths.
+27. Test the Rust adapter command construction for debug and release profiles and feature flags.
+28. Test the Go adapter command construction including GOOS and GOARCH cross-compilation fields.
+29. Test that all language adapter failures are isolated and do not affect any Python builder workflow.
+30. Test scanner scope modes for files, folders, projects, and groups.
+31. Test icon and splash classification for .ico, .png, .jpg, .jpeg, .bmp, and .gif files.
+32. Test documentation classification for .md, .txt, .rst, .docx, and .pdf files.
+33. Test organizer plan generation without filesystem mutation.
+34. Test organizer apply and rollback using generated reorganization manifests.
+35. Test backend selection flow for JSON and SQL across CLI, GUI, and API.
+36. Test bidirectional memory migration preserving records and timestamps.
+37. Test SQL backend behavior when database file is locked or unavailable.
+38. Test MCP server startup and shutdown lifecycle.
+39. Test MCP tool allowlist enforcement and read-only default behavior.
+40. Test MCP tool mapping parity against CLI and API outputs for the same requests.
+41. Test redaction of sensitive values in MCP responses and logs.
+
+Acceptance Criteria For Initial Usable Version
+The first usable version is complete when all items below are true:
+1. A user can scan a Python project and discover likely entry points.
+2. A user can select PyInstaller as the default builder without any extra configuration.
+3. A user can switch to any other registered builder from the CLI or GUI without changing the underlying workflow.
+4. A user can define common options and also pass arbitrary extra builder flags to any selected builder.
+5. A user can save the configuration as a named profile.
+6. A user can execute a build from the CLI.
+7. A user can execute the same build from the PyQt UI.
+8. The system stores build history and final executed command.
+9. The system runs on Windows, Linux, and macOS.
+10. The system correctly suppresses platform-incompatible builders based on the current host OS.
+11. The system can generate a starter CI workflow for multi-platform builds.
+12. A user can import or generate a JSON project description for a nonstandard project layout.
+13. A user can run at least one packaging workflow through the same backend.
+14. A user can run at least one installer-generation workflow through the same backend.
+15. A user can run scan in files, folders, projects, and groups scope and receive classified icon, splash, and documentation candidates.
+16. A user can generate and apply a project organization plan with rollback support.
+17. A user can select JSON or SQL as memory backend and migrate existing data without loss.
+18. An MCP client can connect and use exposed OtterForge tools with policy-controlled access.
+
+Non-Goals For Version 1
+1. Perfect support for every builder from day one.
+2. Guaranteed cross-compilation to every operating system from any host.
+3. Automatic installation of every external builder, compiler, or toolchain.
+4. Advanced distributed build scheduling.
+5. Full support for every installer ecosystem from day one.
+6. Support for compiled languages beyond C, C++, Rust, and Go.
+7. IDE-level debugger integration for compiled language builds.
+
+Implementation Guidance For AI Agents
+1. Reuse the existing modular command and persistent memory patterns already present elsewhere in this repository where helpful.
+2. Do not hard-code a finite list of all supported tool flags.
+3. Build the adapter abstraction before adding more than one builder, packager, or installer.
+4. Make PyInstaller the first complete adapter. Every subsequent builder must conform to the same interface without modifications to core code.
+5. Implement a registry for each category: one for builders, one for packagers, one for installers, one for language adapters. Each registry should auto-discover adapters from their respective folder.
+6. Each adapter module should register itself or be discovered through the registry. Do not hard-code adapter names in the core CLI or GUI code.
+7. When a builder does not support the current platform, the adapter must return False from is_available() and the registry must exclude it from listings without crashing.
+8. Keep business logic out of the PyQt UI layer.
+9. Prefer explicit typed models for requests, results, profiles, and stored history.
+10. Keep the storage layer backend-agnostic and user-selectable between JSON and SQL.
+11. Keep command execution safe by using subprocess argument lists.
+12. Treat project schema ingestion as a core feature, not an optional add-on.
+13. Implement the module manifest system early, before adding any optional adapters, so every subsequent adapter is governed by it from the start.
+14. Every optional capability — whether a builder, installer, language adapter, service, or plugin — must register a manifest entry and must check manifest availability before running. No adapter may assume it is available without a manifest check.
+15. The manifest prober must never import an optional adapter module to test availability. It must use subprocess or shutil.which to test for external tools and importlib.util.find_spec for Python packages without importing them.
+16. Language adapters in otterforge/langs/ are completely isolated from the Python builder pipeline. They share only the shared services layer. Mixing Python build concepts into language adapter request models is forbidden.
+17. MCP tools must be thin wrappers over existing service methods and must never duplicate orchestration logic.
+18. Memory backend migrations must be implemented as idempotent, resumable operations with audit logs.
+
+Immediate Next Build Steps
+1. Create the OtterForge Python package skeleton.
+2. Implement the abstract MemoryStore plus JSON and SQL-backed implementations.
+3. Implement all memory clear commands.
+4. Implement the CommandTranslator service with full override precedence logic.
+5. Implement the PyInstaller adapter and wire it to the translator.
+6. Implement CLI commands: init, set, build --dry-run, build, memory show, memory clear.
+7. Verify that calling otterforge build reads settings from memory, prints the exact translated command, and executes it.
+8. Add project scan and schema export.
+9. Add profile create, list, and show.
+10. Add a minimal PyQt main window that calls the same CommandTranslator and shows the translated command before running it.
+11. After the first build flow works, add one packager and one installer adapter.

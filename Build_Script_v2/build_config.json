@@ -1,0 +1,30 @@
+{
+  "project_name": "Build System v2",
+  "version": "2.0.0",
+  "memory_file": "build_memory.json",
+  "modules_directory": "modules",
+  "build_directory": "dist",
+  "pyinstaller": {
+    "enabled": true,
+    "onefile": true,
+    "console": true,
+    "icon": null,
+    "splash": null,
+    "name": null,
+    "extra_args": []
+  },
+  "build_icon": null,
+  "build_splash": null,
+  "exclude_patterns": [
+    "__pycache__",
+    "*.pyc",
+    ".git",
+    ".venv",
+    "venv",
+    "*.egg-info"
+  ],
+  "name": "Build Script V2",
+  "main": "/workspaces/SystemCommands/Build_Script_v2/build_system.py",
+  "description": "Modular Build System",
+  "console": false
+}
