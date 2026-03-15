@@ -1,0 +1,105 @@
+{
+  "github": {
+    "personal_access_token": "",
+    "username": "buildcli-bot",
+    "default_organization": "buildcli-official",
+    "repositories": {
+      "modules": "buildcli-modules",
+      "templates": "buildcli-templates",
+      "configs": "buildcli-configs"
+    },
+    "api": {
+      "base_url": "https://api.github.com",
+      "timeout": 30,
+      "max_retries": 3
+    },
+    "download": {
+      "prefer_releases": true,
+      "fallback_to_main": true,
+      "cache_duration_hours": 24,
+      "auto_update": true
+    },
+    "authentication": {
+      "method": "token",
+      "token_env_var": "BUILDCLI_GITHUB_TOKEN",
+      "use_ssh": false,
+      "ssh_key_path": ""
+    }
+  },
+  "module_sources": {
+    "primary": {
+      "type": "github",
+      "url": "https://github.com/buildcli-official/buildcli-modules",
+      "branch": "main",
+      "enabled": true,
+      "trusted": true,
+      "manifest_url": "https://raw.githubusercontent.com/buildcli-official/buildcli-modules/main/modules.json"
+    },
+    "community": {
+      "type": "github",
+      "url": "https://github.com/buildcli-community/modules",
+      "branch": "main",
+      "enabled": true,
+      "trusted": false,
+      "manifest_url": "https://raw.githubusercontent.com/buildcli-community/modules/main/modules.json"
+    },
+    "verified": {
+      "type": "github",
+      "url": "https://github.com/buildcli-verified/modules",
+      "branch": "main",
+      "enabled": true,
+      "trusted": true,
+      "manifest_url": "https://raw.githubusercontent.com/buildcli-verified/modules/main/modules.json"
+    }
+  },
+  "security": {
+    "verify_signatures": true,
+    "allowed_authors": [
+      "buildcli-official",
+      "buildcli-verified"
+    ],
+    "blocked_authors": [],
+    "require_code_review": true,
+    "scan_for_vulnerabilities": true,
+    "max_module_size_mb": 50,
+    "allowed_file_extensions": [".py", ".json", ".md", ".txt", ".yml", ".yaml"]
+  },
+  "local_overrides": {
+    "cache_directory": "",
+    "temp_directory": "",
+    "backup_modules": true,
+    "keep_source": true,
+    "log_downloads": true
+  },
+  "default_modules": [
+    {
+      "name": "git",
+      "source": "primary",
+      "version": "latest",
+      "auto_install": false
+    },
+    {
+      "name": "docker",
+      "source": "primary", 
+      "version": "latest",
+      "auto_install": false
+    },
+    {
+      "name": "nodejs",
+      "source": "primary",
+      "version": "latest",
+      "auto_install": false
+    },
+    {
+      "name": "python-tools",
+      "source": "primary",
+      "version": "latest",
+      "auto_install": false
+    }
+  ],
+  "rate_limiting": {
+    "requests_per_hour": 5000,
+    "concurrent_downloads": 3,
+    "backoff_strategy": "exponential"
+  }
+}

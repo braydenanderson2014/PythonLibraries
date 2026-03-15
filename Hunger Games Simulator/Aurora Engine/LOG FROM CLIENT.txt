@@ -1,0 +1,112 @@
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:17 [HG LOGGER] Script starting...
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:244 [HG LOGGER] Not blacklisted; proceeding with setup for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Hooks installed safely for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Script setup complete for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] UI initialization started for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] No UI for host (not in domain list): www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] UI initialization complete for host: www.imdb.com
+_app-b6dc685c84f7a30d.js:136 An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
+a @ _app-b6dc685c84f7a30d.js:136
+oB @ framework-a909d885f472f220.js:1
+oY @ framework-a909d885f472f220.js:1
+e @ framework-a909d885f472f220.js:1
+(anonymous) @ framework-a909d885f472f220.js:1
+uO @ framework-a909d885f472f220.js:1
+uS @ framework-a909d885f472f220.js:1
+x @ framework-a909d885f472f220.js:1
+R @ framework-a909d885f472f220.js:1
+content-script.js:22 Document already loaded, running initialization immediately
+content-script.js:4 Attempting to initialize AdUnit
+content-script.js:6 AdUnit initialized successfully
+51LFWUXHkZL.js:33 window.NativeWebBridge already exists
+parcelRequire.kIhC... @ 51LFWUXHkZL.js:33
+f @ 51LFWUXHkZL.js:1
+parcelRequire.WBRF @ 51LFWUXHkZL.js:1
+(anonymous) @ 51LFWUXHkZL.js:1
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:17 [HG LOGGER] Script starting...
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:244 [HG LOGGER] Not blacklisted; proceeding with setup for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Hooks installed safely for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Script setup complete for host: s.amazon-adsystem.com
+81rkcLJku5L.js:1 Uncaught TypeError: n.setup is not a function
+e.default @ 81rkcLJku5L.js:1
+value @ 81rkcLJku5L.js:1
+script
+Pi9N.e.default @ 81rkcLJku5L.js:1
+value @ 81rkcLJku5L.js:1
+(anonymous) @ 81rkcLJku5L.js:1
+(anonymous) @ 81rkcLJku5L.js:1
+P @ 81rkcLJku5L.js:1
+C @ 81rkcLJku5L.js:1
+(anonymous) @ 81rkcLJku5L.js:1
+Pq/i @ 81rkcLJku5L.js:1
+e @ 81rkcLJku5L.js:1
+(anonymous) @ 81rkcLJku5L.js:1
+(anonymous) @ 81rkcLJku5L.js:1
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+745?_it=amazon:1 [Audigent] cannot find __gpp framework
+(anonymous) @ 745?_it=amazon:1
+setInterval
+q @ 745?_it=amazon:1
+w @ 745?_it=amazon:1
+(anonymous) @ 745?_it=amazon:1
+(anonymous) @ 745?_it=amazon:1
+(anonymous) @ 745?_it=amazon:1
+(anonymous) @ 745?_it=amazon:1
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] UI initialization started for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] No UI for host (not in domain list): s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] UI initialization complete for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: www.imdb.com
+userscript.html?name=HG-Logger-CSP-compliant%252C-SPA-aware%252C-configurable-sites.user.js&id=66d09c0c-0c8b-4d4e-891c-621223afc404:379 [HG LOGGER] Render called for host: s.amazon-adsystem.com

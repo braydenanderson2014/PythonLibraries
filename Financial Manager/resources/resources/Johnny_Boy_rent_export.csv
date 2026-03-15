@@ -1,0 +1,40 @@
+Section,Tenant Information
+Name,Johnny Boy
+Tenant ID,9mJTIy42R3
+Rental Period,"Sep 11, 2025 - Sep 11, 2026"
+Rent Amount,1600.00
+Deposit,1000.00
+Due Day,1
+Contact,📞 8019105070 | ✉️ braydenanderson2014@gmail.com
+Notes,"this tenant sucks
+[2025-09-04] Monthly override for 2025-09: $0.00 - free rent for a month! yay!
+[2025-09-04] Monthly override removed for 2025-09 - Override removed
+[2025-09-04] Monthly override for 2025-09: $0.00 - First month free, made a mistake and charged ;)
+[2025-09-04] Monthly override removed for 2025-09 - Override removed
+[2025-09-04] Monthly override for 2025-09: $0.00 - Test override
+[2025-09-04] Monthly override removed for 2025-09 - Override removed
+[2025-09-04] Monthly override for 2025-09: $0.00 - na"
+
+Section,Current Status
+Current Month,September 2025
+Base Rent,1600.00
+Active Override,0.0
+Effective Rent,0.00
+Delinquency,0.00
+Overpayment Credit,500.00
+Service Credit,0.00
+Net Amount Due,500.00
+
+Section,Payment History
+Date Received,Amount,Type,For Month,Status,Details
+2025-09-04,500.00,Cash,2025-09,Overpayment,Overpaid by $500.00
+
+Section,Monthly Balance Summary (Filtered)
+Month,Status,Rent Due,Total Paid,Balance
+2025-09,Overpayment,0.00,500.00,-500.00
+2025-10,Not Paid,1600.00,0.00,1600.00
+2025-11,Not Paid,1600.00,0.00,1600.00
+2025-12,Not Paid,1600.00,0.00,1600.00
+2026-01,Not Paid,1600.00,0.00,1600.00
+2026-02,Not Paid,1600.00,0.00,1600.00
+2026-03,Not Paid,1600.00,0.00,1600.00

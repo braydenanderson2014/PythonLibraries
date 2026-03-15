@@ -1,0 +1,71 @@
+# Polling Timing Fix - Quick Reference
+
+## The Issue
+
+Client was sending "client_ready" signal **before DOM elements existed**, causing the game page to fail rendering tribute data on first load.
+
+### Error Timeline
+```
+game_starting event
+    ↓
+initializeGamePage() starts immediately
+    ↓
+emit('client_ready') BEFORE DOM ready ❌
+    ↓
+Server starts sending game data
+    ↓
+Client tries to render to #scoreboards-container
+    ↓
+❌ Element doesn't exist yet!
+```
+
+## The Fix
+
+Added **DOM readiness check** before signaling server:
+
+```javascript
+// OLD (line 80-82):
+startLobbyTimeoutCheck();
+console.log('Game page loaded, signaling client ready');
+socket.emit('client_ready');  // ❌ TOO EARLY!
+
+// NEW (line 80-103):
+startLobbyTimeoutCheck();
+
+if (document.readyState === 'loading') {
+    // Wait for DOM to fully load
+    document.addEventListener('DOMContentLoaded', () => {
+        socket.emit('client_ready');  // ✅ NOW safe to send
+    }, { once: true });
+} else {
+    // DOM already loaded (cached/reload)
+    setTimeout(() => {
+        socket.emit('client_ready');
+    }, 100);
+}
+```
+
+## What Changed
+
+**File:** `static/js/game.js` (lines 80-103)
+
+**Why:** Ensures HTML elements exist before server sends data
+
+**Result:**
+- ✅ No more "element not found" errors
+- ✅ Tribute data renders on first update
+- ✅ Both fresh load & cached page scenarios work
+- ✅ All rendering already has defensive null checks
+
+## Test It
+
+1. Start server: `python lobby_server.py`
+2. Open console (F12) and look for: **"✅ DOM fully loaded, signaling client ready"**
+3. Join game and start
+4. Check that tributes appear in sidebars without errors
+
+## Files Modified
+
+- `static/js/game.js` (lines 80-103)
+
+See `docs/POLLING_TIMING_FIX.md` for detailed technical analysis.

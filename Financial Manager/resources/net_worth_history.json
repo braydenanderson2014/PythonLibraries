@@ -1,0 +1,28 @@
+[
+  {
+    "date": "2025-12-29",
+    "assets": 10916.55,
+    "liabilities": 44756.03,
+    "net_worth": -33839.479999999996,
+    "account_breakdown": {
+      "Tab Bank - High Yield Savings - ...3899": -3151.0299999999997,
+      "Granite Checking Account - Main Checking - ...7755": 10916.55,
+      "Loan Services - Mountain America Car Loan Account - ...5555": -21000.0,
+      "Mountain America Car Loan (Loan)": -20605.0
+    },
+    "user_id": "admin"
+  },
+  {
+    "date": "2025-12-31",
+    "assets": 10916.55,
+    "liabilities": 44756.03,
+    "net_worth": -33839.479999999996,
+    "account_breakdown": {
+      "Tab Bank - High Yield Savings - ...3899": -3151.0299999999997,
+      "Granite Checking Account - Main Checking - ...7755": 10916.55,
+      "Loan Services - Mountain America Car Loan Account - ...5555": -21000.0,
+      "Mountain America Car Loan (Loan)": -20605.0
+    },
+    "user_id": "admin"
+  }
+]

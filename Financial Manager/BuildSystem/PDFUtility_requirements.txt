@@ -1,0 +1,159 @@
+# PDFUtility - Comprehensive Requirements File
+# Generated on August 2, 2025
+# This file contains all packages required for the PDFUtility application
+
+# ============================================================================
+# CORE GUI FRAMEWORK
+# ============================================================================
+PyQt6>=6.4.0
+# PyQt6 is the main GUI framework used throughout the application
+
+# ============================================================================
+# PDF PROCESSING LIBRARIES
+# ============================================================================
+PyMuPDF>=1.21.1
+# PyMuPDF (imported as 'fitz') - Primary PDF processing library
+# Used for PDF rendering, text extraction, merging, and manipulation
+# More memory efficient than PyPDF2 for large operations
+
+PyPDF2>=3.0.0
+# PyPDF2 - Secondary PDF library for specific operations
+# Used in pdf_splitter_controller.py and image_control.py
+# Provides additional PDF manipulation capabilities
+
+# ============================================================================
+# IMAGE PROCESSING
+# ============================================================================
+Pillow>=10.0.0
+# PIL/Pillow - Image processing library
+# Used for ICO conversion, image format handling, and PDF-to-image conversion
+# Required in image_control.py and build scripts
+
+# ============================================================================
+# TEXT-TO-SPEECH (OPTIONAL)
+# ============================================================================
+pyttsx3>=2.90
+# Text-to-speech engine for accessibility features
+# Used in settings_dialog.py and text_to_speech.py
+# Optional dependency - application will work without it
+
+# ============================================================================
+# NUMERICAL PROCESSING
+# ============================================================================
+numpy>=1.24.0
+# NumPy - Used in text_to_speech.py for audio processing
+# Required for TTS functionality
+
+# ============================================================================
+# AUDIO PROCESSING & TEXT-TO-SPEECH EXTENSIONS
+# ============================================================================
+sounddevice>=0.4.5
+# Audio input/output for TTS playback
+# Used in text_to_speech.py for audio stream handling
+
+soundfile>=0.12.1
+# Audio file I/O support
+# Used in text_to_speech.py for audio file reading/writing
+
+pydub>=0.25.1
+# Audio manipulation library
+# Used in text_to_speech.py for audio format conversion and processing
+
+gTTS>=2.3.0
+# Google Text-to-Speech API
+# Used in text_to_speech.py for cloud-based TTS generation
+
+# ============================================================================
+# FILE SYSTEM MONITORING
+# ============================================================================
+watchdog>=3.0.0
+# File system monitoring for auto-import functionality
+# Used in directory_monitor.py for watching file changes
+
+# ============================================================================
+# SYSTEM MONITORING
+# ============================================================================
+psutil>=5.9.0
+# System and process utilities
+# Used in merge_controller.py for memory management
+# Helps optimize performance for large PDF operations
+
+# ============================================================================
+# BUILD TOOLS (DEVELOPMENT/DEPLOYMENT)
+# ============================================================================
+pyinstaller>=6.0.0
+# For building standalone executables
+# Used by build_script.py and build_gui_enhanced.py
+
+# ============================================================================
+# PYTHON VERSION REQUIREMENT
+# ============================================================================
+# Python>=3.8 required
+# The application uses modern Python features and PyQt6 compatibility
+
+# ============================================================================
+# OPTIONAL DEPENDENCIES FOR ENHANCED FUNCTIONALITY
+# ============================================================================
+# The following packages may provide additional functionality but are not
+# strictly required for basic operation:
+
+# For Windows-specific registry operations (search_widget.py):
+# winreg - Built into Python on Windows
+
+# For cross-platform system operations:
+# ctypes - Built into Python (used in main_application.py and search_widget.py)
+
+# For advanced CSV export functionality (search_widget.py):
+# csv - Built into Python
+
+# For type hints and better code documentation:
+# typing - Built into Python 3.5+ (used in multiple modules)
+
+# For advanced image processing (if needed):
+# opencv-python>=4.5.0
+
+# For advanced PDF operations (if needed):
+# reportlab>=3.6.0
+
+# ============================================================================
+# INSTALLATION NOTES
+# ============================================================================
+# 
+# To install all requirements:
+# pip install -r PDFUtility_requirements.txt
+#
+# For minimal installation (core functionality only - no TTS):
+# pip install PyQt6 PyMuPDF PyPDF2 Pillow watchdog psutil
+#
+# For full installation including TTS functionality:
+# pip install PyQt6 PyMuPDF PyPDF2 Pillow watchdog psutil pyttsx3 numpy sounddevice soundfile pydub gTTS
+#
+# For development with build capabilities:
+# pip install PyQt6 PyMuPDF PyPDF2 Pillow pyinstaller
+#
+# Note: Audio packages (sounddevice, soundfile, pydub, gTTS) are for TTS features
+# The application will gracefully handle their absence but TTS won't work
+#
+# Windows users may need additional system dependencies for:
+# - TTS functionality (Windows Speech Platform, Visual C++ Redistributable)
+# - Advanced audio processing (Windows Audio drivers)
+# - Build tools (Microsoft Visual C++ Build Tools for some packages)
+#
+# Linux users may need additional packages:
+# sudo apt-get install espeak espeak-data libespeak-dev ffmpeg
+# sudo apt-get install portaudio19-dev python3-pyaudio (for sounddevice)
+# sudo apt-get install libsndfile1 (for soundfile)
+#
+# macOS users may need:
+# brew install espeak
+# brew install portaudio (for sounddevice)
+# brew install libsndfile (for soundfile)
+#
+# Audio Dependencies Troubleshooting:
+# - If sounddevice fails: Install system audio development libraries
+# - If pydub fails: Install ffmpeg system-wide
+# - If gTTS fails: Check internet connection (requires online access)
+
+
+PyJWT
+PyYAML

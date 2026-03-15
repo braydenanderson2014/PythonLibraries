@@ -1,0 +1,149 @@
+{
+  "T001": [
+    {
+      "dispute_id": "DSP225744BB",
+      "tenant_id": "T001",
+      "type": "payment_not_recorded",
+      "description": "Test dispute",
+      "amount": 100.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T18:25:35.583478",
+      "updated_at": "2026-01-19T18:25:35.583488",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    },
+    {
+      "dispute_id": "DSP934A3D74",
+      "tenant_id": "T001",
+      "type": "payment_not_recorded",
+      "description": "Test dispute - Payment from 1/15",
+      "amount": 1800.0,
+      "reference_month": "2026-01",
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T18:33:44.139405",
+      "updated_at": "2026-01-19T18:33:44.139420",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    },
+    {
+      "dispute_id": "DSP6DBA2102",
+      "tenant_id": "T001",
+      "type": "incorrect_balance",
+      "description": "Balance calculation error for delinquent month",
+      "amount": 2500.0,
+      "reference_month": "2025-12",
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T18:33:44.310451",
+      "updated_at": "2026-01-19T18:33:44.310465",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    }
+  ],
+  "TST_DISP_001": [
+    {
+      "dispute_id": "DSPDBAF5D5E",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment was made but not recorded",
+      "amount": 1500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:03:34.845403",
+      "updated_at": "2026-01-19T20:03:34.845415",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": "Receipt attached"
+    },
+    {
+      "dispute_id": "DSP608478CA",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment was made but not recorded",
+      "amount": 1500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:04:32.886781",
+      "updated_at": "2026-01-19T20:04:32.886786",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": "Receipt attached"
+    },
+    {
+      "dispute_id": "DSPA95B4B25",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment was made but not recorded",
+      "amount": 1500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:05:20.129667",
+      "updated_at": "2026-01-19T20:05:20.129676",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": "Receipt attached"
+    },
+    {
+      "dispute_id": "DSP160F1C5F",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment was made but not recorded",
+      "amount": 1500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:05:28.599444",
+      "updated_at": "2026-01-19T20:05:28.599453",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": "Receipt attached"
+    },
+    {
+      "dispute_id": "DSP81063AC1",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment was made but not recorded",
+      "amount": 1500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:05:47.249157",
+      "updated_at": "2026-01-19T20:05:47.249161",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": "Receipt attached"
+    },
+    {
+      "dispute_id": "DSP00B45EF5",
+      "tenant_id": "TST_DISP_001",
+      "type": "incorrect_balance",
+      "description": "Balance calculation error",
+      "amount": 500.0,
+      "reference_month": null,
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:05:47.603278",
+      "updated_at": "2026-01-19T20:05:47.603295",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    },
+    {
+      "dispute_id": "DSP1DF22B42",
+      "tenant_id": "TST_DISP_001",
+      "type": "payment_not_recorded",
+      "description": "Payment made for Feb but marked delinquent",
+      "amount": 1500.0,
+      "reference_month": [
+        2025,
+        2
+      ],
+      "created_by": "tenant_web_ui",
+      "created_at": "2026-01-19T20:05:47.774796",
+      "updated_at": "2026-01-19T20:05:47.774814",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    }
+  ]
+}

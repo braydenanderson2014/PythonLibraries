@@ -1,0 +1,15 @@
+{
+  "output_directory": "D:\\PDFUtility\\output",
+  "cleanup_run_count": "10",
+  "theme": "dark",
+  "text_to_speech_rate": "150",
+  "text_to_speech_volume": "1.0",
+  "remove_white_threshold": "230",
+  "remove_white_page_coverage_threshold": "98",
+  "select_on_add": "True",
+  "use_custom_colors": "False",
+  "custom_bg_color": "#2D2D30",
+  "custom_text_color": "#FFFFFF",
+  "custom_accent_color": "#007ACC",
+  "current_cleanup_run_count": "2"
+}

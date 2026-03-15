@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Hunger Games Spectator{% endblock %}
+
+{% block content %}
+<script>
+    window.spectatorLobbyId = "{{ lobby_id if lobby_id else '' }}";
+</script>
+<div id="lobby-selection-section" class="section">
+    <h2>Select Lobby to Spectate</h2>
+    <div class="lobby-list" id="lobby-list">
+        <div class="loading">Loading lobbies...</div>
+    </div>
+    <div class="lobby-actions">
+        <button id="refresh-lobbies-btn" class="btn btn-secondary" onclick="listLobbies()">Refresh List</button>
+    </div>
+</div>
+
+<div id="login-section" class="section" style="display: none;">
+    <h2>Spectate the Hunger Games</h2>
+    <div class="lobby-info">
+        <h3 id="selected-lobby-name">Selected Lobby</h3>
+        <p id="selected-lobby-details">Details will appear here</p>
+    </div>
+    <div class="form-group">
+        <label for="player-name">Your Spectator Name:</label>
+        <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" />
+    </div>
+    <div class="form-actions">
+        <button id="join-spectator-btn" class="btn btn-primary" onclick="joinAsSpectator()">Join as Spectator</button>
+        <button class="btn btn-secondary" onclick="backToLobbySelection()">Back to Lobby Selection</button>
+    </div>
+</div>
+
+<div id="spectator-section" class="section" style="display: none;">
+    <div class="game-header">
+        <h2>Hunger Games - Round <span id="spectator-round">1</span></h2>
+        <div id="spectator-stats" class="spectator-stats">
+            <!-- Game stats for spectators -->
+        </div>
+    </div>
+
+    <div class="game-content">
+        <div id="spectator-tributes-sidebar" class="tribute-scoreboards-sidebar">
+            <h3>All Tributes Status</h3>
+            <div id="spectator-tributes-container" class="tributes-grid">
+                <!-- All tributes (alive and dead) will be displayed here for spectators -->
+            </div>
+        </div>
+        <div id="spectator-log" class="game-log">
+            <!-- Spectator view of game events -->
+        </div>
+    </div>
+
+    <div class="spectator-controls">
+        <button id="leave-spectator-btn" class="btn btn-secondary" onclick="leaveSpectator()">Leave Spectator</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/spectator_lobby.js?v=1.1"></script>
+<script src="/static/js/spectator.js?v=1.1"></script>
+{% endblock %}

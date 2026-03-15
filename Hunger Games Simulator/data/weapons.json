@@ -1,0 +1,462 @@
+{
+    "Sword": {
+        "damage": 25,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.15,
+        "instant_kill_chance": 0.03,
+        "head_shot_chance": 0.05,
+        "limb_damage_chance": 0.08,
+        "miss_chance": 0.1,
+        "durability": 100,
+        "degradation_rate": 0.02,
+        "weight": 3,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes",
+            "bloodbath"
+        ],
+        "use_types": [
+            "swing",
+            "slash",
+            "thrust",
+            "stab"
+        ]
+    },
+    "Axe": {
+        "damage": 30,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.2,
+        "instant_kill_chance": 0.04,
+        "head_shot_chance": 0.06,
+        "limb_damage_chance": 0.1,
+        "miss_chance": 0.12,
+        "durability": 120,
+        "degradation_rate": 0.03,
+        "weight": 4,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes",
+            "forest"
+        ],
+        "use_types": [
+            "swing",
+            "chop",
+            "hack",
+            "cleave"
+        ]
+    },
+    "Bow": {
+        "damage": 20,
+        "hands": 2,
+        "type": "ranged",
+        "range": 10,
+        "bleeding_chance": 0.25,
+        "instant_kill_chance": 0.05,
+        "head_shot_chance": 0.08,
+        "limb_damage_chance": 0.05,
+        "close_range_multiplier": 2.0,
+        "miss_chance": 0.15,
+        "durability": 80,
+        "degradation_rate": 0.01,
+        "ammunition_type": "arrows",
+        "max_ammunition": 20,
+        "weight": 2,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes",
+            "forest"
+        ],
+        "use_types": [
+            "shoot",
+            "loose",
+            "fire"
+        ]
+    },
+    "Hammer": {
+        "damage": 35,
+        "hands": 2,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.1,
+        "instant_kill_chance": 0.06,
+        "head_shot_chance": 0.04,
+        "limb_damage_chance": 0.12,
+        "miss_chance": 0.08,
+        "durability": 150,
+        "degradation_rate": 0.02,
+        "weight": 5,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes",
+            "buildings"
+        ],
+        "use_types": [
+            "swing",
+            "smash",
+            "crush",
+            "pound"
+        ]
+    },
+    "Knife": {
+        "damage": 15,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.25,
+        "instant_kill_chance": 0.02,
+        "head_shot_chance": 0.03,
+        "limb_damage_chance": 0.06,
+        "miss_chance": 0.08,
+        "durability": 60,
+        "degradation_rate": 0.04,
+        "weight": 1,
+        "rarity": "uncommon",
+        "locations": [
+            "fallen_tributes",
+            "buildings",
+            "forest"
+        ],
+        "use_types": [
+            "stab",
+            "slash",
+            "cut",
+            "slice"
+        ]
+    },
+    "Spear": {
+        "damage": 20,
+        "hands": 1,
+        "type": "melee",
+        "range": 2,
+        "bleeding_chance": 0.18,
+        "instant_kill_chance": 0.04,
+        "head_shot_chance": 0.05,
+        "limb_damage_chance": 0.07,
+        "miss_chance": 0.1,
+        "durability": 90,
+        "degradation_rate": 0.02,
+        "weight": 3,
+        "rarity": "uncommon",
+        "locations": [
+            "fallen_tributes",
+            "forest",
+            "water"
+        ],
+        "use_types": [
+            "thrust",
+            "stab",
+            "jab",
+            "poke"
+        ]
+    },
+    "Club": {
+        "damage": 20,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.08,
+        "instant_kill_chance": 0.02,
+        "head_shot_chance": 0.02,
+        "limb_damage_chance": 0.04,
+        "miss_chance": 0.06,
+        "durability": 70,
+        "degradation_rate": 0.01,
+        "weight": 2,
+        "rarity": "common",
+        "locations": [
+            "forest",
+            "buildings",
+            "anywhere"
+        ],
+        "use_types": [
+            "swing",
+            "smash",
+            "club",
+            "bash"
+        ]
+    },
+    "Fists": {
+        "damage": 10,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.05,
+        "instant_kill_chance": 0.01,
+        "head_shot_chance": 0.01,
+        "limb_damage_chance": 0.02,
+        "miss_chance": 0.05,
+        "durability": 999,
+        "degradation_rate": 0.0,
+        "weight": 0,
+        "rarity": "common",
+        "locations": [
+            "anywhere"
+        ],
+        "use_types": [
+            "punch",
+            "strike",
+            "hit",
+            "swing"
+        ]
+    },
+    "Staff": {
+        "damage": 15,
+        "hands": 2,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.12,
+        "instant_kill_chance": 0.03,
+        "head_shot_chance": 0.03,
+        "limb_damage_chance": 0.05,
+        "miss_chance": 0.07,
+        "durability": 100,
+        "degradation_rate": 0.01,
+        "weight": 2,
+        "rarity": "common",
+        "locations": [
+            "forest",
+            "buildings",
+            "anywhere"
+        ],
+        "use_types": [
+            "swing",
+            "strike",
+            "poke",
+            "thrust"
+        ]
+    },
+    "Machete": {
+        "damage": 22,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.22,
+        "instant_kill_chance": 0.04,
+        "head_shot_chance": 0.04,
+        "limb_damage_chance": 0.08,
+        "miss_chance": 0.09,
+        "durability": 80,
+        "degradation_rate": 0.03,
+        "weight": 2,
+        "rarity": "uncommon",
+        "locations": [
+            "fallen_tributes",
+            "forest"
+        ],
+        "use_types": [
+            "slash",
+            "chop",
+            "hack",
+            "cut"
+        ]
+    },
+    "Gun": {
+        "damage": 50,
+        "hands": 2,
+        "type": "ranged",
+        "range": 20,
+        "bleeding_chance": 0.15,
+        "instant_kill_chance": 0.2,
+        "head_shot_chance": 0.15,
+        "limb_damage_chance": 0.08,
+        "close_range_multiplier": 3.0,
+        "miss_chance": 0.2,
+        "durability": 200,
+        "degradation_rate": 0.005,
+        "ammunition_type": "bullets",
+        "max_ammunition": 12,
+        "weight": 4,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes"
+        ],
+        "use_types": [
+            "shoot",
+            "blast",
+            "fire"
+        ]
+    },
+    "Crossbow": {
+        "damage": 40,
+        "hands": 2,
+        "type": "ranged",
+        "range": 15,
+        "bleeding_chance": 0.2,
+        "instant_kill_chance": 0.1,
+        "head_shot_chance": 0.12,
+        "limb_damage_chance": 0.06,
+        "close_range_multiplier": 2.5,
+        "miss_chance": 0.18,
+        "durability": 120,
+        "degradation_rate": 0.01,
+        "ammunition_type": "bolts",
+        "max_ammunition": 8,
+        "weight": 5,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes"
+        ],
+        "use_types": [
+            "shoot",
+            "loose",
+            "fire"
+        ]
+    },
+    "Dagger": {
+        "damage": 18,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.2,
+        "instant_kill_chance": 0.03,
+        "head_shot_chance": 0.04,
+        "limb_damage_chance": 0.07,
+        "miss_chance": 0.07,
+        "durability": 70,
+        "degradation_rate": 0.03,
+        "weight": 1,
+        "rarity": "uncommon",
+        "locations": [
+            "fallen_tributes",
+            "buildings"
+        ],
+        "use_types": [
+            "stab",
+            "slash",
+            "thrust",
+            "cut"
+        ]
+    },
+    "Whip": {
+        "damage": 12,
+        "hands": 1,
+        "type": "melee",
+        "range": 2,
+        "bleeding_chance": 0.15,
+        "instant_kill_chance": 0.02,
+        "head_shot_chance": 0.02,
+        "limb_damage_chance": 0.03,
+        "miss_chance": 0.12,
+        "durability": 50,
+        "degradation_rate": 0.05,
+        "weight": 1,
+        "rarity": "uncommon",
+        "locations": [
+            "fallen_tributes",
+            "buildings"
+        ],
+        "use_types": [
+            "crack",
+            "lash",
+            "whip",
+            "strike"
+        ]
+    },
+    "Throwing Star": {
+        "damage": 15,
+        "hands": 1,
+        "type": "ranged",
+        "range": 5,
+        "bleeding_chance": 0.3,
+        "instant_kill_chance": 0.08,
+        "head_shot_chance": 0.1,
+        "limb_damage_chance": 0.04,
+        "close_range_multiplier": 1.8,
+        "miss_chance": 0.25,
+        "durability": 40,
+        "degradation_rate": 0.1,
+        "ammunition_type": "throwing_stars",
+        "max_ammunition": 5,
+        "weight": 0,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes"
+        ],
+        "use_types": [
+            "throw",
+            "hurl",
+            "fling"
+        ]
+    },
+    "Stick": {
+        "damage": 8,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.06,
+        "instant_kill_chance": 0.01,
+        "head_shot_chance": 0.01,
+        "limb_damage_chance": 0.02,
+        "miss_chance": 0.04,
+        "durability": 30,
+        "degradation_rate": 0.08,
+        "weight": 1,
+        "rarity": "common",
+        "locations": [
+            "forest",
+            "anywhere"
+        ],
+        "use_types": [
+            "swing",
+            "poke",
+            "jab",
+            "strike"
+        ]
+    },
+    "Mace": {
+        "damage": 20,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.12,
+        "instant_kill_chance": 0.08,
+        "head_shot_chance": 0.05,
+        "limb_damage_chance": 0.09,
+        "miss_chance": 0.06,
+        "durability": 100,
+        "degradation_rate": 0.02,
+        "weight": 3,
+        "rarity": "rare",
+        "locations": [
+            "fallen_tributes",
+            "buildings"
+        ],
+        "use_types": [
+            "swing",
+            "smash",
+            "club",
+            "bash"
+        ]
+    },
+    "Rock": {
+        "damage": 5,
+        "hands": 1,
+        "type": "melee",
+        "range": 1,
+        "bleeding_chance": 0.02,
+        "instant_kill_chance": 0.01,
+        "head_shot_chance": 0.005,
+        "limb_damage_chance": 0.01,
+        "miss_chance": 0.03,
+        "durability": 999,
+        "degradation_rate": 0.0,
+        "weight": 1,
+        "rarity": "common",
+        "locations": [
+            "anywhere"
+        ],
+        "use_types": [
+            "throw",
+            "drop",
+            "smash",
+            "bash",
+            "hurl",
+            "pound",
+            "fling"
+        ]
+    }
+}

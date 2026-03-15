@@ -1,0 +1,10 @@
+{
+    "name": "PyQt HTML Renderer",
+    "description": "Renders HTML files using PyQt6 WebEngine for full browser capabilities",
+    "version": "1.0.0",
+    "author": "PDFSplitter Team",
+    "extensions": [".html", ".htm"],
+    "dual_tabs": true,
+    "priority": 1,
+    "requires": ["PyQt6", "PyQt6-WebEngine", "beautifulsoup4"]
+}

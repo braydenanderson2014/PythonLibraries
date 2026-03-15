@@ -1,0 +1,22 @@
+{
+    "name": "settings",
+    "title": "Settings Tutorial",
+    "description": "Learn how to configure application settings and preferences",
+    "priority": 15,
+    "steps": [
+        {
+            "target": "menuBar",
+            "text": "<b>⚙️ Settings Access</b><br><br>Access application settings through the Tools menu in the menu bar. Here you can configure preferences, default directories, and advanced options.",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "top"
+        },
+        {
+            "target": "statusBar",
+            "text": "<b>� Settings Tips</b><br><br>Settings changes are automatically saved. Check the status bar for confirmation when settings are updated. Some settings may require an application restart.",
+            "button_text": "Got it!",
+            "highlight_style": "glow",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

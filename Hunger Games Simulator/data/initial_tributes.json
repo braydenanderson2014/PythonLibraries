@@ -1,0 +1,362 @@
+[
+  {
+    "name": "Juliana",
+    "skills": {
+      "intelligence": 5,
+      "hunting": 6,
+      "strength": 9,
+      "social": 4,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 5,
+    "preferred_weapon": "Crossbow"
+  },
+  {
+    "name": "Blake",
+    "skills": {
+      "intelligence": 5,
+      "hunting": 4,
+      "strength": 6,
+      "social": 8,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 1,
+    "preferred_weapon": "Bow"
+  },
+  {
+    "name": "William",
+    "skills": {
+      "intelligence": 2,
+      "hunting": 2,
+      "strength": 10,
+      "social": 7,
+      "stealth": 4
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 11,
+    "preferred_weapon": "Rock"
+  },
+  {
+    "name": "Kari",
+    "skills": {
+      "intelligence": 2,
+      "hunting": 6,
+      "strength": 8,
+      "social": 6,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 8,
+    "preferred_weapon": "Staff"
+  },
+  {
+    "name": "Blaine",
+    "skills": {
+      "intelligence": 5,
+      "hunting": 7,
+      "strength": 9,
+      "social": 2,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 2,
+    "preferred_weapon": "Crossbow"
+  },
+  {
+    "name": "Gerardo",
+    "skills": {
+      "intelligence": 6,
+      "hunting": 7,
+      "strength": 10,
+      "social": 2,
+      "stealth": 4
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 7,
+    "preferred_weapon": "Crossbow"
+  },
+  {
+    "name": "Ebony",
+    "skills": {
+      "intelligence": 6,
+      "hunting": 10,
+      "strength": 7,
+      "social": 2,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 7,
+    "preferred_weapon": "Crossbow"
+  },
+  {
+    "name": "John",
+    "skills": {
+      "intelligence": 7,
+      "hunting": 4,
+      "strength": 6,
+      "social": 8,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 5,
+    "preferred_weapon": "Bow"
+  },
+  {
+    "name": "Bryson",
+    "skills": {
+      "intelligence": 9,
+      "hunting": 3,
+      "strength": 2,
+      "social": 6,
+      "stealth": 7
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 1,
+    "preferred_weapon": "Mace"
+  },
+  {
+    "name": "Cortney",
+    "skills": {
+      "intelligence": 2,
+      "hunting": 4,
+      "strength": 9,
+      "social": 7,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 7,
+    "preferred_weapon": "Axe"
+  },
+  {
+    "name": "Wesley",
+    "skills": {
+      "intelligence": 2,
+      "hunting": 8,
+      "strength": 8,
+      "social": 4,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 12,
+    "preferred_weapon": "Gun"
+  },
+  {
+    "name": "Mr. Incredible (Dean)",
+    "skills": {
+      "intelligence": 5,
+      "hunting": 3,
+      "strength": 9,
+      "social": 2,
+      "stealth": 7
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 4,
+    "preferred_weapon": "Club"
+  },
+  {
+    "name": "Brayden",
+    "skills": {
+      "intelligence": 9,
+      "hunting": 7,
+      "strength": 4,
+      "social": 4,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 12,
+    "preferred_weapon": "Bow"
+  },
+  {
+    "name": "Tevin",
+    "skills": {
+      "intelligence": 4,
+      "hunting": 10,
+      "strength": 8,
+      "social": 2,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 8,
+    "preferred_weapon": "Gun"
+  },
+  {
+    "name": "Dechion",
+    "skills": {
+      "intelligence": 7,
+      "hunting": 4,
+      "strength": 8,
+      "social": 4,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 3,
+    "preferred_weapon": "Axe"
+  },
+  {
+    "name": "Jade",
+    "skills": {
+      "intelligence": 6,
+      "hunting": 3,
+      "strength": 7,
+      "social": 3,
+      "stealth": 8
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 4,
+    "preferred_weapon": "Stick"
+  },
+  {
+    "name": "Gabrielle",
+    "skills": {
+      "intelligence": 6,
+      "hunting": 2,
+      "strength": 5,
+      "social": 4,
+      "stealth": 9
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 9,
+    "preferred_weapon": "Axe"
+  },
+  {
+    "name": "Alec",
+    "skills": {
+      "intelligence": 4,
+      "hunting": 3,
+      "strength": 6,
+      "social": 7,
+      "stealth": 9
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 3,
+    "preferred_weapon": "Sword"
+  },
+  {
+    "name": "Jared",
+    "skills": {
+      "intelligence": 7,
+      "hunting": 8,
+      "strength": 5,
+      "social": 2,
+      "stealth": 3
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 10,
+    "preferred_weapon": "Sword"
+  },
+  {
+    "name": "Braden",
+    "skills": {
+      "intelligence": 6,
+      "hunting": 6,
+      "strength": 4,
+      "social": 9,
+      "stealth": 4
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 11,
+    "preferred_weapon": "Axe"
+  },
+  {
+    "name": "Beecher",
+    "skills": {
+      "intelligence": 2,
+      "hunting": 3,
+      "strength": 5,
+      "social": 6,
+      "stealth": 8
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 6,
+    "preferred_weapon": "Machete"
+  },
+  {
+    "name": "Jacob",
+    "skills": {
+      "intelligence": 10,
+      "hunting": 8,
+      "strength": 4,
+      "social": 2,
+      "stealth": 4
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 6,
+    "preferred_weapon": "Whip"
+  },
+  {
+    "name": "Bob",
+    "skills": {
+      "intelligence": 10,
+      "hunting": 8,
+      "strength": 6,
+      "social": 2,
+      "stealth": 2
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 9,
+    "preferred_weapon": "Staff"
+  },
+  {
+    "name": "Sally",
+    "skills": {
+      "intelligence": 3,
+      "hunting": 3,
+      "strength": 4,
+      "social": 6,
+      "stealth": 8
+    },
+    "weapons": [
+      "Fists"
+    ],
+    "district": 10,
+    "preferred_weapon": "Mace"
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "uac_enabled": true,
+  "uac_duration_seconds": 300,
+  "email_notifications": {
+    "enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "email": "",
+    "password": "",
+    "use_app_password": true
+  },
+  "sms_notifications": {
+    "enabled": false,
+    "provider": "twilio",
+    "account_sid": "",
+    "auth_token": "",
+    "from_number": ""
+  },
+  "notification_preferences": {
+    "default_methods": [
+      "system"
+    ],
+    "rent_due_days_before": 3,
+    "lease_expiry_days_before": 30,
+    "overdue_check_days": 1
+  }
+}

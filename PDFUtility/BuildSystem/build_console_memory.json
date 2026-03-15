@@ -1,0 +1,18 @@
+{
+  "scan_results": {
+    "collected_icons": [
+      "D:\\PDFUtility\\packaging_collection\\icons\\PDF_Utility.ico"
+    ],
+    "collected_splashes": [
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png",
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png",
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png"
+    ],
+    "collection_dir": [
+      "D:\\PDFUtility\\packaging_collection"
+    ]
+  },
+  "build_config": {},
+  "last_scan_type": "collection_dir",
+  "last_updated": "2025-08-19T21:38:35.688265"
+}

@@ -1,0 +1,69 @@
+{
+    "combat_events": [
+        {
+            "id": "ambush_attack",
+            "name": "Ambush Attack",
+            "description": "One tribute ambushes another from hiding",
+            "intensity": "high",
+            "effects": ["combat_engagement", "potential_death", "weapon_acquisition"],
+            "duration_minutes": 5,
+            "narrative_templates": [
+                "{attacker} launches a surprise attack on {defender} from their hiding spot, catching them completely off guard.",
+                "From the shadows, {attacker} strikes at {defender}, their weapon flashing in the dim light of the arena.",
+                "{defender} is suddenly confronted by {attacker} who has been stalking them for hours, waiting for the perfect moment."
+            ]
+        },
+        {
+            "id": "weapon_clash",
+            "name": "Weapon Clash",
+            "description": "Two tributes engage in direct combat with weapons",
+            "intensity": "high",
+            "effects": ["combat_engagement", "weapon_damage", "potential_death"],
+            "duration_minutes": 10,
+            "narrative_templates": [
+                "{attacker} and {defender} clash violently, their weapons sparking as they fight for survival.",
+                "The arena echoes with the sounds of battle as {attacker} and {defender} engage in a brutal confrontation.",
+                "Weapons collide in a shower of sparks as {attacker} and {defender} battle fiercely for dominance."
+            ]
+        },
+        {
+            "id": "alliance_betrayal",
+            "name": "Alliance Betrayal",
+            "description": "A tribute betrays their alliance partner",
+            "intensity": "medium",
+            "effects": ["alliance_break", "combat_engagement", "trust_erosion"],
+            "duration_minutes": 8,
+            "narrative_templates": [
+                "What seemed like a strong alliance crumbles as {attacker} turns on {defender}, their former partner.",
+                "{defender} trusted {attacker} too much, and now pays the price for that mistake.",
+                "The alliance between {attacker} and {defender} ends in bloodshed as betrayal rears its ugly head."
+            ]
+        },
+        {
+            "id": "cornucopia_battle",
+            "name": "Cornucopia Battle",
+            "description": "Tributes fight over supplies at the Cornucopia",
+            "intensity": "high",
+            "effects": ["mass_combat", "supply_acquisition", "multiple_casualties"],
+            "duration_minutes": 15,
+            "narrative_templates": [
+                "The Cornucopia becomes a battleground as multiple tributes fight desperately for the precious supplies within.",
+                "Chaos erupts at the Cornucopia as tributes clash in a frenzy of violence over life-saving resources.",
+                "The golden horn runs red with blood as tributes battle ferociously for control of the arena's supplies."
+            ]
+        },
+        {
+            "id": "tracker_jacker_attack",
+            "name": "Tracker Jacker Attack",
+            "description": "Genetically engineered wasps attack tributes",
+            "intensity": "high",
+            "effects": ["hallucinations", "severe_injury", "forced_retreat"],
+            "duration_minutes": 12,
+            "narrative_templates": [
+                "A swarm of deadly tracker jackers descends upon {defender}, their genetically engineered venom causing terrifying hallucinations.",
+                "{defender} is stung multiple times by the vicious wasps, their mind reeling from the engineered toxins.",
+                "The air fills with the angry buzzing of tracker jackers as they attack {defender}, driving them into panicked retreat."
+            ]
+        }
+    ]
+}

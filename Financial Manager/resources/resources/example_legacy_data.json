@@ -1,0 +1,155 @@
+{
+  "Eduardo/Maria": {
+    "rent": 1350.0,
+    "payments": [
+      {
+        "date": "07/26/2025",
+        "amount": 800.0,
+        "month": "August",
+        "method": "Zelle"
+      },
+      {
+        "date": "08/24/2025",
+        "amount": 600.0,
+        "month": "August",
+        "method": "Cash"
+      },
+      {
+        "date": "06/30/2025",
+        "amount": 266.0,
+        "month": "July",
+        "method": "Cash"
+      },
+      {
+        "date": "06/29/2025",
+        "amount": 484.0,
+        "month": "July",
+        "method": "Zelle"
+      },
+      {
+        "date": "01/01/2025",
+        "amount": 1350.0,
+        "month": "January",
+        "method": "Cash"
+      },
+      {
+        "date": "02/01/2025",
+        "amount": 950.0,
+        "month": "February",
+        "method": "Zelle"
+      },
+      {
+        "date": "03/02/2025",
+        "amount": 1350.0,
+        "month": "March",
+        "method": "Zelle"
+      },
+      {
+        "date": "04/01/2025",
+        "amount": 1350.0,
+        "month": "April",
+        "method": "Zelle"
+      },
+      {
+        "date": "02/01/2025",
+        "amount": 400.0,
+        "month": "February",
+        "method": "Cash"
+      },
+      {
+        "date": "05/02/2025",
+        "amount": 600.0,
+        "month": "May",
+        "method": "Zelle"
+      },
+      {
+        "date": "05/19/2025",
+        "amount": 600.0,
+        "month": "May",
+        "method": "Zelle"
+      },
+      {
+        "date": "05/30/2025",
+        "amount": 750.0,
+        "month": "June",
+        "method": "Zelle"
+      },
+      {
+        "date": "05/16/2025",
+        "amount": 750.0,
+        "month": "June",
+        "method": "Zelle"
+      },
+      {
+        "date": "07/12/2025",
+        "amount": 550.0,
+        "month": "July",
+        "method": "Zelle"
+      },
+      {
+        "date": "07/31/2025",
+        "amount": 50.0,
+        "month": "July",
+        "method": "Cash"
+      },
+      {
+        "date": "10/12/2025",
+        "amount": 550.0,
+        "month": "September",
+        "method": "Zelle"
+      },
+      {
+        "date": "10/12/2025",
+        "amount": -550.0,
+        "month": "September",
+        "method": "Zelle"
+      },
+      {
+        "date": "10/10/2025",
+        "amount": 700.0,
+        "month": "October",
+        "method": "Zelle"
+      },
+      {
+        "date": "10/29/2025",
+        "amount": 500.0,
+        "month": "October",
+        "method": "Cash"
+      },
+      {
+        "date": "11/03/2025",
+        "amount": 500.0,
+        "month": "November",
+        "method": "Cash"
+      },
+      {
+        "date": "10/31/2025",
+        "amount": 150.0,
+        "month": "October",
+        "method": "Cash"
+      }
+    ],
+    "na_months": {
+      "2025": []
+    }
+  },
+  "Kamden": {
+    "rent": 1600.0,
+    "payments": [],
+    "na_months": {
+      "2025": [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November"
+      ]
+    }
+  }
+}

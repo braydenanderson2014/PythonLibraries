@@ -1,0 +1,96 @@
+{
+  "Eduardo": {
+    "rent": 1350.0,
+    "payments": [
+      {
+        "date": "07/26/2025",
+        "amount": 1350.0,
+        "month": "July",
+        "method": "Card"
+      },
+      {
+        "date": "07/29/2025",
+        "amount": 200.0,
+        "month": "June",
+        "method": "Cash"
+      },
+      {
+        "date": "07/29/2025",
+        "amount": 200.0,
+        "month": "August",
+        "method": "Cash"
+      },
+      {
+        "date": "07/29/2025",
+        "amount": 2200.0,
+        "month": "August",
+        "method": "Cash"
+      }
+    ],
+    "na_months": {
+      "2025": [
+        "May",
+        "April",
+        "March",
+        "February",
+        "January"
+      ]
+    }
+  },
+  "Maria": {
+    "rent": 1000.0,
+    "payments": [
+      {
+        "date": "07/26/2025",
+        "amount": 1350.0,
+        "month": "July",
+        "method": "Card"
+      },
+      {
+        "date": "07/26/2025",
+        "amount": 500.0,
+        "month": "August",
+        "method": "Cash"
+      }
+    ]
+  },
+  "Demo Tenant": {
+    "rent": 1200.0,
+    "due_day": 1,
+    "late_fee": {
+      "enabled": false,
+      "amount": 75.0,
+      "grace_period_days": 3
+    },
+    "disabled_notification_dates": [],
+    "payments": [
+      {
+        "date": "07/05/2025",
+        "amount": 1200.0,
+        "month": "July",
+        "method": "Card"
+      },
+      {
+        "date": "07/30/2025",
+        "amount": 0.0,
+        "month": "August",
+        "method": "Cash"
+      }
+    ],
+    "monthly_rents": {
+      "2025": {
+        "August": 2600.0
+      }
+    },
+    "na_months": {
+      "2025": [
+        "June",
+        "May",
+        "April",
+        "March",
+        "February",
+        "January"
+      ]
+    }
+  }
+}

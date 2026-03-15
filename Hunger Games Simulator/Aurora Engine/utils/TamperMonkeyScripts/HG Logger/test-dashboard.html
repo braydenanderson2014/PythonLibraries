@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HG Logger Dashboard Test</title>
+    <style>
+        body {
+            font-family: 'Consolas', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+        }
+        .test-section {
+            background: #2a2a2a;
+            border: 2px solid #00ff00;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+        .status-ok { color: #00ff00; }
+        .status-error { color: #ff0000; }
+        .status-warning { color: #ffaa00; }
+        h2 { color: #00aaff; }
+        code {
+            background: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 HG Logger Dashboard - Diagnostic Test</h1>
+    
+    <div class="test-section">
+        <h2>1. TamperMonkey Detection</h2>
+        <p id="tm-status">Checking...</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. File URL Check</h2>
+        <p>Current URL: <code id="current-url"></code></p>
+        <p id="url-match-status"></p>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Storage Access Test</h2>
+        <p id="storage-status">Testing...</p>
+        <button onclick="testStorage()">Test Storage Write/Read</button>
+        <pre id="storage-result"></pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. Dashboard Script Detection</h2>
+        <p id="dashboard-script-status">Waiting 2 seconds...</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>5. Logs from Collector</h2>
+        <p id="logs-status">Checking...</p>
+        <button onclick="checkLogs()">Check Stored Logs</button>
+        <pre id="logs-result"></pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>6. Instructions</h2>
+        <ol>
+            <li>Make sure TamperMonkey is installed and enabled</li>
+            <li>Install both scripts with matching namespace: <code>otter.hg-logger-system</code></li>
+            <li>In TamperMonkey Settings → Security: Set "Allow scripts to access local files" to <code>All</code></li>
+            <li>Visit a website (like google.com) to trigger the Collector</li>
+            <li>Return here and click "Check Stored Logs"</li>
+        </ol>
+    </div>
+    
+    <script>
+        // Display current URL
+        document.getElementById('current-url').textContent = window.location.href;
+        
+        // Check if URL matches expected pattern
+        const urlPattern = /hg-logger-dashboard\.html/i;
+        const matchStatus = document.getElementById('url-match-status');
+        if (urlPattern.test(window.location.href)) {
+            matchStatus.innerHTML = '<span class="status-ok">✓ Filename matches expected pattern</span>';
+        } else {
+            matchStatus.innerHTML = '<span class="status-error">✗ Warning: Filename does not contain "hg-logger-dashboard.html"</span>';
+        }
+        
+        // Check TamperMonkey
+        const tmStatus = document.getElementById('tm-status');
+        let hasGM = false;
+        
+        // Try direct GM access first
+        if (typeof GM_getValue === 'function') {
+            hasGM = true;
+            tmStatus.innerHTML = '<span class="status-ok">✓ TamperMonkey detected! GM functions available (direct).</span>';
+        } 
+        // Try unsafeWindow access (for file:// URLs)
+        else if (window.unsafeWindow && typeof window.unsafeWindow.GM_getValue === 'function') {
+            hasGM = true;
+            // Expose to global
+            window.GM_getValue = window.unsafeWindow.GM_getValue;
+            window.GM_setValue = window.unsafeWindow.GM_setValue;
+            tmStatus.innerHTML = '<span class="status-ok">✓ TamperMonkey detected! GM functions available (via unsafeWindow).</span>';
+        }
+        else {
+            tmStatus.innerHTML = '<span class="status-error">✗ TamperMonkey NOT detected. GM functions unavailable.</span>';
+        }
+        
+        // Storage test
+        function testStorage() {
+            const result = document.getElementById('storage-result');
+            if (typeof GM_setValue !== 'function') {
+                result.textContent = 'ERROR: GM_setValue not available. TamperMonkey not working.';
+                result.className = 'status-error';
+                return;
+            }
+            
+            try {
+                // Write test
+                GM_setValue('hg_test_key', { test: true, timestamp: new Date().toISOString() });
+                result.textContent = 'WRITE: Success\n';
+                
+                // Read test
+                const readBack = GM_getValue('hg_test_key', null);
+                result.textContent += 'READ: ' + JSON.stringify(readBack, null, 2);
+                result.className = 'status-ok';
+            } catch (e) {
+                result.textContent = 'ERROR: ' + e.message;
+                result.className = 'status-error';
+            }
+        }
+        
+        // Check logs
+        function checkLogs() {
+            const result = document.getElementById('logs-result');
+            const status = document.getElementById('logs-status');
+            
+            if (typeof GM_getValue !== 'function') {
+                result.textContent = 'ERROR: GM_getValue not available.';
+                status.innerHTML = '<span class="status-error">✗ Cannot access storage</span>';
+                return;
+            }
+            
+            try {
+                const allLogs = GM_getValue('hg_logger_all_logs', {});
+                const stats = GM_getValue('hg_logger_stats', {});
+                
+                const logCount = Object.values(allLogs).reduce((sum, logs) => sum + logs.length, 0);
+                
+                if (logCount > 0) {
+                    status.innerHTML = `<span class="status-ok">✓ Found ${logCount} logs from ${Object.keys(allLogs).length} sites!</span>`;
+                    result.textContent = JSON.stringify({ stats, sampleLogs: allLogs }, null, 2);
+                    result.className = 'status-ok';
+                } else {
+                    status.innerHTML = '<span class="status-warning">⚠ No logs found. Visit a website to trigger the Collector.</span>';
+                    result.textContent = 'Storage keys exist but no logs captured yet.';
+                    result.className = 'status-warning';
+                }
+            } catch (e) {
+                result.textContent = 'ERROR: ' + e.message;
+                status.innerHTML = '<span class="status-error">✗ Error reading logs</span>';
+                result.className = 'status-error';
+            }
+        }
+        
+        // Check if dashboard script executed
+        setTimeout(() => {
+            const dashStatus = document.getElementById('dashboard-script-status');
+            const bodyHasHGDashboard = document.getElementById('hg-dashboard');
+            
+            if (bodyHasHGDashboard) {
+                dashStatus.innerHTML = '<span class="status-ok">✓ Dashboard script executed! Main UI should be visible above.</span>';
+            } else {
+                dashStatus.innerHTML = '<span class="status-error">✗ Dashboard script did NOT execute. Check TamperMonkey:</span>' +
+                    '<ul>' +
+                    '<li>Is "HG Logger - Dashboard" script enabled?</li>' +
+                    '<li>Does the @match pattern match this URL?</li>' +
+                    '<li>Check TamperMonkey console for errors</li>' +
+                    '</ul>';
+            }
+        }, 2000);
+        
+        // Auto-check on load
+        setTimeout(() => {
+            if (typeof GM_getValue === 'function') {
+                checkLogs();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

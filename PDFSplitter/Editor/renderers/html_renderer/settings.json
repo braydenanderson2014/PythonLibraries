@@ -1,0 +1,38 @@
+{
+  "name": "HTMLRenderer",
+  "description": "Renders HTML files with support for editing, live preview, and syntax highlighting.",
+  "priority": 10,
+  "supported_extensions": [".html", ".htm", ".xhtml"],
+  "locked": false,
+  "editable": true,
+  "preview_mode": true,
+  "dual_tabs": true,
+  "dependencies": [
+    "beautifulsoup4",
+    "html5lib",
+    "lxml"
+  ],
+  "required_files": [
+    "renderer.py",
+    "html_editing.py"
+  ],
+  "show_line_numbers": true,
+  "syntax_highlighting": true,
+  "zoom_default": 1.0,
+  "allow_text_selection": true,
+  "theme": "light",
+  "auto_format": true,
+  "live_preview": true,
+  "validate_html": true,
+  "function_hooks": {
+    "on_open": "load_html_document",
+    "on_save": "save_html_document",
+    "on_toggle_edit": "toggle_edit_mode",
+    "on_format": "format_html_code",
+    "on_insert_text": "insert_text_at_cursor",
+    "on_delete_text": "delete_selected_text",
+    "on_validate": "validate_html_syntax",
+    "on_preview": "update_live_preview",
+    "on_open_dual": "load_html_dual_tabs"
+  }
+}

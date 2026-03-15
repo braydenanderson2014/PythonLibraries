@@ -1,0 +1,10 @@
+{
+    "name": "CEF HTML Renderer",
+    "description": "Renders HTML files using Chromium Embedded Framework (CEF) for full browser capabilities",
+    "version": "1.0.0",
+    "author": "PDFSplitter Team",
+    "extensions": [".html", ".htm"],
+    "dual_tabs": true,
+    "priority": 2,
+    "requires": ["cefpython3"]
+}

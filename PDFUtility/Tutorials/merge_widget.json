@@ -1,0 +1,36 @@
+{
+    "name": "merge_widget",
+    "title": "PDF Merger Tutorial",
+    "description": "Learn how to merge multiple PDF files into one document",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "merge_add_pdf_btn",
+            "text": "<b>📁 Add PDF Files to Merge</b><br><br>Add multiple PDF files that you want to merge into a single document. The order matters for the final result!",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "merge_pdf_list",
+            "text": "<b>📋 File Order Management</b><br><br>Drag and drop files to reorder them. The order here determines the order in the final merged PDF.<br><br><em>💡 Top file = First pages in merged PDF</em>",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "output_name_edit",
+            "text": "<b>📝 Output Filename</b><br><br>Enter the name for your merged PDF file. Don't include the .pdf extension - it's added automatically.",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "merge_btn",
+            "text": "<b>🔗 Merge PDFs</b><br><br>All set? Click here to merge your PDFs into a single document! The process preserves quality and bookmarks.",
+            "button_text": "Perfect!",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

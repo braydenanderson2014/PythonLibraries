@@ -1,0 +1,1 @@
+from .tribute import Tribute

@@ -1,0 +1,40 @@
+Section,Tenant Information
+Name,Eduardo
+Tenant ID,2MKMIBrAPs
+Rental Period,"Jul 01, 2025 - Dec 13, 2026"
+Rent Amount,1350.00
+Deposit,0.00
+Due Day,1
+Contact,Not provided
+Notes,
+
+Section,Current Status
+Current Month,December 2025
+Base Rent,1350.00
+Active Override,None
+Effective Rent,1350.00
+Delinquency,5400.00
+Overpayment Credit,1050.00
+Service Credit,0.00
+Net Amount Due,4350.00
+
+Section,Payment History (Chronological)
+Date Received,Amount,Type,For Month,Status,Details,Notes
+2025-07-26,1350.00,Card,2025-07,Paid in Full,Fully paid,
+2025-07-29,200.00,Cash,2025-06,Partial Payment,$1150.00 remaining,
+2025-07-29,200.00,Cash,2025-08,Overpayment,Overpaid by $1050.00,
+2025-07-29,2200.00,Cash,2025-08,Overpayment,Overpaid by $1050.00,
+
+Section,Monthly Balance Summary (Filtered)
+Month,Status,Rent Due,Total Paid,Balance
+2025-06,Partial Payment,1350.00,200.00,1150.00
+2025-09,Not Paid,1350.00,0.00,1350.00
+2025-10,Not Paid,1350.00,0.00,1350.00
+2025-11,Not Paid,1350.00,0.00,1350.00
+2025-12,Not Paid,1350.00,0.00,1350.00
+2026-01,Not Paid,1350.00,0.00,1350.00
+2026-02,Not Paid,1350.00,0.00,1350.00
+2026-03,Not Paid,1350.00,0.00,1350.00
+2026-04,Not Paid,1350.00,0.00,1350.00
+2026-05,Not Paid,1350.00,0.00,1350.00
+2026-06,Not Paid,1350.00,0.00,1350.00

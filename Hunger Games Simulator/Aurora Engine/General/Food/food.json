@@ -1,0 +1,85 @@
+{
+  "food_items": [
+    {
+      "name": "Bread",
+      "hunger_restore": 15,
+      "shelf_life": 3,
+      "rarity": "common"
+    },
+    {
+      "name": "Dried Fruit",
+      "hunger_restore": 10,
+      "shelf_life": 7,
+      "rarity": "common"
+    },
+    {
+      "name": "Crackers",
+      "hunger_restore": 8,
+      "shelf_life": 5,
+      "rarity": "common"
+    },
+    {
+      "name": "Cheese",
+      "hunger_restore": 12,
+      "shelf_life": 2,
+      "rarity": "uncommon"
+    },
+    {
+      "name": "Canned Soup",
+      "hunger_restore": 20,
+      "shelf_life": 10,
+      "rarity": "uncommon"
+    },
+    {
+      "name": "Energy Bar",
+      "hunger_restore": 18,
+      "shelf_life": 14,
+      "rarity": "uncommon"
+    },
+    {
+      "name": "Fresh Fish",
+      "hunger_restore": 25,
+      "shelf_life": 1,
+      "rarity": "rare"
+    },
+    {
+      "name": "Honey",
+      "hunger_restore": 15,
+      "shelf_life": 365,
+      "rarity": "rare",
+      "effects": {
+        "health_boost": 5
+      }
+    },
+    {
+      "name": "Capitol Feast Pack",
+      "hunger_restore": 50,
+      "shelf_life": 7,
+      "rarity": "legendary",
+      "effects": {
+        "health_boost": 10,
+        "sanity_boost": 10
+      }
+    }
+  ],
+  "water_items": [
+    {
+      "name": "Water Bottle",
+      "thirst_restore": 20,
+      "rarity": "common"
+    },
+    {
+      "name": "Canteen",
+      "thirst_restore": 30,
+      "rarity": "uncommon"
+    },
+    {
+      "name": "Purification Tablets",
+      "thirst_restore": 0,
+      "rarity": "rare",
+      "effects": {
+        "allows_safe_drinking": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+# Consolidated Financial Manager dependencies
+# Top-level runtime and build dependencies used across the project
+PyInstaller
+PyQt6
+
+# Web API / server
+Flask>=3.0.0
+Flask-Cors>=4.0.0
+Werkzeug>=3.0.1
+
+# HTTP client
+requests>=2.31.0
+
+# Environment
+python-dotenv
+
+# Data / analysis / plotting
+pandas
+numpy
+matplotlib
+
+# Finance / data providers
+yfinance
+
+# Machine learning
+scikit-learn
+
+# Model explainability (optional in some modules)
+shap
+
+# Excel file handling
+openpyxl
+
+# Images
+Pillow

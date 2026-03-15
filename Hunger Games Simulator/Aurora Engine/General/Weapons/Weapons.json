@@ -1,0 +1,106 @@
+{
+  "weapons": [
+    {
+      "name": "Sword",
+      "damage": 45,
+      "range": "melee",
+      "rarity": "uncommon",
+      "effects": {
+        "bleeding": 0.3
+      }
+    },
+    {
+      "name": "Bow",
+      "damage": 40,
+      "range": "ranged",
+      "ammunition_type": "arrow",
+      "rarity": "rare",
+      "effects": {}
+    },
+    {
+      "name": "Knife",
+      "damage": 25,
+      "range": "melee",
+      "rarity": "common",
+      "effects": {
+        "bleeding": 0.2
+      }
+    },
+    {
+      "name": "Spear",
+      "damage": 35,
+      "range": "melee",
+      "rarity": "uncommon",
+      "effects": {}
+    },
+    {
+      "name": "Axe",
+      "damage": 50,
+      "range": "melee",
+      "rarity": "rare",
+      "effects": {
+        "bleeding": 0.4
+      }
+    },
+    {
+      "name": "Crossbow",
+      "damage": 45,
+      "range": "ranged",
+      "ammunition_type": "bolt",
+      "rarity": "rare",
+      "effects": {}
+    },
+    {
+      "name": "Mace",
+      "damage": 40,
+      "range": "melee",
+      "rarity": "uncommon",
+      "effects": {
+        "stun": 0.1
+      }
+    },
+    {
+      "name": "Dagger",
+      "damage": 20,
+      "range": "melee",
+      "rarity": "common",
+      "effects": {
+        "bleeding": 0.15
+      }
+    },
+    {
+      "name": "Trident",
+      "damage": 60,
+      "range": "melee",
+      "rarity": "legendary",
+      "effects": {
+        "bleeding": 0.5
+      }
+    },
+    {
+      "name": "Blowgun",
+      "damage": 15,
+      "range": "ranged",
+      "ammunition_type": "dart",
+      "rarity": "uncommon",
+      "effects": {
+        "poison": 0.6
+      }
+    },
+    {
+      "name": "Club",
+      "damage": 15,
+      "range": "melee",
+      "rarity": "common",
+      "effects": {}
+    },
+    {
+      "name": "Slingshot",
+      "damage": 10,
+      "range": "ranged",
+      "ammunition_type": "stone",
+      "rarity": "common",
+      "effects": {}
+    }
+  ]
+}

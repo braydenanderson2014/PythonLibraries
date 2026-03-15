@@ -1,0 +1,40 @@
+{
+  "config_version": "2.0",
+  "saved_date": "2025-07-30T23:04:31.619884",
+  "saved_by": "PyInstaller Build Script Enhanced",
+  "program_name": "Rent_Tracker",
+  "build_status": "ALPHA",
+  "main_entry": "Rent_Tracker.py",
+  "additional_files": [],
+  "build_options": {
+    "onefile": true,
+    "windowed": false,
+    "icon": ".\\Rent_Tracker.ico",
+    "splash": ".\\Splash.png",
+    "clean": true,
+    "debug": true
+  },
+  "changelog_file": "",
+  "known_issues": [],
+  "build_notes": "",
+  "file_paths": {
+    "icon": ".\\Rent_Tracker.ico",
+    "splash": ".\\Splash.png",
+    "main_entry": "Rent_Tracker.py",
+    "changelog": "",
+    "additional_files": []
+  },
+  "last_build_date": "07302025",
+  "last_filename": "Rent_Tracker-07302025-ALPHA",
+  "settings_summary": {
+    "has_icon": true,
+    "has_splash": true,
+    "has_changelog": false,
+    "onefile": true,
+    "windowed": false,
+    "clean": true,
+    "debug": true,
+    "additional_files_count": 0,
+    "known_issues_count": 0
+  }
+}

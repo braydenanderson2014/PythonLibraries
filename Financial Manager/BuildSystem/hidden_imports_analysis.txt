@@ -1,0 +1,78 @@
+Hidden Import Analysis for: ./build_cli.py
+Generated: 2025-08-21 19:47:33
+============================================================
+
+Total hidden imports detected: 25
+
+STANDARD_LIBRARY (23 modules):
+  - argparse
+  - ast
+  - ctypes
+  - datetime
+  - glob
+  - importlib
+  - json
+  - os
+  - pathlib
+  - pkgutil
+  - platform
+  - re
+  - shutil
+  - subprocess
+  - sys
+  - tempfile
+  - time
+  - traceback
+  - urllib.error
+  - urllib.parse
+  - urllib.request
+  - xml.dom
+  - xml.etree.ElementTree
+
+THIRD_PARTY (2 modules):
+  - PIL
+  - importlib.util
+
+PyInstaller Command Fragment:
+------------------------------
+--hidden-import=PIL \
+--hidden-import=argparse \
+--hidden-import=ast \
+--hidden-import=ctypes \
+--hidden-import=datetime \
+--hidden-import=glob \
+--hidden-import=importlib \
+--hidden-import=importlib.util \
+--hidden-import=json \
+--hidden-import=os \
+--hidden-import=pathlib \
+--hidden-import=pkgutil \
+--hidden-import=platform \
+--hidden-import=re \
+--hidden-import=shutil \
+--hidden-import=subprocess \
+--hidden-import=sys \
+--hidden-import=tempfile \
+--hidden-import=time \
+--hidden-import=traceback \
+--hidden-import=urllib.error \
+--hidden-import=urllib.parse \
+--hidden-import=urllib.request \
+--hidden-import=xml.dom \
+--hidden-import=xml.etree.ElementTree \
+
+
+Full command example:
+pyinstaller --onefile \
+  --hidden-import=PIL \
+  --hidden-import=argparse \
+  --hidden-import=ast \
+  --hidden-import=ctypes \
+  --hidden-import=datetime \
+  --hidden-import=glob \
+  --hidden-import=importlib \
+  --hidden-import=importlib.util \
+  --hidden-import=json \
+  --hidden-import=os \
+  # ... and 15 more hidden imports
+  ./build_cli.py

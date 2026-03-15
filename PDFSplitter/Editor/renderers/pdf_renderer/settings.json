@@ -1,0 +1,43 @@
+{
+  "name": "PDFRenderer",
+  "description": "Renders PDF files with comprehensive editing, annotation, and text selection capabilities.",
+  "supported_extensions": [".pdf"],
+  "locked": false,
+  "editable": true,
+  "preview_mode": false,
+  "dependencies": [
+    "fitz",
+    "PyMuPDF"
+  ],
+  "required_files": [
+    "renderer.py",
+    "pdf_editing.py"
+  ],
+  "show_annotations": true,
+  "show_thumbnails": true,
+  "zoom_default": 1.0,
+  "allow_text_selection": true, 
+  "theme": "light",
+  "tools": [
+    "Text Editor",
+    "Image Manager",
+    "Annotation Tool",
+    "Shape Tool",
+    "Selection Tool",
+    "Highlight Tool"
+  ],
+  "function_hooks": {
+    "on_open": "load_pdf_document",
+    "on_save": "save_pdf_document",
+    "on_toggle_edit": "toggle_edit_mode",
+    "on_annotate": "add_annotation",
+    "on_insert_text": "insert_text_at_cursor",
+    "on_delete_text": "delete_selected_text",
+    "on_format_text": "format_selected_text",
+    "on_add_image": "add_image_at_cursor",
+    "on_remove_image": "remove_selected_image",
+    "on_add_shape": "add_shape_at_cursor",
+    "on_move_element": "move_selected_element",
+    "on_resize_element": "resize_selected_element"
+  }
+}

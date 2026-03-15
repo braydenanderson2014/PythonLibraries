@@ -1,0 +1,139 @@
+{
+  "engine": {
+    "name": "Aurora Engine",
+    "version": "1.0.0",
+    "description": "Core engine for the Hunger Games Simulator.",
+    "author": "Your Name",
+    "license": "MIT"
+  },
+  "settings": {
+    "enable_logging": true,
+    "log_level": "DEBUG",
+    "max_participants": 24,
+    "min_participants": 2,
+    "phase_duration_minutes": 60,
+    "phases_per_day": 3
+  },
+  "stat_decay_rates": {
+    "hunger": 5,
+    "thirst": 7,
+    "fatigue": 4,
+    "sanity_floor": 50
+  },
+  "timers": {
+    "event_cooldowns": {
+      "Arena Events": 45,
+      "Combat Events": 60,
+      "Idle Events": 30,
+      "Custom Events": 40,
+      "PvP Events": 90
+    },
+    "phase_transitions": {
+      "cornucopia": 30,
+      "day_phase": 60,
+      "night_phase": 180
+    },
+    "minimum_time_between_events": 15,
+    "maximum_events_per_phase": 8
+  },
+  "event_probabilities": {
+    "Arena Events": 1.0,
+    "Combat Events": 1.0,
+    "Idle Events": 1.0,
+    "Custom Events": 0.8,
+    "PvP Events": 0.6,
+    "flavor_events": 0.3
+  },
+  "pvp_settings": {
+    "allow_player_initiated_pvp": false,
+    "allow_random_encounters": true,
+    "random_encounter_chance": 0.3,
+    "min_tributes_per_encounter": 2,
+    "max_tributes_per_encounter": 5,
+    "pvp_cooldown_seconds": 300,
+    "max_concurrent_pvp_battles": 3,
+    "pvp_damage_multiplier": 1.2
+  },
+  "phases": {
+    "total_days": 7,
+    "phases_per_day": 3,
+    "cornucopia_phase": {
+      "name": "Cornucopia",
+      "is_special_phase": true,
+      "allowed_events": [
+        "Arena Events",
+        "Combat Events"
+      ],
+      "duration_minutes": 30
+    },
+    "day_phases": {
+      "1": {
+        "name": "Morning Phase",
+        "allowed_events": [
+          "Idle Events",
+          "Arena Events"
+        ],
+        "intensity": "low"
+      },
+      "2": {
+        "name": "Afternoon Phase",
+        "allowed_events": [
+          "Arena Events",
+          "Combat Events",
+          "Idle Events"
+        ],
+        "intensity": "medium"
+      },
+      "3": {
+        "name": "Evening Phase",
+        "allowed_events": [
+          "Combat Events",
+          "Arena Events"
+        ],
+        "intensity": "high"
+      }
+    }
+  },
+  "cornucopia_settings": {
+    "countdown_seconds": 60,
+    "game_early_step_off_chance": 0.01,
+    "cornucopia_participation_rate": 0.65,
+    "cornucopia_death_chance": 0.25,
+    "supply_acquisition_chance": 0.85,
+    "flee_safety_bonus": 0.9,
+    "decision_factors": {
+      "career_tribute_cornucopia_preference": 0.8,
+      "low_combat_skills_flee_preference": 0.7,
+      "high_survival_skills_cornucopia_preference": 0.6,
+      "district_12_flee_preference": 0.8
+    },
+    "available_supplies": {
+      "weapons": [
+        "sword",
+        "spear",
+        "bow",
+        "knife",
+        "axe",
+        "mace"
+      ],
+      "survival_gear": [
+        "backpack",
+        "sleeping_bag",
+        "water_purification",
+        "rope",
+        "matches"
+      ],
+      "medical": [
+        "bandages",
+        "medicine",
+        "antiseptic"
+      ],
+      "food": [
+        "dried_meat",
+        "crackers",
+        "fruit",
+        "water_bottle"
+      ]
+    }
+  }
+}

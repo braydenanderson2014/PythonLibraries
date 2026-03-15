@@ -1,0 +1,123 @@
+# Issue Auto-Manager Configuration
+# Configure the behavior of automated issue processing
+
+# Duplicate Detection Settings
+DUPLICATE_THRESHOLD: 0.85          # Minimum similarity to flag as duplicate (0.0-1.0)
+SIMILARITY_THRESHOLD: 0.75         # Minimum similarity for potential duplicates
+MIN_CONFIDENCE: 0.6                # Minimum confidence for auto-labeling
+
+# Timing Configuration  
+STALE_DAYS: 30                     # Days before marking issue as stale
+AUTO_CLOSE_DAYS: 7                 # Days after stale warning before auto-close
+BATCH_SIZE: 50                     # Number of issues to process in batch
+
+# Feature Toggles
+AUTO_RESPONSE_ENABLED: true        # Enable automatic welcome responses
+DUPLICATE_CHECK_ENABLED: true     # Enable duplicate detection
+STALE_PROCESSING_ENABLED: true    # Enable stale issue processing
+ML_ANALYSIS_ENABLED: true         # Enable machine learning analysis
+
+# Labels Configuration
+LABELS:
+  BUG: "bug"
+  FEATURE: "enhancement"  
+  QUESTION: "question"
+  DOCUMENTATION: "documentation"
+  DUPLICATE: "duplicate"
+  POTENTIAL_DUPLICATE: "potential-duplicate"
+  INVALID: "invalid"
+  AUTO_PROCESSED: "auto-processed"
+  AUTO_RESPONSE: "auto-response"
+  NEEDS_INFO: "needs-more-info"
+  STALE: "stale"
+  KEEP_OPEN: "keep-open"
+  AUTO_CLOSED: "auto-closed"
+  HIGH_PRIORITY: "priority-high"
+  MEDIUM_PRIORITY: "priority-medium"
+  LOW_PRIORITY: "priority-low"
+
+# Priority Scoring Weights
+PRIORITY_WEIGHTS:
+  CRASH_KEYWORDS: 2                # Weight for crash-related issues
+  ERROR_KEYWORDS: 1                # Weight for error-related issues
+  NEGATIVE_SENTIMENT: 1            # Weight for negative sentiment
+  HIGH_COMPLETENESS: 1             # Weight for well-documented issues
+  LOW_COMPLETENESS: -1             # Penalty for incomplete issues
+
+# Response Templates
+RESPONSES:
+  BUG_KEYWORDS:
+    - "error"
+    - "exception" 
+    - "crash"
+    - "fail"
+    - "bug"
+    - "broken"
+    - "not work"
+    - "doesn't work"
+    - "traceback"
+    - "stack trace"
+    - "unexpected"
+    - "incorrect"
+    - "wrong"
+    - "invalid"
+
+  FEATURE_KEYWORDS:
+    - "feature"
+    - "request"
+    - "suggestion"
+    - "enhance"
+    - "improve"
+    - "add"
+    - "support"
+    - "would like"
+    - "could you"
+    - "please add"
+    - "new"
+    - "implement"
+    - "create"
+
+  QUESTION_KEYWORDS:
+    - "how"
+    - "what"
+    - "why"
+    - "where"
+    - "when"
+    - "question"
+    - "help"
+    - "assistance"
+    - "guidance"
+
+# Exclusions
+SKIP_PROCESSING:
+  - "keep-open"                    # Issues with this label are never processed
+  - "locked"                       # Locked issues are skipped
+  
+SKIP_AUTO_CLOSE:
+  - "pinned"                       # Pinned issues are never auto-closed
+  - "milestone"                    # Issues with milestones are never auto-closed
+
+# Quality Thresholds  
+QUALITY_CHECKS:
+  MIN_TITLE_LENGTH: 10             # Minimum characters in title
+  MIN_BODY_LENGTH: 20              # Minimum characters in body
+  MAX_TITLE_LENGTH: 120            # Maximum characters in title (warning)
+
+# ML Model Configuration
+ML_CONFIG:
+  VECTORIZER:
+    MAX_FEATURES: 1000             # Maximum features for TF-IDF
+    NGRAM_RANGE: [1, 2]            # N-gram range for tokenization
+    
+  SIMILARITY:
+    ALGORITHM: "cosine"            # Similarity algorithm
+    THRESHOLD: 0.75                # Similarity threshold
+    
+# Notification Settings
+NOTIFICATIONS:
+  MAINTAINERS:                     # Notify maintainers for high-priority issues
+    ENABLED: true
+    PRIORITY_THRESHOLD: 4          # Minimum priority for notification
+    
+  MENTIONS:                        # Auto-mention relevant people
+    ENABLED: false                 # Disabled by default for privacy

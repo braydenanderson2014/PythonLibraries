@@ -1,0 +1,180 @@
+name: Advanced Issue Auto-Manager
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    # Run every 6 hours to process stale issues
+    - cron: '0 */6 * * *'
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  auto-manage-issues:
+    runs-on: ubuntu-latest
+    name: Advanced Issue Processing
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        echo "=== Installing Python dependencies ==="
+        # Use python3 on Linux, py on Windows (GitHub Actions uses Ubuntu)
+        if command -v python3 &> /dev/null; then
+          PYTHON_CMD="python3"
+        elif command -v py &> /dev/null; then
+          PYTHON_CMD="py"
+        else
+          PYTHON_CMD="python"
+        fi
+        echo "Using Python command: $PYTHON_CMD"
+        $PYTHON_CMD -m pip install --upgrade pip
+        echo "Installing core dependencies..."
+        $PYTHON_CMD -m pip install requests scikit-learn nltk numpy
+        echo "=== Verifying installations ==="
+        $PYTHON_CMD -c "import requests; print('requests:', requests.__version__)"
+        $PYTHON_CMD -c "import sklearn; print('scikit-learn:', sklearn.__version__)"
+        $PYTHON_CMD -c "import nltk; print('nltk:', nltk.__version__)"
+        $PYTHON_CMD -c "import numpy; print('numpy:', numpy.__version__)"
+        echo "=== Dependencies installed successfully ==="
+        
+    - name: Download NLTK Data
+      run: |
+        # Use python3 on Linux, py on Windows (GitHub Actions uses Ubuntu)
+        if command -v python3 &> /dev/null; then
+          PYTHON_CMD="python3"
+        elif command -v py &> /dev/null; then
+          PYTHON_CMD="py"
+        else
+          PYTHON_CMD="python"
+        fi
+        echo "Using Python command: $PYTHON_CMD for NLTK data download"
+        echo "Downloading specific NLTK datasets..."
+        # Download specific packages that we know we need
+        $PYTHON_CMD -m nltk.downloader punkt punkt_tab stopwords averaged_perceptron_tagger wordnet
+        echo "✓ NLTK specific datasets download completed"
+        
+    - name: Verify NLTK Installation
+      run: |
+        # Use python3 on Linux, py on Windows (GitHub Actions uses Ubuntu)
+        if command -v python3 &> /dev/null; then
+          PYTHON_CMD="python3"
+        elif command -v py &> /dev/null; then
+          PYTHON_CMD="py"
+        else
+          PYTHON_CMD="python"
+        fi
+        echo "Verifying NLTK installation and data..."
+        $PYTHON_CMD -c "
+        import nltk
+        
+        # Check punkt_tab first, then punkt
+        punkt_available = False
+        try:
+            nltk.data.find('tokenizers/punkt_tab')
+            print('✓ punkt_tab available')
+            punkt_available = True
+        except LookupError:
+            try:
+                nltk.data.find('tokenizers/punkt')
+                print('✓ punkt available (fallback)')
+                punkt_available = True
+            except LookupError:
+                print('⚠ No punkt tokenizers found')
+        
+        # Check stopwords
+        stopwords_available = False
+        try:
+            nltk.data.find('corpora/stopwords')
+            print('✓ stopwords available')
+            stopwords_available = True
+        except LookupError:
+            print('⚠ stopwords not found')
+        
+        # Only test tokenization if punkt is available
+        if punkt_available:
+            try:
+                from nltk.tokenize import word_tokenize
+                tokens = word_tokenize('This is a test sentence.')
+                print(f'✓ Tokenization test successful: {tokens[:3]}...')
+            except Exception as e:
+                print(f'⚠ Tokenization test failed: {e}')
+                print('This may still work with fallback methods')
+        else:
+            print('⚠ Skipping tokenization test - no punkt data available')
+            
+        print('NLTK verification completed')
+        "
+        
+    - name: Validate environment
+      run: |
+        echo "=== Validating environment for Advanced Issue Manager ==="
+        python scripts/validate_environment.py
+        
+    - name: Process new issue
+      if: github.event_name == 'issues'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ISSUE_NUMBER: ${{ github.event.issue.number }}
+      run: |
+        # Use python3 on Linux, py on Windows (GitHub Actions uses Ubuntu)
+        if command -v python3 &> /dev/null; then
+          PYTHON_CMD="python3"
+        elif command -v py &> /dev/null; then
+          PYTHON_CMD="py"
+        else
+          PYTHON_CMD="python"
+        fi
+        echo "=== Advanced Issue Manager Debug Info ==="
+        echo "Python command: $PYTHON_CMD"
+        echo "Python version: $($PYTHON_CMD --version)"
+        echo "Current directory: $(pwd)"
+        echo "Repository owner: ${{ github.repository_owner }}"
+        echo "Repository name: ${{ github.event.repository.name }}"
+        echo "Issue number: $ISSUE_NUMBER"
+        echo "Script exists: $(ls -la scripts/advanced_issue_manager.py)"
+        echo "=== Starting advanced processing ==="
+        $PYTHON_CMD scripts/advanced_issue_manager.py \
+          --token "$GITHUB_TOKEN" \
+          --owner "${{ github.repository_owner }}" \
+          --repo "${{ github.event.repository.name }}" \
+          --issue $ISSUE_NUMBER \
+          --verbose 2>&1 || {
+            echo "=== Advanced Issue Manager Failed ==="
+            echo "Exit code: $?"
+            echo "=== Python environment check ==="
+            $PYTHON_CMD -c "import sys; print('Python executable:', sys.executable)"
+            $PYTHON_CMD -c "import sys; print('Python path:', sys.path)"
+            echo "=== Available modules ==="
+            $PYTHON_CMD -c "import pkg_resources; print([pkg.project_name for pkg in pkg_resources.working_set])"
+            echo "=== Script content check ==="
+            head -20 scripts/advanced_issue_manager.py
+            echo "=== End debug info ==="
+            exit 1
+          }
+          
+    - name: Process stale issues
+      if: github.event_name == 'schedule'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Use python3 on Linux, py on Windows (GitHub Actions uses Ubuntu)
+        if command -v python3 &> /dev/null; then
+          PYTHON_CMD="python3"
+        elif command -v py &> /dev/null; then
+          PYTHON_CMD="py"
+        else
+          PYTHON_CMD="python"
+        fi
+        $PYTHON_CMD scripts/stale_issue_processor.py \
+          --token "$GITHUB_TOKEN" \
+          --owner "${{ github.repository_owner }}" \
+          --repo "${{ github.event.repository.name }}"

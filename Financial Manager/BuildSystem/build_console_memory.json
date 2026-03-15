@@ -1,0 +1,168 @@
+{
+  "scan_results": {
+    "collected_icons": [
+      "D:\\PDFUtility\\packaging_collection\\icons\\PDF_Utility.ico"
+    ],
+    "collected_splashes": [
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png",
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png",
+      "D:\\PDFUtility\\packaging_collection\\splashes\\Splash.png"
+    ],
+    "collection_dir": [
+      "D:\\PDFUtility\\packaging_collection"
+    ]
+  },
+  "build_config": {
+    "hidden_imports": [
+      "tkinter.messagebox",
+      "starlette.applications",
+      "PyQt6.QtSvg",
+      "tempfile",
+      "urllib.error",
+      "PyQt6.QtWebEngineWidgets",
+      "traceback",
+      "xml.etree.ElementTree",
+      "importlib.util",
+      "tkinter.ttk",
+      "uvicorn.loops",
+      "pydantic",
+      "xml.dom",
+      "uvicorn.protocols.websockets",
+      "uvicorn.protocols.http",
+      "subprocess",
+      "ctypes",
+      "starlette",
+      "requests",
+      "uvicorn.lifespan.on",
+      "math",
+      "ast",
+      "tkinter.tix",
+      "PIL",
+      "_tkinter",
+      "tkinter.colorchooser",
+      "starlette.middleware",
+      "PIL.Image",
+      "tkinter.filedialog",
+      "glob",
+      "importlib",
+      "jinja2",
+      "argparse",
+      "uvicorn.protocols",
+      "PyQt6.QtNetwork",
+      "PyQt6",
+      "PyQt6.QtPrintSupport",
+      "re",
+      "PyQt6.QtGui",
+      "aiofiles",
+      "starlette.responses",
+      "PyQt6.QtMultimedia",
+      "PIL._tkinter_finder",
+      "uvicorn",
+      "tkinter.scrolledtext",
+      "starlette.routing",
+      "platform",
+      "pydantic.fields",
+      "urllib.request",
+      "email_validator",
+      "tkinter.font",
+      "tkinter",
+      "uvicorn.loops.auto",
+      "multipart",
+      "time",
+      "pydantic.validators",
+      "shutil",
+      "datetime",
+      "PyQt6.QtWidgets",
+      "json",
+      "urllib.parse",
+      "os",
+      "PyQt6.sip",
+      "PyQt6.QtCore",
+      "fastapi",
+      "numpy",
+      "pathlib",
+      "sys",
+      "pkgutil",
+      "uvicorn.lifespan"
+    ],
+    "hooks_directory": "./hooks",
+    "runtime_hooks": [
+      "./hooks/runtime_hook.py"
+    ],
+    "dual_sign": true,
+    "enable_timestamp": false,
+    "profile": "prod",
+    "windowed": true,
+    "bundle_type": "onefile",
+    "optimize_level": 2,
+    "verbose_build": false,
+    "use_upx": true,
+    "strip_symbols": true,
+    "debug_logs": false,
+    "include_assertions": false,
+    "include_tests": false,
+    "collect_data_aggressive": false,
+    "hidden_imports_mode": "conservative",
+    "enable_code_signing": true,
+    "runtime_tmpdir": null,
+    "prefer_binary_wheels": true,
+    "manifest_template": "prod",
+    "template": "tkinter",
+    "template_name": "Tkinter GUI Application",
+    "template_stack": [
+      "python",
+      "tkinter"
+    ],
+    "collect_data": [
+      [
+        "tkinter",
+        "."
+      ]
+    ],
+    "collect_binaries": [],
+    "collect_submodules": [
+      "tkinter"
+    ],
+    "excludes": [
+      "PyQt5",
+      "PyQt6",
+      "PySide2",
+      "PySide6",
+      "matplotlib.backends.qt_compat"
+    ],
+    "upx_exclude": [
+      "_tkinter.pyd",
+      "tk*.dll",
+      "tcl*.dll"
+    ],
+    "binary_excludes": [],
+    "template_datas": [],
+    "template_icon_extensions": [
+      ".ico",
+      ".png",
+      ".gif",
+      ".xbm"
+    ],
+    "template_data_extensions": [
+      ".txt",
+      ".json",
+      ".yaml",
+      ".yml",
+      ".xml",
+      ".ttf",
+      ".otf"
+    ],
+    "additional_pyinstaller_args": [
+      "--windowed",
+      "--console"
+    ],
+    "template_requirements": [
+      "pyinstaller",
+      "pillow"
+    ],
+    "name": "MyTkinterApp",
+    "version": "1.0.0"
+  },
+  "last_scan_type": "collection_dir",
+  "last_updated": "2025-08-28T19:38:03.050893"
+}

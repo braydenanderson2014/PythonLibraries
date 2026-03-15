@@ -1,0 +1,12 @@
+{
+  "api_test": {
+    "account_id": "fAlXr1HoSY",
+    "username": "api_test",
+    "password_hash": "ad9507ff0f807b4593db43891c82aad76732e0a0de291b586e6e7b1cb0abde87",
+    "details": {
+      "role": "api_user",
+      "api_only": true,
+      "description": "API-only account for remote access"
+    }
+  }
+}

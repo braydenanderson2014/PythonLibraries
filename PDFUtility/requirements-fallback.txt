@@ -1,0 +1,22 @@
+# Alternative requirements for x86 builds or systems without PyQt6 support
+# This file can be used when PyQt6 is not available
+
+# Core PDF processing (always available)
+PyPDF2>=3.0
+Pillow>=9.0
+watchdog>=3.0
+PyMuPDF>=1.26.0  # MuPDF has better cross-platform support
+psutil>=5.9.0
+
+# GUI alternatives for x86 or limited systems
+# Option 1: Use tkinter (built into Python, no external deps)
+# tkinter is included with Python, no pip install needed
+
+# Option 2: Use PyQt5 instead of PyQt6 (better x86 support)
+# PyQt5>=5.15.0
+
+# Option 3: Use PySide6 (alternative Qt binding)
+# PySide6>=6.0.0
+
+# Note: You may need to modify your code to handle different GUI frameworks
+# or implement a fallback system that detects available GUI libraries

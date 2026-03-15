@@ -1,0 +1,38 @@
+[
+  {
+    "category": "Groceries",
+    "monthly_limit": 200.0,
+    "identifier": "zaHaA31FrQfU",
+    "user_id": "test_user",
+    "color_good": "#4CAF50",
+    "color_warning": "#FF9800",
+    "color_over": "#F44336",
+    "warning_threshold": 0.8,
+    "notes": "",
+    "active": true
+  },
+  {
+    "category": "Groceries",
+    "monthly_limit": 200.0,
+    "identifier": "zaHaA31FrQfU",
+    "user_id": "test_user",
+    "color_good": "#4CAF50",
+    "color_warning": "#FF9800",
+    "color_over": "#F44336",
+    "warning_threshold": 0.8,
+    "notes": "",
+    "active": true
+  },
+  {
+    "category": "Household",
+    "monthly_limit": 50.0,
+    "identifier": "C8XGgeFvN6Se",
+    "user_id": "test_user",
+    "color_good": "#4CAF50",
+    "color_warning": "#FF9800",
+    "color_over": "#F44336",
+    "warning_threshold": 0.8,
+    "notes": "",
+    "active": true
+  }
+]

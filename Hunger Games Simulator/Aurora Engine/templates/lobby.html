@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block title %}Hunger Games Lobby{% endblock %}
+
+{% block content %}
+<div id="lobby-selection-section" class="section">
+    <h2>Select or Create a Lobby</h2>
+    <div class="lobby-list" id="lobby-list">
+        <div class="loading">Loading lobbies...</div>
+    </div>
+    <div class="lobby-actions">
+        <button id="create-lobby-btn" class="btn btn-success" onclick="showCreateLobbyForm()">Create New Lobby</button>
+        <button id="refresh-lobbies-btn" class="btn btn-secondary" onclick="listLobbies()">Refresh List</button>
+    </div>
+    <div id="create-lobby-form" style="display: none;">
+        <h3>Create New Lobby</h3>
+        <div class="form-group">
+            <label for="admin-name">Your Name:</label>
+            <input type="text" id="admin-name" placeholder="Enter your name" maxlength="20" />
+        </div>
+        <div class="form-group">
+            <label for="lobby-name">Lobby Name:</label>
+            <input type="text" id="lobby-name" placeholder="Enter lobby name" maxlength="50" />
+        </div>
+        <div class="form-group">
+            <label for="max-players">Max Players:</label>
+            <select id="max-players">
+                <option value="2">2</option>
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="12">12</option>
+                <option value="16">16</option>
+                <option value="20">20</option>
+                <option value="24" selected>24</option>
+            </select>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="createLobby()">Create Lobby</button>
+            <button class="btn btn-secondary" onclick="hideCreateLobbyForm()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="login-section" class="section" style="display: none;">
+    <h2>Join the Hunger Games</h2>
+    <div class="lobby-info">
+        <h3 id="selected-lobby-name">Selected Lobby</h3>
+        <p id="selected-lobby-details">Details will appear here</p>
+    </div>
+    <div class="form-group">
+        <label for="player-name">Your Name:</label>
+        <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" />
+    </div>
+    <div class="form-group">
+        <label for="resume-code">Resume Code (optional):</label>
+        <input type="text" id="resume-code" placeholder="Enter code to resume previous session" maxlength="6" style="text-transform: uppercase;" />
+        <small class="form-help">Enter your resume code to reconnect as your previous character</small>
+    </div>
+    <div class="form-actions">
+        <button id="join-btn" class="btn btn-primary" onclick="joinLobby()">Join Lobby</button>
+        <button id="join-spectator-btn" class="btn btn-secondary" onclick="joinAsSpectator()">Join as Spectator</button>
+        <button class="btn btn-secondary" onclick="backToLobbySelection()">Back to Lobby Selection</button>
+    </div>
+</div>
+
+<div id="tribute-section" class="section" style="display: none;">
+    <div class="tribute-header">
+        <h2>Create Your Tribute</h2>
+        <p>Customize your character for the Hunger Games</p>
+    </div>
+
+    <div class="tribute-form">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tribute-name">Tribute Name:</label>
+                <input type="text" id="tribute-name" placeholder="Enter tribute name" maxlength="30" />
+            </div>
+            <div class="form-group">
+                <label for="tribute-district">District:</label>
+                <select id="tribute-district">
+                    {% for i in range(1, 13) %}
+                    <option value="{{ i }}">District {{ i }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tribute-gender">Gender:</label>
+                <select id="tribute-gender">
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>   
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="tribute-age">Age:</label>
+                <input type="number" id="tribute-age" min="12" max="18" value="16" />
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tribute-weapon">Preferred Weapon:</label>
+                <select id="tribute-weapon">
+                    <option value="">Loading weapons...</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="skills-section">
+            <h3>Skill Order</h3>
+            <p class="skills-description">Drag and drop skills to set your priority order (1st = highest priority). Your district provides bonuses and penalties to certain skills.</p>
+            <div class="skill-controls">
+                <button id="randomize-skills-btn" class="btn btn-secondary" onclick="randomizeSkillOrder()">Randomize Priority</button>
+            </div>
+
+            <div class="skill-system">
+                <div class="skill-order-column">
+                    <h4>Skill Priority Order</h4>
+                    <div id="skill-order-list" class="skill-list">
+                        <div class="skill-placeholder">Drag skills here to set your priority order</div>
+                    </div>
+                </div>
+
+                <div id="district-info" class="district-info">
+                    <!-- District information will be shown here -->
+                </div>
+
+                <div class="skill-preview">
+                    <h4>Final Skill Ratings (with District Bonuses)</h4>
+                    <div id="skill-ratings-preview" class="skill-ratings">
+                        <!-- Skill ratings will be shown here -->
+                    </div>
+                    <div id="district-bonuses" class="district-bonuses">
+                        <!-- District bonuses will be shown here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="available-skills-section">
+                <h4>Available Skills</h4>
+                <div id="available-skills" class="skill-list available-skills">
+                    <div class="skill-item" data-skill="intelligence">Intelligence</div>
+                    <div class="skill-item" data-skill="hunting">Hunting</div>
+                    <div class="skill-item" data-skill="strength">Strength</div>
+                    <div class="skill-item" data-skill="social">Social</div>
+                    <div class="skill-item" data-skill="stealth">Stealth</div>
+                    <div class="skill-item" data-skill="survival">Survival</div>
+                    <div class="skill-item" data-skill="agility">Agility</div>
+                    <div class="skill-item" data-skill="endurance">Endurance</div>
+                    <div class="skill-item" data-skill="charisma">Charisma</div>
+                    <div class="skill-item" data-skill="luck">Luck</div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div class="tribute-controls">
+            <button id="tribute-done-btn" class="btn btn-success" onclick="markTributeDone()">I'm Done Creating My Tribute</button>
+            <button id="tribute-not-done-btn" class="btn btn-secondary" onclick="markTributeNotDone()" style="display: none;">Edit Tribute</button>
+        </div>
+    </div>
+</div>
+
+<div id="lobby-section" class="section" style="display: none;">
+    <div class="lobby-header">
+        <h2 id="lobby-title">Lobby</h2>
+        <div id="lobby-info" class="lobby-info">
+            <!-- Lobby info will be populated here -->
+        </div>
+    </div>
+
+    <div class="players-section">
+        <h3>Players in Lobby</h3>
+        <div id="players-list" class="players-list">
+            <!-- Players will be populated here -->
+        </div>
+    </div>
+
+    <div class="lobby-status">
+        <div id="tribute-status" class="status-info">
+            <h4>Tribute Creation Status</h4>
+            <div id="tribute-progress">Waiting for players to create tributes...</div>
+        </div>
+        
+        <!-- Admin Controls for Host -->
+        <div id="admin-lobby-controls" class="admin-controls" style="display: none;">
+            <h4>Host Controls</h4>
+            <div class="admin-buttons">
+                <button class="btn btn-primary btn-small" onclick="generateRemainingTributesLobby()">Generate AI Tributes</button>
+                <button class="btn btn-secondary btn-small" onclick="viewAllTributes()">View All Tributes</button>
+            </div>
+            <div id="admin-lobby-status" class="admin-status"></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="start-btn" class="btn btn-danger" style="display: none;" onclick="startGame()">Start Game</button>
+        <button id="edit-tribute-btn" class="btn btn-warning" onclick="editTribute()">Edit Tribute</button>
+        <button id="leave-btn" class="btn btn-secondary" onclick="leaveLobby()">Leave Lobby</button>
+    </div>
+</div>
+
+<div id="game-section" class="section" style="display: none;">
+    <div class="game-header">
+        <h2>Hunger Games - Round <span id="current-round">1</span></h2>
+        <div id="game-status" class="game-status">
+            <!-- Game status will appear here -->
+        </div>
+    </div>
+
+    <div class="game-content">
+        <div id="tribute-scoreboards" class="tribute-scoreboards-sidebar">
+            <h3>Your Current Tribute Status</h3>
+            <div id="scoreboards-container">
+                <!-- Tribute scoreboards will be dynamically added here -->
+            </div>
+        </div>
+        <div id="game-log" class="game-log">
+            <!-- Game events will appear here -->
+        </div>
+    </div>
+
+    <div id="action-buttons" class="action-buttons">
+        <!-- Action buttons will appear here -->
+    </div>
+
+    <div class="tributes-overview">
+        <h3>Remaining Tributes</h3>
+        <div id="tributes-container" class="tributes-grid">
+            <!-- All remaining tributes will be displayed here -->
+        </div>
+    </div>
+
+    <div class="game-controls">
+        <button id="leave-game-btn" class="btn btn-secondary" onclick="leaveGame()">Leave Game</button>
+    </div>
+</div>
+
+<div id="spectator-section" class="section" style="display: none;">
+    <div class="spectator-header">
+        <h2>Spectating Hunger Games</h2>
+        <div id="spectator-game-status" class="spectator-status">
+            <!-- Spectator game status will appear here -->
+        </div>
+    </div>
+
+    <div class="spectator-content">
+        <div class="spectator-sidebar">
+            <div class="spectator-round-info">
+                <h3>Round <span id="spectator-round">1</span></h3>
+            </div>
+            <div id="spectator-tributes-container" class="spectator-tributes">
+                <!-- Tribute information will appear here -->
+            </div>
+        </div>
+        <div id="spectator-log" class="spectator-log">
+            <!-- Game events will appear here for spectators -->
+        </div>
+    </div>
+
+    <div class="spectator-controls">
+        <button id="leave-spectator-btn" class="btn btn-secondary" onclick="leaveSpectator()">Stop Spectating</button>
+    </div>
+</div>
+
+<!-- Resume Code Modal -->
+<div id="resume-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Resume Code</h2>
+            <span class="modal-close">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p>Save this code to reconnect as your character if you get disconnected:</p>
+            <div class="resume-code-display">
+                <code id="modal-resume-code">ABC123</code>
+            </div>
+            <p><small>Copy this code and keep it safe. You'll need it to resume your session.</small></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary">Copy Code</button>
+            <button class="btn btn-secondary">Got it!</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/game.js?v=1.1"></script>
+<script src="/static/js/lobby.js?v=1.1"></script>
+{% endblock %}

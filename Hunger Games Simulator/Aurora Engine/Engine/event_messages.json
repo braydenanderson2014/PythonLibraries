@@ -1,0 +1,871 @@
+{
+    "events": {
+        "arena_events": {
+            "cornucopia_supply_run": {
+                "description": "A tribute makes a daring run for Cornucopia supplies",
+                "narrative": "{tribute1} steels their nerves and makes a desperate dash for the Cornucopia. The golden horn gleams with promise - weapons, food, medicine - but also death.",
+                "intensity": "high",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": 10,
+                        "max": 20,
+                        "description": "The sprint to the Cornucopia is exhausting"
+                    }
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["supplies", "weapon"],
+                    "description": "Successfully claims valuable supplies from the Cornucopia"
+                }
+            },
+            "cornucopia_hesitation": {
+                "description": "A tribute hesitates at the edge of the Cornucopia clearing",
+                "narrative": "{tribute1} stands at the tree line, watching the Cornucopia. The supplies are so close, yet the danger is palpable. Every instinct screams both 'run' and 'grab everything'.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -3,
+                        "max": -8,
+                        "description": "The difficult decision weighs on the mind"
+                    }
+                },
+                "participants": "random_1"
+            },
+            "cornucopia_inventory_revealed": {
+                "description": "The Cornucopia's deadly treasures are revealed",
+                "narrative": "Sunlight glints off the weapons scattered around the golden horn - swords, spears, knives, and packs filled with survival gear. Death and life intertwined in a cruel display.",
+                "intensity": "medium",
+                "stat_effects": {},
+                "participants": "none"
+            },
+            "mysterious_fog": {
+                "description": "A mysterious fog rolls into the arena",
+                "narrative": "The arena comes alive as a mysterious fog rolls into the arena. The tributes must adapt to this new challenge.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -5,
+                        "max": -15,
+                        "description": "The eerie fog unsettles the mind"
+                    }
+                },
+                "status_effects": {
+                    "fog_blindness": {
+                        "duration_phases": 2,
+                        "description": "Reduced visibility makes it harder to spot threats",
+                        "stat_modifiers": {
+                            "stealth": 5,
+                            "awareness": -10
+                        }
+                    }
+                },
+                "participants": "none"
+            },
+            "ground_shake": {
+                "description": "The ground begins to shake violently",
+                "narrative": "The arena trembles as violent earthquakes shake the ground. Tributes scramble for safety as the earth itself rebels.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -5,
+                        "max": -20,
+                        "description": "Falling debris and unstable ground cause injuries"
+                    },
+                    "fatigue": {
+                        "min": 10,
+                        "max": 25,
+                        "description": "The constant shaking exhausts the tributes"
+                    }
+                },
+                "participants": "random_1_3"
+            },
+            "temperature_drop": {
+                "description": "The temperature suddenly drops",
+                "narrative": "A supernatural cold descends upon the arena. Frost forms on the ground as tributes shiver in the unnatural chill.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": 5,
+                        "max": 15,
+                        "description": "The cold saps energy and causes shivering"
+                    },
+                    "sanity": {
+                        "min": -3,
+                        "max": -10,
+                        "description": "The unnatural cold disturbs the mind"
+                    }
+                },
+                "participants": "all"
+            },
+            "blood_rain": {
+                "description": "Blood rain begins to fall from the sky",
+                "narrative": "The sky weeps blood as crimson droplets fall from above. The tributes are drenched in the macabre precipitation.",
+                "intensity": "high",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -10,
+                        "max": -25,
+                        "description": "The horrifying blood rain terrifies the tributes"
+                    },
+                    "health": {
+                        "min": -2,
+                        "max": -8,
+                        "description": "The acidic blood causes minor burns"
+                    }
+                },
+                "participants": "all"
+            }
+        },
+        "combat_events": {
+            "cornucopia_weapon_duel": {
+                "description": "Two tributes fight over a weapon at the Cornucopia",
+                "narrative": "{tribute1} and {tribute2} both lunge for the same gleaming sword lying at the base of the Cornucopia. Their hands collide, and what was a race becomes a vicious hand-to-hand brawl for the deadly prize.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -20,
+                        "max": -55,
+                        "description": "Brutal injuries from the desperate fight"
+                    },
+                    "fatigue": {
+                        "min": 15,
+                        "max": 25,
+                        "description": "Exhausted from the intense struggle"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Claims the weapon after defeating their opponent"
+                }
+            },
+            "cornucopia_backstab": {
+                "description": "A tribute betrays another at the Cornucopia",
+                "narrative": "{tribute1} and {tribute2} grab supplies side by side at the Cornucopia, when suddenly {tribute1} turns and drives a knife into {tribute2}'s back. The betrayal is swift and merciless.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -40,
+                        "max": -85,
+                        "description": "Critical backstab wound"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "Takes everything from the betrayed tribute"
+                }
+            },
+            "cornucopia_pack_grab": {
+                "description": "A tribute snatches a backpack and runs",
+                "narrative": "{tribute1} makes a lightning-fast grab for a bright orange backpack at the Cornucopia's mouth, snatching it up without breaking stride. {tribute2} lunges to intercept but misses by inches as {tribute1} sprints away into the trees.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": 8,
+                        "max": 15,
+                        "description": "Exhausted from the desperate sprint"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["supplies", "medicine"],
+                    "description": "Successfully escapes with valuable supplies"
+                }
+            },
+            "cornucopia_triple_clash": {
+                "description": "Three tributes collide in a deadly melee",
+                "narrative": "{tribute1}, {tribute2}, and {tribute3} meet in the center of the Cornucopia in an explosion of violence. Fists fly, weapons clash, and blood sprays across the golden metal as each fights desperately for their life.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -25,
+                        "max": -65,
+                        "description": "Severe wounds from the three-way battle"
+                    },
+                    "fatigue": {
+                        "min": 20,
+                        "max": 35,
+                        "description": "Completely exhausted from the brutal fight"
+                    }
+                },
+                "participants": "random_3",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "Emerges victorious from the deadly clash"
+                }
+            },
+            "cornucopia_throat_slash": {
+                "description": "A brutal execution at the Cornucopia",
+                "narrative": "{tribute1} catches {tribute2} from behind at the Cornucopia, pulling their head back and drawing a blade across their throat in one smooth, practiced motion. {tribute2} crumples without a sound.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -70,
+                        "max": -100,
+                        "description": "Fatal throat wound - instant death"
+                    }
+                },
+                "participants": "random_2"
+            },
+            "cornucopia_medicine_fight": {
+                "description": "Two tributes battle over medical supplies",
+                "narrative": "{tribute1} spots a first aid kit at the same moment as {tribute2}. They collide violently, each knowing that medicine could mean the difference between survival and bleeding out in the arena.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -15,
+                        "max": -40,
+                        "description": "Injuries sustained fighting for supplies"
+                    },
+                    "fatigue": {
+                        "min": 12,
+                        "max": 20,
+                        "description": "Exhausted from the struggle"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["medicine", "supplies"],
+                    "description": "Claims the precious medical supplies"
+                }
+            },
+            "cornucopia_spear_throw": {
+                "description": "A tribute hurls a spear at another",
+                "narrative": "{tribute1} grabs a spear from the Cornucopia and hurls it with deadly accuracy at {tribute2}, who is frantically gathering supplies. The spear flies true, catching {tribute2} in the chest.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -50,
+                        "max": -95,
+                        "description": "Severe or fatal spear wound"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Eliminates a threat from range"
+                }
+            },
+            "cornucopia_tackle_kill": {
+                "description": "A tribute tackles another to the ground",
+                "narrative": "{tribute1} tackles {tribute2} to the ground just steps from the Cornucopia. They roll through the dirt in a brutal struggle until {tribute1} gets their hands around {tribute2}'s throat and squeezes with murderous intent.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -45,
+                        "max": -90,
+                        "description": "Crushed windpipe and severe trauma"
+                    },
+                    "fatigue": {
+                        "min": 18,
+                        "max": 30,
+                        "description": "Exhausted from the brutal ground fight"
+                    }
+                },
+                "participants": "random_2"
+            },
+            "cornucopia_axe_ambush": {
+                "description": "A tribute ambushes another with an axe",
+                "narrative": "{tribute1} snatches up a wicked-looking axe and immediately turns on {tribute2}, who is bent over a crate of supplies. The axe swings down with terrible force, catching {tribute2} completely by surprise.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -55,
+                        "max": -100,
+                        "description": "Devastating axe wound - potentially fatal"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Armed and dangerous"
+                }
+            },
+            "cornucopia_double_team": {
+                "description": "Two tributes gang up on a third",
+                "narrative": "{tribute1} and {tribute2} exchange a quick glance before simultaneously attacking {tribute3} at the Cornucopia. Outnumbered and overwhelmed, {tribute3} fights desperately against the coordinated assault.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -60,
+                        "max": -100,
+                        "description": "Overwhelmed by multiple attackers"
+                    }
+                },
+                "participants": "random_3",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "The team splits the spoils"
+                }
+            },
+            "cornucopia_knife_fight": {
+                "description": "A vicious knife fight breaks out",
+                "narrative": "{tribute1} and {tribute2} both grab knives from the Cornucopia and circle each other warily. Then, as if on signal, they lunge forward in a whirlwind of slashing blades and desperate parries.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -25,
+                        "max": -70,
+                        "description": "Multiple stab and slash wounds"
+                    },
+                    "fatigue": {
+                        "min": 15,
+                        "max": 28,
+                        "description": "Completely drained from the intense duel"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Proves superior with the blade"
+                }
+            },
+            "cornucopia_battle": {
+                "description": "Three specific tributes clash at the Cornucopia",
+                "narrative": "The golden horn becomes a battleground as {tribute1}, {tribute2}, and {tribute3} converge on the precious supplies within. Blood spills on the metal as they fight desperately for resources that could mean survival.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -25,
+                        "max": -60,
+                        "description": "Severe injuries from the brutal Cornucopia melee"
+                    },
+                    "fatigue": {
+                        "min": 20,
+                        "max": 35,
+                        "description": "The frenzied battle exhausts all participants"
+                    }
+                },
+                "participants": "random_3",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies", "medicine"],
+                    "description": "Victor claims valuable supplies from the Cornucopia"
+                }
+            },
+            "cornucopia_bloodbath": {
+                "description": "Four tributes clash in a massive Cornucopia melee",
+                "narrative": "The Cornucopia erupts into pure chaos as {tribute1}, {tribute2}, {tribute3}, and {tribute4} all converge on the golden horn at once. Weapons clash, blood sprays, and screams echo as they fight for survival and supplies in the opening bloodbath.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {
+                        "min": -30,
+                        "max": -80,
+                        "description": "The bloodbath claims victims brutally"
+                    }
+                },
+                "participants": "random_2_4",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "Survivors grab what they can from the carnage"
+                }
+            },
+            "fierce_combat": {
+                "description": "Two tributes engage in fierce combat",
+                "narrative": "The arena echoes with the clash of weapons as {tribute1} and {tribute2} engage in a brutal confrontation. Blood and sweat fly as they fight for survival in this deadly dance.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -15,
+                        "max": -40,
+                        "description": "Combat wounds and injuries from the fight"
+                    },
+                    "fatigue": {
+                        "min": 15,
+                        "max": 30,
+                        "description": "The intense physical exertion exhausts the combatants"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Winner claims a weapon from the defeated tribute"
+                }
+            },
+            "ambush_attack": {
+                "description": "A tribute ambushes another from hiding",
+                "narrative": "From the shadows strikes {tribute1}, catching {tribute2} completely off guard in a deadly ambush. The element of surprise could mean the difference between life and death.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -20,
+                        "max": -50,
+                        "description": "Severe ambush injuries, often fatal"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "Ambusher claims weapons and supplies from the victim"
+                }
+            },
+            "weapon_discovery": {
+                "description": "A weapon is discovered and claimed",
+                "narrative": "{tribute1} stumbles upon a cache of weapons hidden in the arena. With this newfound arsenal, their chances of survival have dramatically improved.",
+                "intensity": "medium",
+                "stat_effects": {},
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["weapon"],
+                    "description": "Tribute discovers and claims a powerful weapon"
+                }
+            },
+            "great_height_fall": {
+                "description": "A tribute falls from a great height",
+                "narrative": "A tribute loses their footing and plunges from a great height. The impact with the ground is brutal and unforgiving.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -30,
+                        "max": -70,
+                        "description": "Severe fall injuries, potentially fatal"
+                    },
+                    "fatigue": {
+                        "min": 10,
+                        "max": 20,
+                        "description": "The fall leaves the tribute disoriented and exhausted"
+                    }
+                },
+                "participants": "random_1"
+            },
+            "poisonous_berries": {
+                "description": "Poisonous berries are found and consumed",
+                "narrative": "The arena comes alive as poisonous berries are found and consumed. The tributes must adapt to this new challenge.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -25,
+                        "max": -60,
+                        "description": "Severe poisoning from toxic berries"
+                    },
+                    "sanity": {
+                        "min": -5,
+                        "max": -15,
+                        "description": "The realization of poisoning causes panic"
+                    }
+                },
+                "participants": "random_1_4"
+            }
+        },
+        "idle_events": {
+            "rest_and_recover": {
+                "description": "Tributes rest and recover their strength",
+                "narrative": "The tributes take a moment to rest and recover their strength. In the brutal arena, even brief respite is precious.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": -10,
+                        "max": -25,
+                        "description": "Rest restores some energy"
+                    },
+                    "health": {
+                        "min": 0,
+                        "max": 5,
+                        "description": "Brief recovery allows minor healing"
+                    }
+                },
+                "participants": "random_1_2"
+            },
+            "clean_water_found": {
+                "description": "A tribute finds a source of clean water",
+                "narrative": "A tribute discovers a precious source of clean water. In the arid arena, this find could mean the difference between life and death.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "thirst": {
+                        "min": -50,
+                        "max": -100,
+                        "description": "Clean water fully quenches thirst"
+                    }
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {
+                        "water_supplies": {
+                            "min": 1,
+                            "max": 3
+                        }
+                    },
+                    "description": "Tribute secures water supplies for future use"
+                }
+            },
+            "merciless_sun": {
+                "description": "The sun beats down mercilessly",
+                "narrative": "The sun beats down mercilessly on the arena. The heat is oppressive, sapping strength and will from the tributes.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "thirst": {
+                        "min": 10,
+                        "max": 25,
+                        "description": "Intense heat increases dehydration"
+                    },
+                    "fatigue": {
+                        "min": 5,
+                        "max": 15,
+                        "description": "Heat exhaustion drains energy"
+                    }
+                },
+                "participants": "all"
+            },
+            "night_falls": {
+                "description": "Night falls, bringing cooler temperatures",
+                "narrative": "Night falls upon the arena, bringing welcome relief from the heat. The darkness brings both respite and new dangers.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": -5,
+                        "max": -15,
+                        "description": "Cool night air allows better rest"
+                    },
+                    "sanity": {
+                        "min": -2,
+                        "max": -8,
+                        "description": "Darkness and isolation affect mental state"
+                    }
+                },
+                "participants": "all"
+            },
+            "successful_hunt": {
+                "description": "A tribute successfully hunts for food",
+                "narrative": "A tribute demonstrates their hunting prowess, securing precious food in the unforgiving arena.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "hunger": {
+                        "min": -30,
+                        "max": -70,
+                        "description": "Fresh meat satisfies hunger"
+                    }
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {
+                        "food_supplies": {
+                            "min": 1,
+                            "max": 2
+                        }
+                    },
+                    "description": "Tribute gains food supplies for future meals"
+                }
+            }
+        },
+        "flavor_events": {
+            "dramatic_sunset": {
+                "description": "A dramatic sunset paints the sky",
+                "narrative": "As the sun dips below the horizon, it paints the arena sky in brilliant hues of crimson and gold. For a moment, the brutality of the Games seems almost beautiful.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 1,
+                        "max": 5,
+                        "description": "The beauty of the sunset provides momentary peace"
+                    }
+                },
+                "participants": "none"
+            },
+            "crowd_silence": {
+                "description": "An eerie silence falls over the arena",
+                "narrative": "The arena falls deathly silent, broken only by the distant calls of unseen creatures. The tributes feel the weight of isolation in this artificial wilderness.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -3,
+                        "max": -8,
+                        "description": "The oppressive silence heightens feelings of isolation"
+                    }
+                },
+                "participants": "none"
+            },
+            "distant_explosion": {
+                "description": "A distant explosion echoes through the arena",
+                "narrative": "A muffled explosion echoes from somewhere in the distance, reminding everyone that the Gamemakers control their fate. The ground vibrates slightly beneath their feet.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -2,
+                        "max": -6,
+                        "description": "The reminder of Gamemaker power unsettles the tributes"
+                    }
+                },
+                "participants": "none"
+            }
+        },
+        "custom_events": {
+            "sponsor_gift": {
+                "description": "A sponsor gift arrives from the Capitol",
+                "narrative": "The Gamemakers favor a tribute with a sponsor gift from the Capitol. Luxury and supplies arrive from above.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 5,
+                        "max": 15,
+                        "description": "Sponsor attention boosts morale"
+                    }
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["medical_supplies", "food", "weapon"],
+                    "description": "Tribute receives valuable supplies from sponsor"
+                }
+            },
+            "rule_change": {
+                "description": "The Gamemakers announce a rule change",
+                "narrative": "The Gamemakers announce a rule change, altering the dynamics of the Games. Tributes must adapt to the new reality.",
+                "intensity": "high",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -5,
+                        "max": -20,
+                        "description": "Rule changes create uncertainty and fear"
+                    }
+                },
+                "participants": "all"
+            },
+            "medical_supplies": {
+                "description": "A tribute receives medical supplies",
+                "narrative": "Medical supplies arrive for a tribute, offering hope in the face of injury and illness.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "health": {
+                        "min": 10,
+                        "max": 30,
+                        "description": "Medical supplies aid healing"
+                    }
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["medical_supplies"],
+                    "description": "Tribute gains medical supplies for treatment"
+                }
+            },
+            "cornucopia_restocks": {
+                "description": "The Cornucopia restocks with supplies",
+                "narrative": "The Cornucopia mysteriously restocks with fresh supplies. Tributes must decide whether to risk the dangerous dash for resources.",
+                "intensity": "high",
+                "stat_effects": {},
+                "participants": "none",
+                "arena_effects": {
+                    "description": "Supplies become available at the Cornucopia"
+                }
+            },
+            "alliance_formation": {
+                "description": "Two tributes form an alliance",
+                "narrative": "{tribute1} and {tribute2} form a tentative alliance, combining their strengths in the fight for survival.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 5,
+                        "max": 15,
+                        "description": "Alliance provides psychological comfort"
+                    }
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 20,
+                        "max": 40
+                    }
+                }
+            },
+            "cornucopia_grab_and_run_alliance": {
+                "description": "Two tributes team up at the Cornucopia",
+                "narrative": "{tribute1} and {tribute2} lock eyes across the Cornucopia and nod in silent agreement. They grab supplies together, watching each other's backs as they sprint away from the bloodbath as unlikely allies.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 8,
+                        "max": 18,
+                        "description": "Finding an ally in the chaos boosts morale"
+                    },
+                    "fatigue": {
+                        "min": 10,
+                        "max": 18,
+                        "description": "Exhausted from the escape"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["supplies"],
+                    "description": "Both tributes escape with supplies"
+                },
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 30,
+                        "max": 50
+                    }
+                }
+            },
+            "cornucopia_district_alliance": {
+                "description": "District partners team up at Cornucopia",
+                "narrative": "{tribute1} and {tribute2}, both from the same district, find each other in the chaos of the Cornucopia. Without words, years of training together take over as they work in perfect coordination to secure supplies.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 10,
+                        "max": 20,
+                        "description": "Reuniting with district partner provides comfort"
+                    }
+                },
+                "participants": "district_pair",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies"],
+                    "description": "Coordinated teamwork secures better supplies"
+                },
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 40,
+                        "max": 60
+                    }
+                }
+            },
+            "cornucopia_protection_pact": {
+                "description": "One tribute saves another at the Cornucopia",
+                "narrative": "{tribute1} is about to be struck down when {tribute2} tackles the attacker from the side. 'We stick together,' {tribute2} pants, extending a bloodied hand. {tribute1} takes it without hesitation.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {
+                        "min": -10,
+                        "max": -25,
+                        "description": "Injuries from the rescue"
+                    },
+                    "sanity": {
+                        "min": 12,
+                        "max": 25,
+                        "description": "Grateful to be alive and not alone"
+                    }
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 50,
+                        "max": 70
+                    }
+                }
+            },
+            "fled_tributes_meet_woods": {
+                "description": "Two tributes who fled meet in the woods",
+                "narrative": "{tribute1} and {tribute2}, both having fled the Cornucopia, nearly collide in the dense forest. After a tense moment, they lower their guards. 'Safety in numbers?' {tribute1} suggests. {tribute2} nods warily.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 5,
+                        "max": 15,
+                        "description": "Relief at finding a potential ally"
+                    }
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 20,
+                        "max": 35
+                    }
+                }
+            },
+            "fled_tributes_district_reunion": {
+                "description": "District partners reunite after fleeing",
+                "narrative": "{tribute1} hears movement and whirls around, only to see {tribute2}, their district partner, emerging from the brush. Relief floods through both of them. They survived the bloodbath, and now they're not alone.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 15,
+                        "max": 30,
+                        "description": "Immense relief at finding their partner alive"
+                    }
+                },
+                "participants": "district_pair",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 45,
+                        "max": 65
+                    }
+                }
+            },
+            "fled_tributes_mutual_fear": {
+                "description": "Two fearful tributes band together",
+                "narrative": "{tribute1} and {tribute2} are both shaking as they hide in a hollow log, having fled the Cornucopia empty-handed. 'We have to work together,' {tribute1} whispers. 'It's the only way we survive.' {tribute2} agrees with a terrified nod.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {
+                        "min": 3,
+                        "max": 12,
+                        "description": "Slightly comforted by companionship despite fear"
+                    },
+                    "hunger": {
+                        "min": 5,
+                        "max": 10,
+                        "description": "No supplies means growing hunger"
+                    }
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 25,
+                        "max": 40
+                    }
+                }
+            },
+            "cornucopia_coordinated_grab": {
+                "description": "Two tributes coordinate their supply grab",
+                "narrative": "{tribute1} and {tribute2} exchange a rapid series of hand signals at the edge of the Cornucopia. On an unspoken count, they move as one - {tribute1} grabs weapons while {tribute2} secures food and medicine. They vanish into the trees together within seconds.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "fatigue": {
+                        "min": 8,
+                        "max": 15,
+                        "description": "Quick but exhausting coordinated movement"
+                    }
+                },
+                "participants": "random_2",
+                "winner_effects": {
+                    "inventory": ["weapon", "supplies", "medicine"],
+                    "description": "Perfect coordination yields excellent supplies"
+                },
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {
+                        "min": 35,
+                        "max": 55
+                    }
+                }
+            }
+        },
+        "pvp_events": {
+            "multi_tribute_encounter": {
+                "description": "Multiple tributes encounter each other",
+                "narrative": "Multiple tributes converge in the same area. Alliances could form, or chaos could erupt - the next moments will determine their fates.",
+                "intensity": "high",
+                "stat_effects": {
+                    "sanity": {
+                        "min": -15,
+                        "max": -5,
+                        "description": "Tension of potential confrontation affects mental state"
+                    }
+                },
+                "participants": "encounter_participants",
+                "relationship_effects": {
+                    "relationship_change": {
+                        "min": -5,
+                        "max": 5
+                    }
+                }
+            }
+        }
+    },
+    "stat_ranges": {
+        "health": {"min": 0, "max": 100},
+        "sanity": {"min": 0, "max": 100},
+        "hunger": {"min": 0, "max": 100},
+        "thirst": {"min": 0, "max": 100},
+        "fatigue": {"min": 0, "max": 100}
+    },
+    "intensity_multipliers": {
+        "low": 0.5,
+        "medium": 1.0,
+        "high": 1.5
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "name": "CEF Markdown Renderer",
+    "description": "Renders Markdown files using Chromium Embedded Framework (CEF) for enhanced rendering capabilities",
+    "version": "1.0.0",
+    "author": "PDFSplitter Team",
+    "extensions": [".md", ".markdown"],
+    "dual_tabs": true,
+    "priority": 2,
+    "requires": ["cefpython3", "markdown"]
+}

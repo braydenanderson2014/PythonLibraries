@@ -1,0 +1,14 @@
+✅ Stock downloading and processing should be done on a different thread/processor
+✅ Stock price and change % alerts with notification system integration
+* CSV import for stock data
+* Manual Sync Check for stock data
+
+ACTIVE DEBUGGING:
+[INVESTIGATING] Partial Payment Calculation Bug
+- Issue: Multiple partial payments to same month show incorrect remaining balance
+- Example: Feb  +  =  total, but shows  remaining (should show )
+- Modified files: rent_tracker.py (add_payment logging), rent_management_tab.py (total_paid_for_month with fallback)
+- Next: Check console debug output when adding multiple payments to same month
+
+FEATURES ADDED:
+✅ Better payment dialog month sorting (Current-Delinquent-Past Paid-Future)

@@ -1,0 +1,81 @@
+* State machine should keep track of what players have been eliminated, and which players are still active.
+* State should be saved to a data file like json.
+* Should allow for custom weapons including things like magic. 
+* Program will be a txt based system.
+* should keep track of who killed who... But allow for custom "Work friendly filter" which modifies certain words.
+* Should allow for Arena Events
+* Should allow for manual targetting. So if a player wants to target another player.
+* players can form truces/groups (even automatic by the system)
+* Even though a player may have a truce or group, they can betray.
+* players can get sick and die of natural causes.
+* at the beginning, players can specify their skills such as [Intelligence, hunting, strength, social, stealth, etc]
+* at the beginning, players can specify their weapon of choice. however this does not necessarily mean they will get one. [Bow, Axe, Spear, knife, hammer, etc.] custom items will need to specify how they interact. Like magic.
+* lets build this in python, but make it so it can be ran over the internet, or be ran on a single device, where the "admin" so to speak, adds players manually. 
+* Every Day can be split up into Morning, Afternoon, Evening, and custom Events. Each of these can be done on a timer.
+
+
+
+
+
+The Cornucopia horn sounds! Tributes rush to the Cornucopia!
+Pat, Taylor, and Jamie reach the Cornucopia first and grab supplies!
+Pat and Jamie team up at the Cornucopia!
+Pat and Jamie grab supplies and run into the forest!
+Robin attacks Hunter with Axe for 30 damage! Hunter health: 70
+Hunter counterattacks Robin with Club for 22 damage! Robin health: 78
+Robin and Hunter fight but neither dies.
+Blake attacks Brooks with Machete for 35 damage! Brooks health: 65
+Brooks counterattacks Blake with Club for 27 damage! Blake health: 73
+Blake and Brooks agree to stop fighting.
+Taylor attacks Alex with Club for 27 damage! Alex health: 73
+Alex counterattacks Taylor with Gun for 52 damage! Taylor health: 48
+Taylor and Alex fight but neither dies.
+Drew and Skyler team up at the Cornucopia!
+
+It would make more sense if someone with a weapon picked it up from the cornucopia first. also if there was an alliance formed at the cornucopia and people both left the cornucopia... it would make sense to phrase them together instead of separate.... 
+
+Also, when creating the random events, lets also make sure we keep track of remaining tributes. Because right now this is possible:
+Day 17, Phase: evening
+Active Tributes:
+  Blake (District 9) - Health: 35, Sanity: 37
+  Parker (District 7) - Health: 17, Sanity: 37
+  Blake (District 12) - Health: 6, Sanity: 39
+
+Parker died of sickness!
+Blake encounters a bear and died!
+
+--- End of Day 17 Report ---
+District 9: Blake - Health: 35, Sanity: 37, Speed: 7, Allies: Morgan, Blake, Casey, Kills: 0
+
+FIXED: When tributes are teamed up, they now grab supplies and run together instead of separately.
+ADDED: Alliances can randomly dissolve with a 5% chance per ally pair, even with high trust.
+MOVED: All game event messages have been moved to data/messages.json for easier customization and expansion. Messages are categorized by type (initial, cornucopia, combat, alliance, random_events, idle, reports) and use string formatting for dynamic content.
+ENHANCED: Messages now support arrays for multiple variations, providing more variety in game output (75 total message variations across all events).
+ADDED: Game now saves initial tribute setup to data/initial_tributes.json and loads it on subsequent runs, allowing players to modify the roster before starting.
+---
+
+Press enter to continue to next phase...
+
+Winner: Blake!
+
+Hunter starts to question life and commits suicide!
+
+Issue below may have already been patched.
+Traceback (most recent call last):
+  File "/workspaces/SystemCommands/Hunger Games Simulator/main.py", line 330, in <module>
+    main()
+  File "/workspaces/SystemCommands/Hunger Games Simulator/main.py", line 187, in main
+    tribute = random.choice(game.active_tributes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/random.py", line 347, in choice
+    raise IndexError('Cannot choose from an empty sequence')
+IndexError: Cannot choose from an empty sequence
+
+
+
+Also people who get to the cornucopia first can start fighting. Unless they make an ally group. 
+Some fast ones may still be able to get to the cornacopia and escape with stuff. 
+Also each phase should list every contestant still in the games. Unless they die during that phase. 
+Also, we can add more random events. Setting up camps (even with ally's... ), 
+Stealing supplies from camps (suceeding and or failing...)
+Slow people can still go to the cornucopia if they "choose" but it would be more likely 

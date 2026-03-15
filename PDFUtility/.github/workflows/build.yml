@@ -1,0 +1,262 @@
+name: Multi-Platform PyInstaller Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build for (comma-separated: windows,linux,macos)'
+        required: false
+        default: ''
+      config_override:
+        description: 'JSON configuration override'
+        required: false
+        default: '{}'
+      build_cli_version:
+        description: 'Build CLI version'
+        required: false
+        default: '2.0.0-core'
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  BUILD_CLI_VERSION: ${{ github.event.inputs.build_cli_version || '2.0.0-core' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x64
+          - os: windows-latest
+            platform: windows
+            arch: x86
+            # x86 builds use fallback dependencies due to PyQt6 limitations
+            use_fallback: true
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            platform: macos
+            arch: x64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13.3'
+        architecture: ${{ matrix.arch == 'x86' && 'x86' || 'x64' }}
+        
+    - name: Install dependencies
+      timeout-minutes: 15
+      run: |
+        echo "🔧 Installing Python dependencies for ${{ matrix.platform }}-${{ matrix.arch }}"
+        python -m pip install --upgrade pip
+        
+        echo "📦 Installing PyInstaller..."
+        pip install PyInstaller
+        
+        if [ -f requirements.txt ]; then
+          echo "📋 Found requirements.txt, installing project dependencies..."
+          
+          # Try to install dependencies with fallback handling
+          if pip install -r requirements.txt --timeout 300 --retries 3; then
+            echo "✅ Successfully installed all dependencies from requirements.txt"
+          else
+            echo "⚠️ Failed to install some dependencies, trying fallback approach..."
+            
+            # Try individual packages to identify the problematic one
+            echo "Installing core dependencies individually..."
+            pip install PyPDF2>=3.0 || echo "⚠️ PyPDF2 install failed"
+            pip install Pillow>=9.0 || echo "⚠️ Pillow install failed" 
+            pip install watchdog>=3.0 || echo "⚠️ Watchdog install failed"
+            pip install psutil>=5.9.0 || echo "⚠️ Psutil install failed"
+            
+            # Try PyMuPDF (usually works better than PyQt6 on limited systems)
+            pip install PyMuPDF>=1.21.1 || echo "⚠️ PyMuPDF install failed"
+            
+            # Try PyQt6 (most likely to fail on x86)
+            if pip install "PyQt6>=6.0"; then
+              echo "✅ PyQt6 installed successfully"
+            else
+              echo "⚠️ PyQt6 failed (likely x86 compatibility issue), trying alternatives..."
+              
+              # Try PyQt5 as fallback
+              if pip install "PyQt5>=5.15.0"; then
+                echo "✅ PyQt5 installed as fallback"
+              else
+                echo "⚠️ Both PyQt6 and PyQt5 failed, using tkinter-only build"
+              fi
+            fi
+          fi
+        else
+          echo "📋 No requirements.txt found, installing minimal dependencies"
+          pip install PyPDF2 Pillow watchdog psutil
+        fi
+        
+        echo "📊 Installed packages:"
+        pip list
+      shell: bash
+      
+    - name: Load build configuration
+      id: config
+      shell: bash
+      run: |
+        # Load configuration from file
+        if [[ -f ".github/build-config.json" ]]; then
+          echo "📋 Found repository build configuration"
+          # Validate JSON first
+          if jq empty .github/build-config.json 2>/dev/null; then
+            CONFIG=$(cat .github/build-config.json)
+            echo "✅ JSON file is valid"
+          else
+            echo "❌ Invalid JSON in build-config.json, using defaults"
+            CONFIG='{
+              "name": "PDF-Utility",
+              "version": "auto",
+              "main_file": "auto",
+              "build_type": "onefile",
+              "windowed": false
+            }'
+          fi
+        else
+          echo "📋 Using default build configuration"
+          CONFIG='{
+            "name": "PDF-Utility",
+            "version": "auto",
+            "main_file": "auto",
+            "build_type": "onefile",
+            "windowed": false
+          }'
+        fi
+        
+        echo "📄 Configuration JSON:"
+        echo "$CONFIG" | jq .
+        
+        # Handle workflow inputs with proper validation
+        CONFIG_OVERRIDE="${{ github.event.inputs.config_override }}"
+        PLATFORMS_INPUT="${{ github.event.inputs.platforms }}"
+        
+        # Apply config override if provided and valid
+        if [[ -n "$CONFIG_OVERRIDE" && "$CONFIG_OVERRIDE" != "{}" && "$CONFIG_OVERRIDE" != "" ]]; then
+          echo "🔧 Applying workflow configuration overrides"
+          echo "Override JSON: $CONFIG_OVERRIDE"
+          if echo "$CONFIG_OVERRIDE" | jq empty 2>/dev/null; then
+            CONFIG=$(echo "$CONFIG" "$CONFIG_OVERRIDE" | jq -s '.[0] * .[1]')
+            echo "✅ Applied configuration overrides"
+          else
+            echo "❌ Invalid JSON in config override, ignoring"
+          fi
+        fi
+        
+        echo "📄 Final Configuration JSON:"
+        echo "$CONFIG" | jq .
+        
+        # Extract configuration values with proper error handling
+        APP_NAME=$(echo "$CONFIG" | jq -r '.name // "PDF-Utility"' 2>/dev/null || echo "PDF-Utility")
+        BUILD_TYPE=$(echo "$CONFIG" | jq -r '.build_type // "onefile"' 2>/dev/null || echo "onefile")
+        WINDOWED=$(echo "$CONFIG" | jq -r '.windowed // false' 2>/dev/null || echo "false")
+        MAIN_FILE=$(echo "$CONFIG" | jq -r '.main_file // "auto"' 2>/dev/null || echo "auto")
+        
+        # Sanitize app name for use as filename (remove special characters)
+        APP_NAME_CLEAN=$(echo "$APP_NAME" | sed 's/[^a-zA-Z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+        
+        echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+        echo "app_name_clean=$APP_NAME_CLEAN" >> $GITHUB_OUTPUT
+        echo "build_type=$BUILD_TYPE" >> $GITHUB_OUTPUT
+        echo "windowed=$WINDOWED" >> $GITHUB_OUTPUT
+        echo "main_file=$MAIN_FILE" >> $GITHUB_OUTPUT
+        
+        echo "📊 Build Configuration:"
+        echo "  App Name: $APP_NAME"
+        echo "  App Name (Clean): $APP_NAME_CLEAN"
+        echo "  Build Type: $BUILD_TYPE"
+        echo "  Windowed: $WINDOWED"
+        echo "  Main File: $MAIN_FILE"
+        
+    - name: Build application
+      shell: bash
+      run: |
+        APP_NAME="${{ steps.config.outputs.app_name }}"
+        APP_NAME_CLEAN="${{ steps.config.outputs.app_name_clean }}"
+        BUILD_TYPE="${{ steps.config.outputs.build_type }}"
+        WINDOWED="${{ steps.config.outputs.windowed }}"
+        MAIN_FILE="${{ steps.config.outputs.main_file }}"
+        
+        # Auto-detect main file if needed
+        if [[ "$MAIN_FILE" == "auto" ]]; then
+          if [[ -f "main.py" ]]; then
+            MAIN_FILE="main.py"
+          elif [[ -f "app.py" ]]; then
+            MAIN_FILE="app.py"
+          elif [[ -f "main_application.py" ]]; then
+            MAIN_FILE="main_application.py"
+          else
+            echo "❌ Could not auto-detect main file"
+            exit 1
+          fi
+        fi
+        
+        echo "🏗️ Building $APP_NAME for ${{ matrix.platform }}-${{ matrix.arch }}"
+        echo "📄 Main file: $MAIN_FILE"
+        
+        # Check if this is a fallback build (x86 with limited GUI support)
+        if [[ "${{ matrix.use_fallback }}" == "true" ]]; then
+          echo "⚠️ Using fallback build configuration for limited platform support"
+        fi
+        
+        # Build PyInstaller command
+        PYINSTALLER_CMD="pyinstaller"
+        
+        if [[ "$BUILD_TYPE" == "onefile" ]]; then
+          PYINSTALLER_CMD="$PYINSTALLER_CMD --onefile"
+        else
+          PYINSTALLER_CMD="$PYINSTALLER_CMD --onedir"
+        fi
+        
+        if [[ "$WINDOWED" == "true" ]]; then
+          PYINSTALLER_CMD="$PYINSTALLER_CMD --windowed"
+        fi
+        
+        # Add architecture-specific optimizations
+        if [[ "${{ matrix.arch }}" == "x86" ]]; then
+          echo "🔧 Applying x86-specific optimizations..."
+          # Exclude problematic Qt6 components for x86 builds
+          PYINSTALLER_CMD="$PYINSTALLER_CMD --exclude-module PyQt6.QtOpenGL --exclude-module PyQt6.QtQuick"
+        fi
+        
+        # Add clean flag
+        PYINSTALLER_CMD="$PYINSTALLER_CMD --clean"
+        
+        # Add output name with platform/arch suffix using clean name
+        OUTPUT_NAME="${APP_NAME_CLEAN}-${{ matrix.platform }}-${{ matrix.arch }}"
+        PYINSTALLER_CMD="$PYINSTALLER_CMD --name $OUTPUT_NAME"
+        
+        # Add main file
+        PYINSTALLER_CMD="$PYINSTALLER_CMD $MAIN_FILE"
+        
+        echo "🚀 Running: $PYINSTALLER_CMD"
+        $PYINSTALLER_CMD
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.config.outputs.app_name_clean }}-${{ matrix.platform }}-${{ matrix.arch }}
+        path: |
+          dist/*
+          !dist/*.spec

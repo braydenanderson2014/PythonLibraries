@@ -1,0 +1,43 @@
+{
+    "name": "tts_widget",
+    "title": "Text-to-Speech Tutorial",
+    "description": "Learn how to convert PDF text to audio files",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "tts_add_files_btn",
+            "text": "<b>📁 Add PDFs for Text-to-Speech</b><br><br>Select PDF files containing text that you want to convert to audio. Works best with text-based PDFs (not scanned images).",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "tts_scan_dir_btn",
+            "text": "<b>📂 Batch Audio Generation</b><br><br>Convert multiple documents at once! Scan Directory adds all PDFs from a folder, perfect for creating audio versions of document collections.",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "tts_file_list",
+            "text": "<b>📝 Text Source Files</b><br><br>Your PDF files are listed here. The tool will extract readable text from these files for speech conversion. File order determines playback sequence.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "tts_remove_selected_btn",
+            "text": "<b>🗑️ Remove Selected Files</b><br><br>Don't need some files? Select them in the list and remove them before generating audio.",
+            "button_text": "Next",
+            "highlight_style": "dashed_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "tts_play_btn",
+            "text": "<b>🎵 Generate Audio</b><br><br>Convert your PDF text to an audio file! Perfect for listening on the go, accessibility needs, or multitasking. The audio preserves document structure and formatting.",
+            "button_text": "Awesome!",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

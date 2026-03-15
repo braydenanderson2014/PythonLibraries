@@ -1,0 +1,28 @@
+{
+  "name": "MarkdownRenderer",
+  "description": "Renders and optionally edits Markdown files.",
+  "priority": 10,
+  "supported_extensions": [".md", ".markdown"],
+  "locked": false,
+  "editable": true,
+  "preview_mode": true,
+  "dual_tabs": true,
+  "dependencies": [
+    "markdown", 
+    "tkhtmlview"
+  ],
+  "required_files": [
+    "markdown_renderer.py",
+    "markdown_utils.py"
+  ],
+  "theme": "light",
+  "font_family": "Consolas",
+  "font_size": 12,
+  "wrap_text": true,
+  "function_hooks": {
+    "on_open": "init_markdown_preview",
+    "on_save": "save_markdown_file",
+    "on_toggle_edit": "toggle_edit_mode",
+    "on_open_dual": "load_markdown_dual_tabs"
+  }
+}

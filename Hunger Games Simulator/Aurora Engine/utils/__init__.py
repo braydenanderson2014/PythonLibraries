@@ -1,0 +1,1 @@
+from .filter import work_friendly

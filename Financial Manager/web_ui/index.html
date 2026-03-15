@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rent Management System - API Portal</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="page active">
+        <div class="login-container">
+            <div class="login-box">
+                <h1>Rent Management API</h1>
+                <p class="subtitle">Secure Portal Access</p>
+                
+                <form id="loginForm" class="login-form">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input 
+                            type="text" 
+                            id="username" 
+                            name="username" 
+                            placeholder="Enter your username"
+                            required
+                            autocomplete="username"
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            placeholder="Enter your password"
+                            required
+                            autocomplete="current-password"
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="apiUrl">API URL</label>
+                        <input 
+                            type="url" 
+                            id="apiUrl" 
+                            name="apiUrl" 
+                            placeholder="http://localhost:5000"
+                            value="http://localhost:5000"
+                            required
+                        >
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-login">
+                        <span id="loginButtonText">Sign In</span>
+                        <span id="loginSpinner" class="spinner hidden"></span>
+                    </button>
+                </form>
+                
+                <div id="loginError" class="error-message hidden"></div>
+                <div id="loginSuccess" class="success-message hidden"></div>
+                
+                <div class="login-footer">
+                    <p>Demo Credentials:</p>
+                    <code>api_test / testpass123</code>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Dashboard Page -->
+    <div id="dashboardPage" class="page">
+        <nav class="navbar">
+            <div class="navbar-header">
+                <h2>Rent Management Portal</h2>
+                <span id="userInfo" class="user-info"></span>
+            </div>
+            <div class="navbar-actions">
+                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+            </div>
+        </nav>
+        
+        <div class="dashboard-container">
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <ul class="nav-menu">
+                    <li><a href="#" class="nav-link active" data-page="tenants">Tenants</a></li>
+                    <li><a href="#" class="nav-link" data-page="disputes">Disputes</a></li>
+                    <li><a href="#" class="nav-link" data-page="info">System Info</a></li>
+                    <li><a href="#" class="nav-link" data-page="settings">Settings</a></li>
+                </ul>
+            </aside>
+            
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Tenants Section -->
+                <section id="tenantsSection" class="content-section active">
+                    <div class="section-header">
+                        <h2>Tenants</h2>
+                        <button id="refreshTenantsBtn" class="btn btn-secondary btn-small">Refresh</button>
+                    </div>
+                    
+                    <div id="tenantsLoading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <p>Loading tenants...</p>
+                    </div>
+                    
+                    <div id="tenantsError" class="error-message hidden"></div>
+                    
+                    <div id="tenantsList" class="tenants-grid">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </section>
+                
+                <!-- Disputes Section -->
+                <section id="disputesSection" class="content-section">
+                    <div class="section-header">
+                        <h2>Disputes</h2>
+                        <button id="refreshDisputesBtn" class="btn btn-secondary btn-small">Refresh</button>
+                    </div>
+                    
+                    <div id="disputesLoading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <p>Loading disputes...</p>
+                    </div>
+                    
+                    <div id="disputesError" class="error-message hidden"></div>
+                    
+                    <div id="disputesList" class="disputes-list">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </section>
+                
+                <!-- System Info Section -->
+                <section id="infoSection" class="content-section">
+                    <div class="section-header">
+                        <h2>System Information</h2>
+                    </div>
+                    
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <h3>Health Status</h3>
+                            <div id="healthStatus" class="status unknown">Checking...</div>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>Session Token</h3>
+                            <code id="sessionToken" class="token-display"></code>
+                            <button id="copyTokenBtn" class="btn btn-secondary btn-small">Copy</button>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>Available Dispute Types</h3>
+                            <ul id="disputeTypesList"></ul>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>Available Dispute Statuses</h3>
+                            <ul id="disputeStatusesList"></ul>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Settings Section -->
+                <section id="settingsSection" class="content-section">
+                    <div class="section-header">
+                        <h2>Settings</h2>
+                    </div>
+                    
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label for="autoRefresh">Auto-refresh interval (seconds)</label>
+                            <input type="number" id="autoRefresh" name="autoRefresh" min="5" max="300" value="30">
+                            <p class="help-text">Set to 0 to disable auto-refresh</p>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="darkMode">
+                                Dark Mode
+                            </label>
+                        </div>
+                        
+                        <button id="saveSettingsBtn" class="btn btn-primary">Save Settings</button>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+    
+    <!-- Tenant Detail Modal -->
+    <div id="tenantModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <div id="tenantDetailContent">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <script src="auth.js"></script>
+    <script src="api.js"></script>
+    <script src="ui.js"></script>
+    <script>
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const auth = new AuthManager();
+            
+            // Check if already logged in
+            if (auth.isLoggedIn()) {
+                // Show dashboard
+                console.log('Already logged in as:', auth.getUsername());
+                const ui = new UIController(auth);
+                ui.showDashboard();
+                ui.loadTenants();
+                ui.loadDisputes();
+            } else {
+                // Show login (already default)
+                console.log('Not logged in - showing login page');
+                document.getElementById('loginPage').classList.add('active');
+                document.getElementById('dashboardPage').classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

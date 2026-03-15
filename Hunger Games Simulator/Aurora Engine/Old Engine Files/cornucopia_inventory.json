@@ -1,0 +1,53 @@
+{
+    "weapons": [
+        "Sword", "Axe", "Bow", "Hammer", "Knife", "Spear", "Club", "Staff",
+        "Machete", "Gun", "Crossbow", "Dagger", "Whip", "Throwing Star", "Mace"
+    ],
+    "supplies": {
+        "food": {
+            "items": ["Canned Food", "Dried Meat", "Energy Bars", "Fruit"],
+            "quantity_range": [1, 3],
+            "effect": {"food": [20, 40]}
+        },
+        "water": {
+            "items": ["Water Bottle", "Canteen", "Water Purification Tablets"],
+            "quantity_range": [1, 2],
+            "effect": {"water": [20, 40]}
+        },
+        "medicine": {
+            "items": ["First Aid Kit", "Painkillers", "Antibiotics", "Bandages"],
+            "quantity_range": [1, 2],
+            "effect": {"health": [15, 35]}
+        },
+        "shelter": {
+            "items": ["Tent", "Sleeping Bag", "Tarp", "Rope"],
+            "quantity_range": [1, 2],
+            "effect": {"shelter": [20, 40]}
+        },
+        "tools": {
+            "items": ["Multi-tool", "Flint", "Compass", "Map", "Torch"],
+            "quantity_range": [1, 3],
+            "effect": {"tools": true}
+        }
+    },
+    "ammunition": {
+        "arrows": {"quantity_range": [5, 15]},
+        "bullets": {"quantity_range": [6, 12]},
+        "bolts": {"quantity_range": [4, 8]},
+        "throwing_stars": {"quantity_range": [3, 5]}
+    },
+    "rarity_weights": {
+        "common": ["Knife", "Club", "Stick", "Rock"],
+        "uncommon": ["Sword", "Spear", "Staff", "Dagger", "Whip"],
+        "rare": ["Axe", "Hammer", "Machete", "Mace", "Crossbow"],
+        "legendary": ["Bow", "Gun"]
+    },
+    "quantity_multipliers": {
+        "weapons": {"min": 15, "max": 25},
+        "food": {"min": 8, "max": 15},
+        "water": {"min": 6, "max": 12},
+        "medicine": {"min": 4, "max": 8},
+        "shelter": {"min": 3, "max": 6},
+        "tools": {"min": 2, "max": 4}
+    }
+}

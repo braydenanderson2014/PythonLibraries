@@ -1,0 +1,315 @@
+{
+    "arena_events": [
+        {
+            "name": "acid_rain",
+            "description": "Acid rain begins to fall from the sky, burning exposed skin!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [5, 20],
+                    "protection_required": "shelter"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [5, 15]
+                }
+            ]
+        },
+        {
+            "name": "poison_fog",
+            "description": "A thick poison fog rolls through the arena, making it difficult to breathe!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [10, 30],
+                    "protection_required": "gas_mask"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [10, 20]
+                }
+            ]
+        },
+        {
+            "name": "firestorm",
+            "description": "Fireballs rain down from above, setting parts of the arena ablaze!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [15, 40],
+                    "protection_required": "shelter"
+                },
+                {
+                    "type": "supply_destruction"
+                }
+            ]
+        },
+        {
+            "name": "tracker_jacker_swarm",
+            "description": "A massive swarm of tracker jackers is released into the arena!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [8, 25],
+                    "protection_required": "net"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [15, 30]
+                },
+                {
+                    "type": "bleeding"
+                }
+            ]
+        },
+        {
+            "name": "landslide",
+            "description": "The ground shakes as a massive landslide buries parts of the arena!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [20, 50],
+                    "protection_required": "high_ground"
+                },
+                {
+                    "type": "supply_destruction"
+                }
+            ]
+        },
+        {
+            "name": "blood_rain",
+            "description": "Blood begins to rain from the sky, carrying a mysterious illness!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [5, 15],
+                    "protection_required": "shelter"
+                },
+                {
+                    "type": "bleeding"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [5, 20]
+                }
+            ]
+        },
+        {
+            "name": "electrified_fence",
+            "description": "The arena fence becomes electrified, shocking anyone who touches it!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [25, 60],
+                    "protection_required": "insulated_gloves"
+                }
+            ]
+        },
+        {
+            "name": "wolf_pack",
+            "description": "A pack of mutated wolves is released into the arena!",
+            "effects": [
+                {
+                    "type": "animal_attack",
+                    "damage": [25, 55],
+                    "protection_required": "high_ground"
+                },
+                {
+                    "type": "bleeding"
+                }
+            ]
+        },
+        {
+            "name": "freezing_blast",
+            "description": "A sudden freezing blast sweeps through the arena!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [10, 25],
+                    "protection_required": "warm_clothing"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [8, 18]
+                }
+            ]
+        },
+        {
+            "name": "beast_release",
+            "description": "Terrifying mutated beasts are released from their cages!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [30, 70],
+                    "protection_required": "weapon"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [15, 35]
+                }
+            ]
+        },
+        {
+            "name": "cornucopia_explosion",
+            "description": "The Cornucopia explodes, sending deadly shrapnel flying everywhere!",
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [30, 70],
+                    "protection_required": "distance_from_cornucopia"
+                },
+                {
+                    "type": "bleeding"
+                }
+            ]
+        },
+        {
+            "name": "nightmare_gas",
+            "description": "Hallucinogenic gas fills the air, causing terrifying visions!",
+            "effects": [
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [20, 40],
+                    "protection_required": "gas_mask"
+                },
+                {
+                    "type": "damage",
+                    "damage": [5, 15]
+                }
+            ]
+        },
+        {
+            "name": "heavy_rain",
+            "description": "Heavy rain begins to fall, making movement difficult and washing away tracks!",
+            "type": "weather",
+            "duration": 2,
+            "effects": [
+                {
+                    "type": "speed_penalty",
+                    "penalty": 2
+                },
+                {
+                    "type": "resource_decay",
+                    "decay_rate": 1.5
+                }
+            ]
+        },
+        {
+            "name": "blizzard",
+            "description": "A fierce blizzard sweeps through the arena, reducing visibility and causing hypothermia!",
+            "type": "weather",
+            "duration": 3,
+            "effects": [
+                {
+                    "type": "damage_over_time",
+                    "damage": [2, 5],
+                    "duration": 3,
+                    "protection_required": "warm_clothing"
+                },
+                {
+                    "type": "visibility_reduction",
+                    "reduction": 0.5
+                }
+            ]
+        },
+        {
+            "name": "heat_wave",
+            "description": "Intense heat waves bake the arena, causing dehydration and heat stroke!",
+            "type": "weather",
+            "duration": 4,
+            "effects": [
+                {
+                    "type": "resource_decay",
+                    "decay_rate": 2.0,
+                    "resource_type": "water"
+                },
+                {
+                    "type": "damage_over_time",
+                    "damage": [1, 3],
+                    "duration": 4,
+                    "protection_required": "shelter"
+                }
+            ]
+        },
+        {
+            "name": "danger_zone_activation",
+            "description": "A section of the arena is designated as a danger zone - all tributes must evacuate immediately!",
+            "type": "danger_zone",
+            "duration": 1,
+            "effects": [
+                {
+                    "type": "forced_movement",
+                    "penalty_damage": [10, 30]
+                }
+            ]
+        },
+        {
+            "name": "night_time_darkness",
+            "description": "As night falls, visibility drops dramatically and mutated creatures become more active!",
+            "type": "time_based",
+            "trigger_time": "night",
+            "duration": 1,
+            "effects": [
+                {
+                    "type": "visibility_reduction",
+                    "reduction": 0.7
+                },
+                {
+                    "type": "creature_activity",
+                    "increased_chance": 0.3
+                }
+            ]
+        },
+        {
+            "name": "morning_fog",
+            "description": "Thick morning fog rolls in, obscuring vision and muffling sounds!",
+            "type": "time_based",
+            "trigger_time": "morning",
+            "duration": 1,
+            "effects": [
+                {
+                    "type": "visibility_reduction",
+                    "reduction": 0.4
+                },
+                {
+                    "type": "stealth_bonus",
+                    "bonus": 0.2
+                }
+            ]
+        },
+        {
+            "name": "solar_flare",
+            "description": "A massive solar flare bathes the arena in dangerous radiation!",
+            "type": "environmental",
+            "duration": 2,
+            "effects": [
+                {
+                    "type": "damage_over_time",
+                    "damage": [3, 8],
+                    "duration": 2,
+                    "protection_required": "radiation_suit"
+                },
+                {
+                    "type": "sanity_damage",
+                    "sanity_loss": [5, 15]
+                }
+            ]
+        },
+        {
+            "name": "earthquake",
+            "description": "The ground shakes violently as a major earthquake strikes the arena!",
+            "type": "environmental",
+            "duration": 1,
+            "effects": [
+                {
+                    "type": "damage",
+                    "damage": [15, 35]
+                },
+                {
+                    "type": "structure_destruction",
+                    "destruction_chance": 0.6
+                }
+            ]
+        }
+    ]
+}

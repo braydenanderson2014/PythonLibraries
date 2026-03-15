@@ -1,0 +1,133 @@
+{
+    "input_examples": {
+        "pvp_request": {
+            "id": "input_123",
+            "command_type": "pvp_request",
+            "initiator_id": "player1",
+            "target_id": "player2",
+            "description": "Request a PvP battle between two tributes (DISABLED - random encounters only)"
+        },
+        "status_request": {
+            "id": "input_124",
+            "command_type": "status_request",
+            "since_timestamp": "2025-10-15T15:00:00.000000",
+            "description": "Get current game status and animation events since timestamp"
+        },
+        "force_event": {
+            "id": "input_125",
+            "command_type": "force_event",
+            "event_type": "PvP Events",
+            "description": "Force generate a specific type of event"
+        },
+        "register_tribute": {
+            "id": "input_126",
+            "command_type": "register_tribute",
+            "tribute_id": "player_new",
+            "tribute_data": {
+                "name": "New Tribute",
+                "district": 5,
+                "skills": {"strength": 6, "agility": 7, "intelligence": 8},
+                "inventory": []
+            },
+            "is_resume": false,
+            "description": "Register a new tribute or resume an existing one"
+        },
+        "update_tribute_status": {
+            "id": "input_127",
+            "command_type": "update_tribute_status",
+            "tribute_id": "player1",
+            "status": "injured",
+            "details": {"cause": "combat", "severity": "high"},
+            "description": "Update a tribute's status (can use tribute_id or tribute_name)"
+        }
+    },
+    "output_examples": {
+        "game_event": {
+            "message_type": "game_event",
+            "timestamp": "2025-10-15T15:07:50.556022",
+            "data": {
+                "event_type": "Combat Events",
+                "phase_info": {
+                    "name": "Cornucopia",
+                    "type": "cornucopia",
+                    "day": 1,
+                    "phase_number": 0
+                },
+                "event_data": {
+                    "description": "A tribute falls from a great height",
+                    "intensity": "high",
+                    "participants": ["player1", "player2"],
+                    "consequences": ["damage", "status_change"],
+                    "narrative": "Full narrative description...",
+                    "animation_triggers": ["fall_animation", "damage_effect"]
+                },
+                "game_state": {
+                    "current_day": 1,
+                    "current_phase": 1,
+                    "active_tributes": {"player1": "alive", "player2": "injured"},
+                    "next_event_timers": {
+                        "Arena Events": "2025-10-15T15:08:50.000000",
+                        "Combat Events": "2025-10-15T15:09:10.000000"
+                    },
+                    "recent_events": [
+                        {
+                            "event_category": "Combat Events",
+                            "description": "A tribute falls from a great height",
+                            "timestamp": "2025-10-15T15:07:50.556006"
+                        }
+                    ]
+                }
+            }
+        },
+        "input_response": {
+            "message_type": "input_response",
+            "timestamp": "2025-10-15T15:07:52.056770",
+            "data": {
+                "command_type": "pvp_request",
+                "success": false,
+                "reason": "Player-initiated PvP is disabled. Random encounters only.",
+                "input_id": "input_123",
+                "game_state": {
+                    "current_day": 1,
+                    "current_phase": 1,
+                    "active_tributes": {"player1": "alive", "player2": "alive"}
+                }
+            }
+        },
+        "random_encounter_event": {
+            "message_type": "game_event",
+            "timestamp": "2025-10-15T15:08:10.123456",
+            "data": {
+                "event_type": "PvP Events",
+                "phase_info": {
+                    "name": "Morning Phase",
+                    "type": "day_phase",
+                    "day": 1,
+                    "phase_number": 1
+                },
+                "event_data": {
+                    "description": "A skirmish breaks out among 4 tributes!",
+                    "intensity": "high",
+                    "participants": ["player1", "player2", "player3", "player4"],
+                    "consequences": ["multi_tribute_encounter"],
+                    "narrative": "Chaos erupts as Tribute 1, Tribute 2, Tribute 3, and Tribute 4 find themselves in close quarters. Weapons are drawn and the skirmish begins...",
+                    "encounter_type": "random_multi_tribute"
+                },
+                "game_state": {
+                    "current_day": 1,
+                    "current_phase": 1,
+                    "active_tributes": {"player1": "alive", "player2": "injured", "player3": "alive", "player4": "alive"},
+                    "active_pvp_battles": 1,
+                    "next_event_timers": {"PvP Events": "2025-10-15T15:09:10.000000"}
+                }
+            }
+        }
+    },
+    "integration_guide": {
+        "websocket_setup": "Connect Aurora Engine to lobby server websockets",
+        "input_processing": "Send JSON inputs to engine.process_input(input_data)",
+        "output_handling": "Receive JSON messages and trigger web animations",
+        "timer_management": "Check engine.check_timers_and_advance() regularly",
+        "state_sync": "Use engine.get_game_status() for UI updates"
+    }
+}

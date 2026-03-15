@@ -1,0 +1,74 @@
+[
+  {
+    "amount": 350.0,
+    "desc": "Loan Payment - Test Personal Loan",
+    "account": "Checking Account",
+    "account_id": null,
+    "type": "loan_payment",
+    "category": "Loan Payment",
+    "frequency": "monthly",
+    "start_date": "2024-01-01",
+    "end_date": "2026-01-01",
+    "user_id": "test_user_456",
+    "identifier": "1807BbrN0ieJ",
+    "last_processed": "2025-12-14",
+    "active": true,
+    "status": "active",
+    "skip_next": false,
+    "amount_type": "fixed",
+    "amount_min": null,
+    "amount_max": null,
+    "notification_days_before": 1,
+    "instances_created": [
+      "2025-12-14"
+    ]
+  },
+  {
+    "amount": 500.0,
+    "desc": "Loan Payment - Mountain America Car Loan",
+    "account": "Granite Checking Account - Main Checking - ...7755",
+    "account_id": "acct_20250915_195533_6275",
+    "type": "loan_payment",
+    "category": "Loan Payment",
+    "frequency": "monthly",
+    "start_date": "2025-09-17",
+    "end_date": "2032-09-01",
+    "user_id": "admin",
+    "identifier": "olOdaIR803WV",
+    "last_processed": "2025-12-14",
+    "active": true,
+    "status": "active",
+    "skip_next": false,
+    "amount_type": "fixed",
+    "amount_min": null,
+    "amount_max": null,
+    "notification_days_before": 1,
+    "instances_created": [
+      "2025-12-14"
+    ]
+  },
+  {
+    "amount": 330.0,
+    "desc": "Loan Payment - Car Loan",
+    "account": "Granite Credit Union - Main Checking - ...1111",
+    "account_id": "acct_20251214_142242_4048",
+    "type": "loan_payment",
+    "category": "Loan Payment",
+    "frequency": "monthly",
+    "start_date": "2025-08-14",
+    "end_date": "2032-12-14",
+    "user_id": "braydenanderson2014",
+    "identifier": "eyt7S15rPPhq",
+    "last_processed": "2025-12-14",
+    "active": true,
+    "status": "active",
+    "skip_next": false,
+    "amount_type": "fixed",
+    "amount_min": null,
+    "amount_max": null,
+    "notification_days_before": 1,
+    "instances_created": [
+      "2025-12-14"
+    ]
+  }
+]

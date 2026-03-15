@@ -1,0 +1,6 @@
+{
+  "extensions": [".txt"],
+  "preview_only": false,
+  "tools": ["Text"],
+  "dependencies": []
+}

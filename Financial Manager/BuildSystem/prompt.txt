@@ -1,0 +1,5 @@
+can we add a GitHub Actions Helper: build_cli.py ci --github prints minimal steps/env vars to paste into workflow.yml
+
+cache wheelhouse: optional local wheel cache per-Python-ABI so repeated CI builds are fast? 
+
+lets take the github actions one step further, lets 

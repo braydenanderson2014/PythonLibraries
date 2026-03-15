@@ -1,0 +1,27 @@
+--downgrade Downgrades the version [args= version to downgrade to] 
+--preview-name [args=none] shows the name
+--virtual [args= name of virtual env]
+--activate [args none] activates virtual env. (can be paired directly with virtual.)
+--scan-dir [args= dir to scan] (use --scan or --type to specify what to scan for)
+--type [args= type to scan for] can be paired with scan flags.
+--contains [args= String (parameter that specifies what we should look for)] can be paired with type and scan flags
+--install
+--install-needed pairs with virtual and activate.
+--new allows you to create new something
+--location allows you to specify where (can be paired with new)
+--scan-project
+>> allows you to redirect to file
+--and allows you to specify an "and" condition (Paired with >>)
+--target
+--set-root
+--append used with scan to append results instead of override
+--export
+--export-config
+--start (start something)
+--remove-type Remove all of a type
+--delete (delete a file)
+--delete-type (delete all of a type) (Can be paired with contains so its conditional.)
+--create starts the auto create project/build... It will auto ask you everything needed for a build.
+--show-console true/false -> for a build wether or not we should have the console shown.
+--auto (tries to automatically do everything on its own. Including find a splash screen, inject splash, etc...) If you specify something like --auto --inject splash the program will try and find an optimal spot to inject the code to turn off splash screen once program launches.
+--backup 

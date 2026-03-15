@@ -1,0 +1,29 @@
+{
+    "name": "auto_import",
+    "title": "Auto-Import Tutorial",
+    "description": "Learn how to use automatic file monitoring and import features",
+    "priority": 20,
+    "steps": [
+        {
+            "target": "menuBar",
+            "text": "<b>🚀 Auto-Import Feature</b><br><br>Auto-Import allows PDF Utility to monitor a directory and automatically import new PDF files. Configure this feature through Tools → Settings.",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "top"
+        },
+        {
+            "target": "tabs",
+            "text": "<b>📂 Target Widget Selection</b><br><br>Auto-imported files can be sent to any of these widgets automatically. Choose your preferred destination in the settings.",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "statusBar",
+            "text": "<b>📊 Auto-Import Status</b><br><br>When auto-import is active, the status bar shows monitoring information and import notifications.",
+            "button_text": "Got it!",
+            "highlight_style": "glow",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

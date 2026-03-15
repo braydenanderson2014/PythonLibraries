@@ -1,0 +1,69 @@
+{
+    "arena_events": [
+        {
+            "id": "arena_fog",
+            "name": "Arena Fog",
+            "description": "A mysterious fog rolls into the arena, reducing visibility",
+            "intensity": "medium",
+            "effects": ["reduced_visibility", "random_encounters"],
+            "duration_minutes": 15,
+            "narrative_templates": [
+                "A thick, unnatural fog begins to creep across the arena floor, obscuring vision and creating an atmosphere of tension.",
+                "The Gamemakers release a dense fog that blankets the arena, making it difficult for tributes to see more than a few feet ahead.",
+                "Fog rolls in from the edges of the arena, bringing with it an eerie silence broken only by distant, muffled sounds."
+            ]
+        },
+        {
+            "id": "arena_quake",
+            "name": "Arena Quake",
+            "description": "The ground shakes violently, causing structural damage",
+            "intensity": "high",
+            "effects": ["structural_damage", "falling_debris", "forced_movement"],
+            "duration_minutes": 5,
+            "narrative_templates": [
+                "The arena floor begins to shake violently as an artificial earthquake is triggered by the Gamemakers.",
+                "A massive tremor rocks the arena, causing trees to fall and ground to crack open beneath tributes' feet.",
+                "The entire arena convulses as seismic activity engineered by the Capitol creates chaos among the competitors."
+            ]
+        },
+        {
+            "id": "arena_storm",
+            "name": "Arena Storm",
+            "description": "A sudden storm brings dangerous weather conditions",
+            "intensity": "high",
+            "effects": ["lightning_strikes", "flooding", "wind_damage"],
+            "duration_minutes": 20,
+            "narrative_templates": [
+                "Dark clouds gather overhead as a violent storm is unleashed upon the arena by the Gamemakers.",
+                "Thunder crashes and lightning illuminates the sky as a manufactured tempest rages through the arena.",
+                "Rain begins to pour in sheets, turning the arena into a muddy battlefield where footing becomes treacherous."
+            ]
+        },
+        {
+            "id": "arena_wildlife",
+            "name": "Arena Wildlife",
+            "description": "Dangerous mutated animals are released into the arena",
+            "intensity": "medium",
+            "effects": ["animal_attacks", "distraction", "resource_competition"],
+            "duration_minutes": 30,
+            "narrative_templates": [
+                "Strange, mutated creatures begin to emerge from the shadows of the arena, their eyes glowing with unnatural hunger.",
+                "The Gamemakers release genetically engineered beasts into the arena, forcing tributes to contend with new predators.",
+                "Wolves, bears, and other dangerous animals, altered by Capitol science, roam the arena seeking prey."
+            ]
+        },
+        {
+            "id": "arena_night",
+            "name": "Artificial Night",
+            "description": "The arena is plunged into darkness earlier than expected",
+            "intensity": "medium",
+            "effects": ["reduced_visibility", "increased_fear", "forced_camping"],
+            "duration_minutes": 180,
+            "narrative_templates": [
+                "The sun appears to set prematurely as the Gamemakers darken the arena, forcing tributes to navigate in near-total darkness.",
+                "Artificial night falls upon the arena, with only the glow of the Cornucopia providing any illumination.",
+                "The sky darkens unnaturally as the Gamemakers plunge the arena into night, heightening the sense of danger and isolation."
+            ]
+        }
+    ]
+}

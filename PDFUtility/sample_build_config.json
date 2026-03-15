@@ -1,0 +1,40 @@
+{
+  "Tutorials": {
+    "files": [
+      "Help Documents/tutorial_01_basic_usage.json",
+      "Help Documents/tutorial_02_advanced_features.json",
+      "Help Documents/tutorial_03_customization.json"
+    ]
+  },
+  "HELP": {
+    "files": [
+      "Help Documents/help_main.md",
+      "Help Documents/help_troubleshooting.md",
+      "Help Documents/faq.md"
+    ]
+  },
+  "Icons": [
+    "PDF_Utility.ico",
+    "icon.ico"
+  ],
+  "Splash": [
+    "Splash.png",
+    "splash_screen.png"
+  ],
+  "Additional": {
+    "config": [
+      "app_config.json",
+      "build_config.json"
+    ],
+    "templates": [
+      "email.jinja",
+      "index.template"
+    ]
+  },
+  "Build": {
+    "name": "PDF-Utility-Advanced",
+    "windowed": true,
+    "debug": false,
+    "version": "2.0.0"
+  }
+}

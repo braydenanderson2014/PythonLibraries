@@ -1,0 +1,13 @@
+{
+  "providers": {
+    "plaid": {
+      "enabled": false,
+      "client_id": "",
+      "secret": "",
+      "environment": "sandbox"
+    },
+    "mock": {
+      "enabled": true
+    }
+  }
+}

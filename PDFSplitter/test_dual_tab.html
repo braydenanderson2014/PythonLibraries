@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test HTML Document</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .feature {
+            background-color: #e8f4f8;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test HTML Document for Dual Tab Editor</h1>
+        
+        <p>This is a test HTML document to demonstrate the dual tab functionality in the PDF Editor.</p>
+        
+        <h2>Features</h2>
+        <div class="feature">
+            <strong>Editor Tab:</strong> Edit the raw HTML source code with syntax highlighting and modification tracking.
+        </div>
+        
+        <div class="feature">
+            <strong>Preview Tab:</strong> See the rendered HTML output in real-time.
+        </div>
+        
+        <div class="feature">
+            <strong>Modification Tracking:</strong> Tabs show <code>*</code> when modified.
+        </div>
+        
+        <div class="feature">
+            <strong>Tooltips:</strong> Hover over tabs to see full file paths.
+        </div>
+        
+        <h2>Usage Instructions</h2>
+        <ol>
+            <li>Open an HTML or MD file in the editor</li>
+            <li>Two tabs will be created automatically:
+                <ul>
+                    <li><strong>filename.html (Editor)</strong> - For editing</li>
+                    <li><strong>filename.html (Preview)</strong> - For viewing</li>
+                </ul>
+            </li>
+            <li>Edit the file in the Editor tab</li>
+            <li>The tab title will show <code>*</code> when modified</li>
+            <li>Switch to Preview tab to see the rendered output</li>
+            <li>Use <code>Ctrl+S</code> to save changes</li>
+        </ol>
+        
+        <div class="highlight">
+            <strong>Note:</strong> The preview tab updates automatically when you save the file.
+        </div>
+        
+        <h2>Test Content</h2>
+        <p>You can edit this content in the Editor tab and see the changes reflected in the Preview tab.</p>
+        
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+            <tr>
+                <th style="padding: 8px; background-color: #f2f2f2;">Feature</th>
+                <th style="padding: 8px; background-color: #f2f2f2;">Status</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Modified flag display</td>
+                <td style="padding: 8px;">✅ Fixed</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Tab tooltips</td>
+                <td style="padding: 8px;">✅ Fixed</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Dual tab for HTML/MD</td>
+                <td style="padding: 8px;">✅ Implemented</td>
+            </tr>
+        </table>
+        
+        <h2>JavaScript Test</h2>
+        <button onclick="alert('JavaScript is working!')">Click Me</button>
+        
+        <script>
+            console.log('Test HTML document loaded successfully!');
+        </script>
+    </div>
+</body>
+</html>

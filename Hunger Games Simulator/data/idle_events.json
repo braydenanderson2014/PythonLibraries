@@ -1,0 +1,524 @@
+{
+    "morning": [
+        {
+            "description": "goes fishing",
+            "sanity_min": -2,
+            "sanity_max": 5
+        },
+        {
+            "description": "goes hunting",
+            "sanity_min": -3,
+            "sanity_max": 6
+        },
+        {
+            "description": "forages for food",
+            "sanity_min": -1,
+            "sanity_max": 4
+        },
+        {
+            "description": "explores the arena",
+            "sanity_min": -5,
+            "sanity_max": 3
+        },
+        {
+            "description": "searches for supplies",
+            "sanity_min": -2,
+            "sanity_max": 6
+        },
+        {
+            "description": "scavenges the area",
+            "sanity_min": -3,
+            "sanity_max": 4
+        },
+        {
+            "description": "searches for weapons",
+            "sanity_min": -1,
+            "sanity_max": 7,
+            "special_effect": "seek_weapon"
+        },
+        {
+            "description": "finds a weapon",
+            "sanity_min": 5,
+            "sanity_max": 15,
+            "special_effect": "find_weapon"
+        },
+        {
+            "description": "rests after the chaos",
+            "sanity_min": 3,
+            "sanity_max": 10
+        },
+        {
+            "description": "wakes up disoriented",
+            "sanity_min": -8,
+            "sanity_max": -2
+        },
+        {
+            "description": "checks Cornucopia leftovers",
+            "sanity_min": -1,
+            "sanity_max": 5
+        },
+        {
+            "description": "gathers resources",
+            "sanity_min": -2,
+            "sanity_max": 4,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "hunts for food",
+            "sanity_min": -3,
+            "sanity_max": 6,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "searches for water",
+            "sanity_min": -2,
+            "sanity_max": 5,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "practices stealth techniques",
+            "sanity_min": 1,
+            "sanity_max": 6
+        },
+        {
+            "description": "studies the terrain",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "meditates on strategy",
+            "sanity_min": 3,
+            "sanity_max": 10
+        },
+        {
+            "description": "receives a sponsor gift",
+            "sanity_min": 10,
+            "sanity_max": 20,
+            "special_effect": "sponsor_gift"
+        },
+        {
+            "description": "sharpens a weapon",
+            "sanity_min": 1,
+            "sanity_max": 5
+        },
+        {
+            "description": "sets up a small camp",
+            "sanity_min": 4,
+            "sanity_max": 12
+        },
+        {
+            "description": "observes other tributes from afar",
+            "sanity_min": -3,
+            "sanity_max": 2
+        },
+        {
+            "description": "collects edible plants",
+            "sanity_min": 1,
+            "sanity_max": 6,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "builds a small fire",
+            "sanity_min": 2,
+            "sanity_max": 7
+        },
+        {
+            "description": "practices combat moves",
+            "sanity_min": 0,
+            "sanity_max": 5
+        },
+        {
+            "description": "scouts for safe paths",
+            "sanity_min": -1,
+            "sanity_max": 4
+        },
+        {
+            "description": "repairs clothing",
+            "sanity_min": 1,
+            "sanity_max": 4
+        },
+        {
+            "description": "makes a map of the area",
+            "sanity_min": 3,
+            "sanity_max": 9
+        }
+    ],
+    "afternoon": [
+        {
+            "description": "goes fishing",
+            "sanity_min": -2,
+            "sanity_max": 5
+        },
+        {
+            "description": "goes hunting",
+            "sanity_min": -3,
+            "sanity_max": 6
+        },
+        {
+            "description": "forages for food",
+            "sanity_min": -1,
+            "sanity_max": 4
+        },
+        {
+            "description": "explores the arena",
+            "sanity_min": -5,
+            "sanity_max": 3
+        },
+        {
+            "description": "searches for supplies",
+            "sanity_min": -2,
+            "sanity_max": 6
+        },
+        {
+            "description": "scavenges the area",
+            "sanity_min": -3,
+            "sanity_max": 4
+        },
+        {
+            "description": "searches for weapons",
+            "sanity_min": -1,
+            "sanity_max": 7,
+            "special_effect": "seek_weapon"
+        },
+        {
+            "description": "finds a weapon",
+            "sanity_min": 5,
+            "sanity_max": 15,
+            "special_effect": "find_weapon"
+        },
+        {
+            "description": "practices with weapon",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "sets a trap",
+            "sanity_min": 3,
+            "sanity_max": 10,
+            "special_effect": "set_trap"
+        },
+        {
+            "description": "forages for berries",
+            "sanity_min": -1,
+            "sanity_max": 4,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "improves shelter",
+            "sanity_min": 2,
+            "sanity_max": 8,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "finds a stream",
+            "sanity_min": 1,
+            "sanity_max": 6,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "hunts for other tributes",
+            "sanity_min": -4,
+            "sanity_max": 2
+        },
+        {
+            "description": "gathers firewood",
+            "sanity_min": 1,
+            "sanity_max": 6
+        },
+        {
+            "description": "takes a nap",
+            "sanity_min": 4,
+            "sanity_max": 12
+        },
+        {
+            "description": "swims in a nearby lake",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "climbs a tree for better view",
+            "sanity_min": -2,
+            "sanity_max": 3
+        },
+        {
+            "description": "crafts a simple tool",
+            "sanity_min": 3,
+            "sanity_max": 9
+        },
+        {
+            "description": "follows animal tracks",
+            "sanity_min": 0,
+            "sanity_max": 5
+        },
+        {
+            "description": "collects medicinal herbs",
+            "sanity_min": 2,
+            "sanity_max": 7,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "sets up snares",
+            "sanity_min": 1,
+            "sanity_max": 6
+        },
+        {
+            "description": "practices throwing",
+            "sanity_min": 1,
+            "sanity_max": 5
+        },
+        {
+            "description": "studies the sky for weather signs",
+            "sanity_min": 1,
+            "sanity_max": 4
+        },
+        {
+            "description": "makes rope from vines",
+            "sanity_min": 2,
+            "sanity_max": 7
+        }
+    ],
+    "evening": [
+        {
+            "description": "builds a shelter",
+            "sanity_min": 5,
+            "sanity_max": 15,
+            "special_effect": "build_camp"
+        },
+        {
+            "description": "rests, reflecting on the day's events",
+            "sanity_min": 3,
+            "sanity_max": 10
+        },
+        {
+            "description": "meditates",
+            "sanity_min": 4,
+            "sanity_max": 12
+        },
+        {
+            "description": "prays, as a way to find inner peace",
+            "sanity_min": 1,
+            "sanity_max": 8
+        },
+        {
+            "description": "sings a song",
+            "sanity_min": 2,
+            "sanity_max": 9
+        },
+        {
+            "description": "dances around a fire",
+            "sanity_min": 3,
+            "sanity_max": 10
+        },
+        {
+            "description": "starts to question life",
+            "sanity_min": -15,
+            "sanity_max": -5
+        },
+        {
+            "description": "watches the sunset",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "receives a sponsor gift",
+            "sanity_min": 12,
+            "sanity_max": 22,
+            "special_effect": "sponsor_gift"
+        },
+        {
+            "description": "tends to wounds",
+            "sanity_min": 1,
+            "sanity_max": 7
+        },
+        {
+            "description": "counts remaining supplies",
+            "sanity_min": -2,
+            "sanity_max": 4
+        },
+        {
+            "description": "gathers firewood",
+            "sanity_min": 1,
+            "sanity_max": 5,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "reinforces shelter",
+            "sanity_min": 2,
+            "sanity_max": 7,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "collects rainwater",
+            "sanity_min": 0,
+            "sanity_max": 4,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "writes in a journal",
+            "sanity_min": 3,
+            "sanity_max": 10
+        },
+        {
+            "description": "recounts the day's events",
+            "sanity_min": -1,
+            "sanity_max": 5
+        },
+        {
+            "description": "sharpens weapons",
+            "sanity_min": 1,
+            "sanity_max": 6
+        },
+        {
+            "description": "prepares a meal",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "stargazes",
+            "sanity_min": 4,
+            "sanity_max": 12
+        },
+        {
+            "description": "has nightmares",
+            "sanity_min": -10,
+            "sanity_max": -3
+        },
+        {
+            "description": "dreams of home",
+            "sanity_min": 1,
+            "sanity_max": 6
+        },
+        {
+            "description": "plans tomorrow's strategy",
+            "sanity_min": 2,
+            "sanity_max": 8
+        },
+        {
+            "description": "cleans equipment",
+            "sanity_min": 1,
+            "sanity_max": 5
+        },
+        {
+            "description": "reflects on fallen tributes",
+            "sanity_min": -3,
+            "sanity_max": 3
+        }
+    ],
+    "shared": [
+        {
+            "description": "is attacked by wolves",
+            "sanity_min": -20,
+            "sanity_max": -10,
+            "special_effect": "animal_attack"
+        },
+        {
+            "description": "encounters a bear",
+            "sanity_min": -25,
+            "sanity_max": -15,
+            "special_effect": "animal_attack"
+        },
+        {
+            "description": "fights off mutts",
+            "sanity_min": -15,
+            "sanity_max": -8,
+            "special_effect": "animal_attack"
+        },
+        {
+            "description": "hides from tracker jackers",
+            "sanity_min": -8,
+            "sanity_max": -3,
+            "special_effect": "tracker_jackers"
+        },
+        {
+            "description": "hears cannon fire",
+            "sanity_min": -10,
+            "sanity_max": -3
+        },
+        {
+            "description": "spots another tribute",
+            "sanity_min": -6,
+            "sanity_max": 2
+        },
+        {
+            "description": "finds sponsor gift",
+            "sanity_min": 8,
+            "sanity_max": 18,
+            "special_effect": "sponsor_gift"
+        },
+        {
+            "description": "discovers edible plants",
+            "sanity_min": 1,
+            "sanity_max": 6,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "locates a water source",
+            "sanity_min": 2,
+            "sanity_max": 8,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "builds a fire",
+            "sanity_min": 3,
+            "sanity_max": 10,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "hears screams in the distance",
+            "sanity_min": -8,
+            "sanity_max": -2
+        },
+        {
+            "description": "finds abandoned supplies",
+            "sanity_min": 3,
+            "sanity_max": 9
+        },
+        {
+            "description": "encounters a poisonous snake",
+            "sanity_min": -12,
+            "sanity_max": -4
+        },
+        {
+            "description": "discovers a hidden cave",
+            "sanity_min": 4,
+            "sanity_max": 12
+        },
+        {
+            "description": "finds a dead tribute's belongings",
+            "sanity_min": -5,
+            "sanity_max": 3
+        },
+        {
+            "description": "hears the anthem play",
+            "sanity_min": -6,
+            "sanity_max": 1
+        },
+        {
+            "description": "spots a sponsor parachute",
+            "sanity_min": 5,
+            "sanity_max": 15
+        },
+        {
+            "description": "finds a berry bush",
+            "sanity_min": 1,
+            "sanity_max": 5,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "encounters a swarm of insects",
+            "sanity_min": -7,
+            "sanity_max": -1
+        },
+        {
+            "description": "discovers a fruit tree",
+            "sanity_min": 3,
+            "sanity_max": 10,
+            "special_effect": "gather_resources"
+        },
+        {
+            "description": "hears thunder in the distance",
+            "sanity_min": -4,
+            "sanity_max": 2
+        }
+    ]
+}

@@ -1,0 +1,104 @@
+{
+  "weapons": [
+    "Sword", "Bow", "Knife", "Spear", "Axe", "Crossbow", 
+    "Mace", "Dagger", "Trident", "Blowgun", "Club", "Slingshot"
+  ],
+  "rarity_weights": {
+    "common": ["Knife", "Dagger", "Club", "Slingshot"],
+    "uncommon": ["Sword", "Spear", "Mace", "Blowgun"],
+    "rare": ["Bow", "Axe", "Crossbow"],
+    "legendary": ["Trident"]
+  },
+  "supplies": {
+    "food": {
+      "items": [
+        "Bread", "Dried Fruit", "Crackers", "Cheese", 
+        "Canned Soup", "Energy Bar", "Fresh Fish", "Honey", "Capitol Feast Pack"
+      ],
+      "quantity_range": [1, 3],
+      "effect": {
+        "type": "hunger_restore",
+        "varies_by_item": true
+      }
+    },
+    "water": {
+      "items": ["Water Bottle", "Canteen", "Purification Tablets"],
+      "quantity_range": [1, 2],
+      "effect": {
+        "type": "thirst_restore",
+        "varies_by_item": true
+      }
+    },
+    "medical": {
+      "items": [
+        "Bandages", "Antiseptic", "Pain Killers", "Health Kit", 
+        "Antibiotics", "Emergency Medicine", "First Aid Kit"
+      ],
+      "quantity_range": [1, 2],
+      "effect": {
+        "type": "health_restore",
+        "min": 10,
+        "max": 30
+      }
+    },
+    "survival": {
+      "items": [
+        "Sleeping Bag", "Rope", "Matches", "Flashlight", 
+        "Compass", "Fire Starter", "Survival Kit", "Tarp"
+      ],
+      "quantity_range": [1, 1],
+      "effect": {
+        "type": "utility",
+        "varies_by_item": true
+      }
+    },
+    "backpack": {
+      "items": ["Small Backpack", "Large Backpack", "Tactical Pack"],
+      "quantity_range": [1, 1],
+      "effect": {
+        "type": "inventory_increase",
+        "amount": 5
+      }
+    }
+  },
+  "ammunition": {
+    "arrow": {
+      "quantity_range": [5, 15]
+    },
+    "bolt": {
+      "quantity_range": [3, 10]
+    },
+    "dart": {
+      "quantity_range": [10, 20]
+    },
+    "stone": {
+      "quantity_range": [20, 50]
+    }
+  },
+  "quantity_multipliers": {
+    "weapons": {
+      "min": 8,
+      "max": 16
+    },
+    "food": {
+      "min": 6,
+      "max": 12
+    },
+    "water": {
+      "min": 4,
+      "max": 8
+    },
+    "medical": {
+      "min": 3,
+      "max": 6
+    },
+    "survival": {
+      "min": 5,
+      "max": 10
+    },
+    "backpack": {
+      "min": 2,
+      "max": 4
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+    "name": "main_application",
+    "title": "Welcome to PDF Utility",
+    "description": "Introduction to the main application interface and key features",
+    "priority": 1,
+    "steps": [
+        {
+            "target": "tabs",
+            "text": "<b>🎉 Welcome to PDF Utility!</b><br><br>This is your main workspace with different tabs for various PDF operations. Each tab provides specialized tools for different tasks.<br><br><em>💡 Click any tab to explore different PDF tools!</em>",
+            "button_text": "Show me around!",
+            "highlight_style": "pulse",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "menuBar",
+            "text": "<b>🔧 Menu Bar - Your Control Center</b><br><br>The menu bar contains all application functions:<br>• <b>File</b>: Open, save, and manage files<br>• <b>Tools</b>: Settings, tutorials, and utilities<br>• <b>Help</b>: Documentation and support<br><br><em>💡 Everything you need is organized here!</em>",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "top"
+        },
+        {
+            "target": "statusBar",
+            "text": "<b>📊 Status Bar - Stay Informed</b><br><br>The status bar shows:<br>• Current operation progress<br>• Processing status and results<br>• Auto-import monitoring (when enabled)<br>• Helpful tips and notifications",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "bottom"
+        },
+        {
+            "target": "menuBar",
+            "text": "<b>⚙️ Settings & Configuration</b><br><br>Access important settings through <b>Tools → Settings</b>:<br>• Configure default save directories<br>• Set up auto-import file monitoring<br>• Customize tutorial preferences<br>• Adjust performance options<br><br><em>💡 Personalize PDF Utility to fit your workflow!</em>",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "top"
+        },
+        {
+            "target": "menuBar", 
+            "text": "<b>🎓 Learning & Help</b><br><br>Get help anytime through the menu bar:<br>• <b>Tools → Tutorials</b>: Restart any tutorial<br>• <b>Help → Documentation</b>: Detailed guides<br>• <b>Help → About</b>: Version and system info<br><br><em>💡 Never hesitate to explore and learn!</em>",
+            "button_text": "Let's explore the tools!",
+            "highlight_style": "glow",
+            "arrow_direction": "top"
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+{
+  "scan_results": {
+    "tutorials": [
+      "D:\\Build_Script\\test_scanning\\TUTORIAL_welcome.json"
+    ],
+    "help": [
+      "D:\\Build_Script\\test_scanning\\HELP_howtofunction.json"
+    ],
+    "splash": [
+      "D:\\Build_Script\\test_scanning\\SPLASH_mainsplash.png"
+    ],
+    "icons": [
+      "D:\\Build_Script\\test_scanning\\icon_app.png"
+    ]
+  },
+  "build_config": {},
+  "last_scan_type": "icons",
+  "last_updated": "2025-08-18T21:59:04.626305"
+}

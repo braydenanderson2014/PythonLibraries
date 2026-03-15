@@ -1,0 +1,36 @@
+{
+  "inappropriate_words": [
+    "stupid",
+    "dumb",
+    "idiot",
+    "moron",
+    "crap",
+    "suck",
+    "sucks",
+    "hate",
+    "awful",
+    "terrible",
+    "trash",
+    "garbage",
+    "bullsh",
+    "damn",
+    "hell",
+    "wtf",
+    "omg"
+  ],
+  "spam_patterns": [
+    "(.)\\1{10,}",
+    "[A-Z]{20,}",
+    "https?://[^\\s]+",
+    "www\\.[^\\s]+\\.[a-z]{2,}",
+    "[!]{5,}",
+    "[?]{5,}"
+  ],
+  "max_submission_length": 5000,
+  "min_submission_length": 10,
+  "rate_limit": {
+    "max_submissions_per_hour": 5,
+    "max_submissions_per_day": 20,
+    "cooldown_minutes": 5
+  }
+}

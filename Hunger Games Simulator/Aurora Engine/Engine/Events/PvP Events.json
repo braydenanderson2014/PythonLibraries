@@ -1,0 +1,133 @@
+{
+    "event_templates": [
+        {
+            "id": "pvp_ambush",
+            "description": "{initiator_name} ambushes {target_name} in the underbrush!",
+            "narrative": "The forest comes alive with the sounds of combat as {initiator_name} from District {initiator_district} launches a surprise attack on {target_name} from District {target_district}. Weapons clash and the struggle for survival intensifies.",
+            "consequences": [
+                {"type": "damage", "target": "target", "amount": "medium"},
+                {"type": "relationship_change", "participants": ["initiator", "target"], "change": -20}
+            ],
+            "animation_triggers": ["combat_start", "weapon_clash", "damage_effect"]
+        },
+        {
+            "id": "pvp_duel",
+            "description": "{initiator_name} challenges {target_name} to a duel!",
+            "narrative": "Honor and survival collide as {initiator_name} from District {initiator_district} formally challenges {target_name} from District {target_district} to single combat. The arena watches as the two tributes face off.",
+            "consequences": [
+                {"type": "damage", "target": "random", "amount": "high"},
+                {"type": "status_change", "target": "loser", "status": "injured"},
+                {"type": "relationship_change", "participants": ["initiator", "target"], "change": -15}
+            ],
+            "animation_triggers": ["duel_challenge", "combat_start", "damage_effect", "victory_pose"]
+        },
+        {
+            "id": "pvp_territory_defense",
+            "description": "{initiator_name} defends their territory against {target_name}!",
+            "narrative": "{initiator_name} from District {initiator_district} fiercely defends their claimed territory from {target_name} from District {target_district}. The battle for resources and safety rages on.",
+            "consequences": [
+                {"type": "damage", "target": "target", "amount": "medium"},
+                {"type": "resource_gain", "target": "initiator", "resource": "territory_claim"},
+                {"type": "relationship_change", "participants": ["initiator", "target"], "change": -10}
+            ],
+            "animation_triggers": ["territory_defense", "combat_start", "damage_effect"]
+        },
+        {
+            "id": "pvp_alliance_betrayal",
+            "description": "{initiator_name} betrays their alliance with {target_name}!",
+            "narrative": "Trust shatters in the arena as {initiator_name} from District {initiator_district} turns on their former ally {target_name} from District {target_district}. The betrayal sends shockwaves through the remaining tributes.",
+            "consequences": [
+                {"type": "damage", "target": "target", "amount": "high"},
+                {"type": "relationship_change", "participants": ["initiator", "target"], "change": -50},
+                {"type": "relationship_change", "participants": ["initiator", "all_others"], "change": -30}
+            ],
+            "animation_triggers": ["betrayal", "combat_start", "shockwave_effect", "damage_effect"]
+        },
+        {
+            "id": "pvp_weapon_steal",
+            "description": "{initiator_name} attempts to steal {target_name}'s weapon!",
+            "narrative": "Desperation drives {initiator_name} from District {initiator_district} to attempt stealing a weapon from {target_name} from District {target_district}. The confrontation could mean life or death for both tributes.",
+            "consequences": [
+                {"type": "damage", "target": "random", "amount": "low"},
+                {"type": "weapon_transfer", "from": "target", "to": "initiator", "success_chance": 0.6},
+                {"type": "relationship_change", "participants": ["initiator", "target"], "change": -25}
+            ],
+            "animation_triggers": ["weapon_steal_attempt", "combat_start", "weapon_transfer_effect"]
+        },
+        {
+            "id": "multi_tribute_skirmish",
+            "description": "A skirmish breaks out among {participant_count} tributes!",
+            "narrative": "Chaos erupts as {participant_names} find themselves in close quarters. Weapons are drawn and the skirmish begins, with each tribute fighting for survival in the crowded confrontation.",
+            "consequences": [
+                {"type": "damage", "target": "all_participants", "amount": "medium"},
+                {"type": "status_change", "target": "random", "status": "injured", "chance": 0.4},
+                {"type": "relationship_change", "participants": "all_pairs", "change": -15}
+            ],
+            "animation_triggers": ["multi_combat_start", "crowd_fighting", "damage_effect", "chaos_effect"]
+        },
+        {
+            "id": "alliance_formation",
+            "description": "{participant_names} form a temporary alliance!",
+            "narrative": "In the face of greater threats, {participant_names} decide to band together. Their alliance may be temporary, but for now they present a united front against the arena's dangers.",
+            "consequences": [
+                {"type": "alliance_formed", "participants": "all", "duration_minutes": 30},
+                {"type": "relationship_change", "participants": "all_pairs", "change": 10}
+            ],
+            "animation_triggers": ["alliance_formation", "group_huddle", "trust_building"]
+        },
+        {
+            "id": "betrayal_in_group",
+            "description": "Betrayal strikes within the group of {participant_count} tributes!",
+            "narrative": "What began as a tense standoff turns deadly when one tribute turns on the others. {participant_names} are caught off guard as the betrayal unfolds in their midst.",
+            "consequences": [
+                {"type": "damage", "target": "random_multiple", "count": 2, "amount": "high"},
+                {"type": "status_change", "target": "random", "status": "dead", "chance": 0.3},
+                {"type": "relationship_change", "participants": "all_pairs", "change": -40}
+            ],
+            "animation_triggers": ["betrayal", "backstab", "group_chaos", "death_animation"]
+        },
+        {
+            "id": "resource_fight",
+            "description": "{participant_count} tributes fight over a valuable resource!",
+            "narrative": "A valuable resource draws {participant_names} into conflict. What starts as competition quickly escalates into a brutal fight for possession of the prize.",
+            "consequences": [
+                {"type": "damage", "target": "all_participants", "amount": "medium"},
+                {"type": "resource_gain", "target": "winner", "resource": "random_valuable"},
+                {"type": "relationship_change", "participants": "all_pairs", "change": -20}
+            ],
+            "animation_triggers": ["resource_fight", "scramble", "combat_start", "resource_claim"]
+        },
+        {
+            "id": "group_ambush",
+            "description": "A tribute ambushes a group of {participant_count} others!",
+            "narrative": "Using the element of surprise, one tribute launches a daring ambush against {participant_names}. The group scrambles to defend themselves against the unexpected attack.",
+            "consequences": [
+                {"type": "damage", "target": "group_members", "amount": "high"},
+                {"type": "status_change", "target": "random", "status": "injured", "chance": 0.6},
+                {"type": "relationship_change", "participants": "ambusher_vs_group", "change": -30}
+            ],
+            "animation_triggers": ["ambush", "surprise_attack", "group_defense", "damage_effect"]
+        },
+        {
+            "id": "mutual_combat_group",
+            "description": "Mutual combat erupts among {participant_count} tributes!",
+            "narrative": "Alliances shatter and old rivalries flare as {participant_names} engage in mutual combat. The group battle creates chaos and opportunity for all involved.",
+            "consequences": [
+                {"type": "damage", "target": "all_participants", "amount": "high"},
+                {"type": "status_change", "target": "random", "status": "dead", "chance": 0.2},
+                {"type": "relationship_change", "participants": "all_pairs", "change": -25}
+            ],
+            "animation_triggers": ["group_battle", "multi_combat", "damage_effect", "death_animation"]
+        }
+    ],
+    "metadata": {
+        "event_category": "PvP Events",
+        "description": "Player vs Player combat events and random multi-tribute encounters",
+        "intensity_levels": ["low", "medium", "high"],
+        "typical_participants": "2-5",
+        "cooldown_seconds": 60,
+        "animation_focus": "combat",
+        "supports_random_encounters": true,
+        "supports_multi_tribute": true
+    }
+}

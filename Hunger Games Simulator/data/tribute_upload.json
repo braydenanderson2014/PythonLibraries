@@ -1,0 +1,636 @@
+{
+  "description": "Web-uploaded tribute configurations",
+  "version": "1.0",
+  "global_settings": {
+    "enable_custom_tributes": true,
+    "relationship_influence": 1.0,
+    "bias_randomization": 0.0
+  },
+  "relationship_types": {},
+  "custom_tributes": [
+    {
+      "name": "Brayden A.",
+      "district": 12,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Knife",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Sally",
+      "district": 1,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Knife",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 3",
+      "district": 3,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 4",
+      "district": 4,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 5",
+      "district": 5,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 6",
+      "district": 6,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 7",
+      "district": 7,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 8",
+      "district": 8,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 9",
+      "district": 9,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 10",
+      "district": 10,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 11",
+      "district": 11,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 12",
+      "district": 12,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 13",
+      "district": 1,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 14",
+      "district": 2,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 15",
+      "district": 3,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 16",
+      "district": 4,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 17",
+      "district": 5,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 18",
+      "district": 6,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 19",
+      "district": 7,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 20",
+      "district": 8,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 21",
+      "district": 9,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 22",
+      "district": 10,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 23",
+      "district": 11,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    },
+    {
+      "name": "Generated Tribute 24",
+      "district": 12,
+      "skills": {
+        "intelligence": 5,
+        "hunting": 5,
+        "strength": 5,
+        "social": 5,
+        "stealth": 5,
+        "survival": 5,
+        "agility": 5,
+        "endurance": 5,
+        "charisma": 5,
+        "luck": 5
+      },
+      "weapons": [
+        "Fists"
+      ],
+      "preferred_weapon": "Sword",
+      "target_weapon": "Sword",
+      "health": 100,
+      "sanity": 100,
+      "speed": 5,
+      "has_camp": false,
+      "relationships": {}
+    }
+  ]
+}

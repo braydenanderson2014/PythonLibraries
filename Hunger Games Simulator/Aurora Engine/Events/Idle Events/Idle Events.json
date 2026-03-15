@@ -1,0 +1,69 @@
+{
+    "idle_events": [
+        {
+            "id": "rest_and_recover",
+            "name": "Rest and Recovery",
+            "description": "Tributes take time to rest and heal their wounds",
+            "intensity": "low",
+            "effects": ["health_recovery", "energy_restoration", "vulnerability_increase"],
+            "duration_minutes": 30,
+            "narrative_templates": [
+                "{tribute} finds a relatively safe spot to rest and tend to their wounds, allowing their body to begin healing.",
+                "Taking advantage of a quiet moment, {tribute} rests and recovers some of their lost strength.",
+                "{tribute} seizes the opportunity to rest, their body grateful for the momentary respite from constant danger."
+            ]
+        },
+        {
+            "id": "forage_for_food",
+            "name": "Foraging",
+            "description": "A tribute searches for edible plants and berries",
+            "intensity": "low",
+            "effects": ["hunger_reduction", "potential_poisoning", "skill_improvement"],
+            "duration_minutes": 20,
+            "narrative_templates": [
+                "{tribute} carefully searches the underbrush for edible plants and berries, their survival knowledge put to the test.",
+                "Moving cautiously through the forest, {tribute} forages for food, identifying which plants are safe to eat.",
+                "{tribute} spends time gathering what nature provides, hoping their knowledge of edible plants serves them well."
+            ]
+        },
+        {
+            "id": "water_source",
+            "name": "Finding Water",
+            "description": "A tribute locates a source of clean drinking water",
+            "intensity": "low",
+            "effects": ["thirst_quenching", "energy_boost", "potential_contamination"],
+            "duration_minutes": 15,
+            "narrative_templates": [
+                "{tribute} discovers a clear stream or pond, finally able to quench their burning thirst.",
+                "Following the sounds of running water, {tribute} finds a reliable source of clean drinking water.",
+                "{tribute} locates a freshwater source, a critical discovery that could mean the difference between life and death."
+            ]
+        },
+        {
+            "id": "environmental_hazard",
+            "name": "Environmental Challenge",
+            "description": "Tributes deal with harsh environmental conditions",
+            "intensity": "medium",
+            "effects": ["energy_drain", "health_damage", "forced_movement"],
+            "duration_minutes": 25,
+            "narrative_templates": [
+                "The relentless heat of the arena sun beats down on {tribute}, sapping their energy and testing their endurance.",
+                "{tribute} struggles against the harsh environmental conditions, their body pushed to its limits.",
+                "Nature itself seems to conspire against {tribute} as they battle the elements in this unforgiving arena."
+            ]
+        },
+        {
+            "id": "camp_setup",
+            "name": "Setting Up Camp",
+            "description": "A tribute creates a temporary shelter",
+            "intensity": "low",
+            "effects": ["safety_increase", "energy_cost", "visibility_risk"],
+            "duration_minutes": 35,
+            "narrative_templates": [
+                "{tribute} constructs a rudimentary shelter, providing some protection from the elements and potential threats.",
+                "Working quickly but carefully, {tribute} builds a temporary camp, hoping it will provide safety during the night.",
+                "{tribute} creates a hiding place, balancing the need for rest against the risk of discovery by other tributes."
+            ]
+        }
+    ]
+}

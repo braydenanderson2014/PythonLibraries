@@ -1,0 +1,7 @@
+{
+    "skills": ["intelligence", "hunting", "strength", "social", "stealth", "survival", "agility", "endurance", "charisma", "luck"],
+    "range": {
+        "min": 1,
+        "max": 10
+    }
+}

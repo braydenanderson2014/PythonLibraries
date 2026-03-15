@@ -1,0 +1,393 @@
+{
+    "initial": {
+        "cornucopia_horn": [
+            "The Cornucopia horn sounds! Tributes rush to the Cornucopia!",
+            "A loud horn blares, signaling the start of the games! Tributes sprint to the Cornucopia!",
+            "The Cornucopia horn echoes through the arena! Tributes dash towards it!",
+            "The sound of the Cornucopia horn fills the air! Tributes race towards it!",
+            "The Cornucopia horn blares, marking the beginning of the games! Tributes charge to the Cornucopia!",
+            "The Cornucopia horn sounds off! Tributes hurry to the Cornucopia!"
+        ]
+    },
+    "cornucopia": {
+        "arrival_single": [
+            "{name} reaches the Cornucopia first and grabs supplies!",
+            "{name} reaches the Cornucopia and quickly snatches a backpack!",
+            "{name} reaches the Cornucopia and hides behind some objects!",
+            "{name} reaches the Cornucopia and secures a weapon!",
+            "{name} reaches the Cornucopia then runs away due to other tributes!",
+            "{name} reaches the Cornucopia and takes a moment to catch their breath!"
+        ],
+        "alliance_arrival": [
+            "{name1} and {name2} reach the Cornucopia first and grab supplies!",
+            "{name1} and {name2} reach the Cornucopia and team up on supplies!",
+            "{name1} and {name2} reach the Cornucopia and split the loot!",
+            "{name1} and {name2} team up at the Cornucopia!",
+            "{name1} and {name2} form an alliance at the Cornucopia!",
+            "{name1} and {name2} decide to stick together at the Cornucopia!",
+            "{name1} and {name2} reach the Cornucopia and work together to grab supplies!"
+        ],
+        "alliance_form": [
+            "{name1} and {name2} have formed an alliance!",
+            "{name1} and {name2} have teamed up!",
+            "{name1} and {name2} have joined forces!",
+            "{name1} and {name2} have become allies!",
+            "{name1} and {name2} have decided to work together!",
+            "{name1} and {name2} have formed a partnership!",
+            "{name1} and {name2} reach the Cornucopia and decide to work together to grab supplies!"
+        ],
+        "arrival_multiple": [
+            "{names} reach the Cornucopia first and grab supplies!",
+            "{names} reach the Cornucopia and scramble for supplies!",
+            "{names} reach the Cornucopia and fight over the best items!",
+            "{names} reach the Cornucopia and start to gather supplies!",
+            "{names} reach the Cornucopia and quickly grab what they can!",
+            "{names} reach the Cornucopia and dash for the supplies!"
+        ],
+        "combat_arrival": [
+            "{name1} and {name2} reach the Cornucopia and immediately start fighting!",
+            "{name1} and {name2} clash at the Cornucopia over supplies!",
+            "{name1} and {name2} battle for control of the Cornucopia!",
+            "{name1} attacks {name2} as they both reach the Cornucopia!",
+            "{name1} and {name2} engage in combat at the Cornucopia entrance!",
+            "{name1} and {name2} fight fiercely over supplies at the Cornucopia!",
+            "{name1} and {name2} reach the Cornucopia and immediately start fighting for supplies!"
+        ],
+        "scatter_arrival": [
+            "{name1} and {name2} reach the Cornucopia, grab what they can, and run in different directions!",
+            "{name1} and {name2} snatch supplies and scatter into the woods separately!",
+            "{name1} grabs supplies and flees, while {name2} does the same in another direction!",
+            "{name1} and {name2} quickly grab items and head off alone!",
+            "{name1} and {name2} take supplies and disappear into different parts of the forest!",
+            "{name1} and {name2} reach the Cornucopia, grab what they can, and run in different directions!"
+        ],
+        "escape_single": [
+            "{name} grabs supplies and runs into the forest!",
+            "{name} snatches supplies and flees into the woods!",
+            "{name} takes supplies and disappears into the forest!",
+            "{name} secures supplies and heads into the woods!",
+            "{name} grabs supplies and dashes into the forest!",
+            "{name} takes supplies and runs off into the woods!",
+            "{name} grabs supplies and runs into the forest!"
+        ],
+        "escape_alliance": [
+            "{names} grab supplies and run into the forest!",
+            "{names} take supplies and head into the woods together!",
+            "{names} secure supplies and flee as a group!",
+            "{names} snatch supplies and disappear into the forest together!",
+            "{names} grab supplies and dash into the woods as a team!",
+            "{names} take supplies and run off into the forest together!"
+        ],
+        "escape_separate": [
+            "Several tributes grab supplies and run into the forest separately.",
+            "Multiple tributes snatch supplies and scatter into the woods.",
+            "Various tributes grab what they can and flee in different directions.",
+            "Several tributes secure supplies and head off alone.",
+            "Multiple tributes take supplies and disappear into different parts of the forest.",
+            "Various tributes grab supplies and dash into the woods separately."
+        ]
+    },
+    "combat": {
+        "attack": [
+            "{attacker} {verb} {defender} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} {verb} at {defender} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "attack_with_bleeding": [
+            "{attacker} {verb} {defender} with {weapon} for {damage} damage, causing {bleeding_type} bleeding! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} {verb} {defender} with {weapon} for {damage} damage! The wound causes {bleeding_type} bleeding. {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker}'s {weapon} inflicts {damage} damage on {defender} with a {verb}, causing {bleeding_type} bleeding! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "attack_instant_kill": [
+            "CRITICAL HIT! {attacker} {verb} {defender} with {weapon}, instantly killing them!",
+            "{attacker}'s {weapon} delivers a fatal blow to {defender} with a {verb}!",
+            "{attacker} {verb} {defender} with {weapon} for an INSTANT KILL!"
+        ],
+        "counterattack": [
+            "{attacker} {verb}ing {defender} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} {verb} back at {defender} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} retaliates by {verb}ing {defender} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "counterattack_with_bleeding": [
+            "{attacker} {verb} back at {defender} with {weapon} for {damage} damage, causing {bleeding_type} bleeding! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} retaliates by {verb}ing {defender} with {weapon} for {damage} damage! The wound causes {bleeding_type} bleeding. {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker}'s counterattack with {weapon} inflicts {damage} damage and {bleeding_type} bleeding on {defender}! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "counterattack_instant_kill": [
+            "CRITICAL COUNTERATTACK! {attacker} {verb} back at {defender} with {weapon}, instantly killing them!",
+            "{attacker}'s retaliatory {weapon} delivers a fatal blow to {defender} with a {verb}!",
+            "{attacker} retaliates with {weapon} for an INSTANT KILL on {defender}!"
+        ],
+        "fight_no_death": [
+            "{name1} and {name2} fight but neither dies.",
+            "{name1} and {name2} clash but both survive.",
+            "{name1} and {name2} battle fiercely but neither falls."
+        ],
+        "agree_stop": [
+            "{name1} and {name2} agree to stop fighting.",
+            "{name1} and {name2} call a truce.",
+            "{name1} and {name2} decide to back down."
+        ],
+        "death_combat": [
+            "{victim} died in combat against {killer}!",
+            "{victim} fell in battle to {killer}!",
+            "{killer} defeated {victim} in combat!"
+        ],
+        "survive_fight": [
+            "{name1} and {name2} fought, but both survived.",
+            "{name1} and {name2} battled but neither was killed.",
+            "{name1} and {name2} clashed but both lived to fight another day."
+        ],
+        "betrayal_death": [
+            "{victim} was betrayed and died by {killer}!",
+            "{killer} betrayed {victim} and killed them!",
+            "{victim} was stabbed in the back by {killer}!"
+        ],
+        "betrayal_attempt": [
+            "{traitor} tried to betray {victim}, but the fight ended without death.",
+            "{traitor} attempted to backstab {victim}, but failed.",
+            "{traitor} betrayed {victim}, but the attack didn't kill them."
+        ],
+        "outrun": [
+            "{defender} outruns {attacker} and escapes!",
+            "{defender} outpaces {attacker} and gets away!",
+            "{defender} flees from {attacker} successfully!"
+        ],
+        "lucky_escape": [
+            "LUCKY ESCAPE! {defender} miraculously gets away from {attacker}!",
+            "{defender} has an incredible stroke of luck and escapes {attacker}!",
+            "By sheer luck, {defender} manages to slip away from {attacker}!",
+            "{defender} defies the odds and escapes from {attacker}!",
+            "A fortunate turn of events allows {defender} to escape {attacker}!"
+        ],
+        "miss": [
+            "{attacker} {verb}s at {defender} with {weapon} but misses!",
+            "{attacker}'s {weapon} misses {defender} with a {verb}!",
+            "{attacker} {verb}s {defender} with {weapon} but fails to connect!"
+        ],
+        "near_miss_bleeding": [
+            "{attacker}'s {weapon} grazes {defender} with a {verb}, causing minor bleeding! {defender} health: {health}",
+            "{attacker} {verb}s at {defender} with {weapon} and barely hits, inflicting {damage} damage with minor bleeding! {defender} health: {health}",
+            "{attacker}'s near miss with {weapon} still causes a flesh wound on {defender}, leading to minor bleeding! {defender} health: {health}"
+        ],
+        "pickup_weapon": [
+            "{tribute} finds and picks up a {weapon}!",
+            "{tribute} discovers a {weapon} and claims it!",
+            "{tribute} grabs a {weapon} from the ground!"
+        ],
+        "already_has_weapon": [
+            "{tribute} already has a {weapon} and leaves it.",
+            "{tribute} sees a {weapon} but already owns one.",
+            "{tribute} finds a {weapon} but doesn't need another one."
+        ],
+        "steal_weapon": [
+            "{thief} steals {weapon} from {victim}!",
+            "{thief} snatches {weapon} away from {victim}!",
+            "{thief} takes {weapon} from {victim}'s hands!"
+        ],
+        "steal_weapon_fail": [
+            "{thief} tries to steal {weapon} from {victim} but fails!",
+            "{thief} attempts to take {weapon} from {victim} but can't!",
+            "{thief} fails to steal {weapon} from {victim}!"
+        ],
+        "disarm_success": [
+            "{attacker} disarms {defender}, forcing them to drop their {weapon}!",
+            "{attacker} knocks {weapon} out of {defender}'s hands!",
+            "{attacker} successfully disarms {defender} of their {weapon}!",
+            "{defender} drops their {weapon} as {attacker} disarms them!"
+        ],
+        "disarm_fail": [
+            "{attacker} tries to disarm {defender} but fails!",
+            "{attacker} attempts to knock away {defender}'s weapon but can't!",
+            "{attacker} fails to disarm {defender}!",
+            "{defender} holds onto their {weapon} tightly, resisting {attacker}'s disarm attempt!"
+        ],
+        "head_shot_injury": [
+            "HEAD SHOT! {attacker} {verb}s {defender} in the head with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "CRITICAL HEAD INJURY! {attacker}'s {weapon} strikes {defender} in the head with a {verb}, dealing {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} lands a head shot on {defender} with {weapon}, inflicting {damage} damage! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "disleg": [
+            "DISLEG! {attacker} {verb}s {defender}'s {limb} with {weapon}, disabling their leg! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} strikes {defender}'s {limb} with {weapon}, disleging them! {defender} (Health: {health}, Sanity: {sanity})",
+            "CRITICAL LEG INJURY! {attacker}'s {weapon} hits {defender}'s {limb} with a {verb}, disabling their leg! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "limb_damage_injury": [
+            "LIMB INJURY! {attacker} {verb}s {defender}'s {limb} with {weapon} for {damage} damage! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} strikes {defender}'s {limb} with {weapon}, injuring their {limb}! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker}'s {weapon} hits {defender}'s {limb} with a {verb}, causing {damage} damage! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "limb_damage_leg_disabled": [
+            "LEG DISABLED! {attacker} {verb}s {defender}'s {limb} with {weapon}, disabling their leg! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} cripples {defender}'s {limb} with {weapon}, making them unable to run! {defender} (Health: {health}, Sanity: {sanity})",
+            "CRITICAL LEG STRIKE! {attacker}'s {weapon} shatters {defender}'s {limb} with a {verb}! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "limb_damage_arm_disabled": [
+            "ARM DISABLED! {attacker} {verb}s {defender}'s {limb} with {weapon}, disabling their arm! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} cripples {defender}'s {limb} with {weapon}, forcing them to drop their weapon! {defender} (Health: {health}, Sanity: {sanity})",
+            "CRITICAL ARM STRIKE! {attacker}'s {weapon} shatters {defender}'s {limb} with a {verb}! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "limb_damage_arm_disabled_no_weapon": [
+            "ARM DISABLED! {attacker} {verb}s {defender}'s {limb} with {weapon}, disabling their arm! {defender} (Health: {health}, Sanity: {sanity})",
+            "{attacker} cripples {defender}'s {limb} with {weapon}! {defender} (Health: {health}, Sanity: {sanity})",
+            "CRITICAL ARM STRIKE! {attacker}'s {weapon} shatters {defender}'s {limb} with a {verb}! {defender} (Health: {health}, Sanity: {sanity})"
+        ],
+        "head_shot_kill": [
+            "HEAD SHOT KILL! {attacker} {verb}s {defender} in the head with {weapon}, instantly killing them!",
+            "CRITICAL HEAD SHOT! {attacker}'s {weapon} delivers a fatal blow to {defender}'s head with a {verb}!",
+            "FATAL HEAD INJURY! {attacker} lands a head shot on {defender} with {weapon}, killing them instantly!"
+        ]
+    },
+    "alliance": {
+        "form": [
+            "{name1} and {name2} have formed an alliance!",
+            "{name1} and {name2} have teamed up!",
+            "{name1} and {name2} have joined forces!",
+            "{name1} and {name2} have become allies!",
+            "{name1} and {name2} have decided to work together!",
+            "{name1} and {name2} have formed a partnership!"
+        ],
+        "remain_allies": [
+            "{name1} and {name2} remain allies and don't fight.",
+            "{name1} and {name2} stay loyal to their alliance.",
+            "{name1} and {name2} honor their partnership."
+        ],
+        "dissolve": [
+            "{name1} and {name2} decide to go their separate ways.",
+            "{name1} and {name2} part ways.",
+            "{name1} and {name2} end their alliance."
+        ]
+    },
+    "random_events": {
+        "sickness_death": [
+            "{name} died of sickness!",
+            "{name} succumbed to illness!",
+            "{name} perished from disease!"
+        ],
+        "natural_death": [
+            "{name} {cause}!",
+            "{name} met their end from {cause}!",
+            "{name} was claimed by {cause}!"
+        ],
+        "sponsor_gift": [
+            "{name} receives a sponsor gift!",
+            "{name} gets a gift from their sponsors!",
+            "{name} is blessed with sponsor supplies!"
+        ],
+        "revive": [
+            "The Gamemakers revive {name} due to sponsor intervention!",
+            "The Gamemakers bring {name} back to life!",
+            "Sponsor intervention saves {name}!"
+        ]
+    },
+    "deceit": {
+        "attempt_success": [
+            "{deceiver} successfully deceives {victim} with a convincing story!",
+            "{deceiver} manipulates {victim} with emotional tactics!",
+            "{deceiver} fools {victim} with clever deception!",
+            "{deceiver} tricks {victim} into believing their lies!",
+            "{deceiver} plays on {victim}'s emotions successfully!"
+        ],
+        "attempt_caught": [
+            "{victim} sees through {deceiver}'s deception!",
+            "{victim} catches {deceiver} in a lie!",
+            "{victim} recognizes {deceiver}'s manipulation!",
+            "{victim} isn't fooled by {deceiver}'s story!",
+            "{victim} calls out {deceiver}'s deceit!"
+        ],
+        "no_attempt": [
+            "{name} considers deceiving others but decides against it.",
+            "{name} thinks about manipulation but stays honest.",
+            "{name} contemplates deceit but chooses integrity."
+        ]
+    },
+    "idle": {
+        "event": ["{description}"]
+    },
+    "bleeding": {
+        "fatal_wound": [
+            "{name} suffers a FATAL wound from {weapon}! They will bleed out within the day!",
+            "{name}'s wound from {weapon} is FATAL! Death from blood loss is imminent!",
+            "The {weapon} inflicts a FATAL wound on {name}! They won't survive the day!"
+        ],
+        "severe_wound": [
+            "{name} suffers a SEVERE wound from {weapon}! They need treatment or it could become fatal!",
+            "{name}'s {weapon} wound is SEVERE! Medical attention is urgently needed!",
+            "The {weapon} causes SEVERE bleeding in {name}! They require immediate help!"
+        ],
+        "mild_wound": [
+            "{name} suffers a MILD wound from {weapon}. They'll be fine with rest.",
+            "{name}'s {weapon} wound is MILD. It should heal naturally.",
+            "The {weapon} causes only MILD bleeding in {name}. No immediate concern."
+        ],
+        "infection": [
+            "The wound becomes infected! {name} will suffer additional effects.",
+            "{name}'s wound develops an infection! This will complicate recovery.",
+            "Infection sets in {name}'s wound! Additional health and sanity loss expected."
+        ],
+        "fatal_bleeding": [
+            "{name}'s fatal wound continues to bleed heavily! (-{damage} health)",
+            "{name} loses blood rapidly from their fatal wound! (-{damage} health)",
+            "The fatal bleeding drains {name}'s strength! (-{damage} health)"
+        ],
+        "severe_bleeding": [
+            "{name}'s severe wound bleeds steadily! (-{damage} health)",
+            "{name} continues to bleed from their severe wound! (-{damage} health)",
+            "Blood loss from {name}'s severe wound persists! (-{damage} health)"
+        ],
+        "mild_bleeding": [
+            "{name}'s mild wound bleeds slightly. (-{damage} health)",
+            "{name} experiences minor bleeding from their wound. (-{damage} health)",
+            "A small amount of blood loss from {name}'s mild wound. (-{damage} health)"
+        ],
+        "fatal_death": [
+            "{name} succumbs to fatal blood loss!",
+            "{name} dies from unstoppable bleeding!",
+            "Fatal blood loss claims {name}'s life!"
+        ],
+        "severe_to_fatal": [
+            "{name}'s severe bleeding has become FATAL! They need immediate treatment!",
+            "{name}'s untreated severe bleeding turns fatal!",
+            "The severe bleeding in {name} becomes life-threatening!"
+        ],
+        "self_treatment": [
+            "{name} manages to treat their severe bleeding! The wound is now mild.",
+            "{name} successfully bandages their severe wound! Bleeding reduced to mild.",
+            "{name} applies pressure and treats their severe bleeding effectively."
+        ],
+        "ally_treatment": [
+            "{name} receives help from {ally} to treat their severe bleeding!",
+            "{ally} assists {name} with their severe wound! Bleeding reduced.",
+            "{name} gets medical help from {ally} for their severe bleeding."
+        ],
+        "natural_healing": [
+            "{name}'s mild bleeding has stopped naturally.",
+            "{name}'s wound heals on its own. Bleeding stopped.",
+            "The mild bleeding in {name} ceases naturally."
+        ],
+        "infection_effect": [
+            "The infection in {name}'s wound causes additional problems! (-{damage} health, -{sanity} sanity)",
+            "{name}'s infected wound flares up! (-{damage} health, -{sanity} sanity)",
+            "Infection aggravates {name}'s wound! Health: -{damage}, Sanity: -{sanity}"
+        ],
+        "infection_worsens": [
+            "The infection worsens {name}'s bleeding to SEVERE!",
+            "{name}'s infection turns their mild bleeding severe!",
+            "Infection escalates {name}'s wound to severe bleeding!"
+        ],
+        "infection_fatal": [
+            "The infection turns {name}'s bleeding FATAL!",
+            "{name}'s infected wound becomes fatally severe!",
+            "Infection makes {name}'s severe bleeding fatal!"
+        ],
+        "bleeding_death": [
+            "{name} dies from blood loss and infection!",
+            "{name} succumbs to combined blood loss and infection!",
+            "Fatal combination of bleeding and infection kills {name}!"
+        ]
+    },
+    "reports": {
+        "end_day": ["\n--- End of Day {day} Report ---"],
+        "tribute_status": ["District {district}: {name} - Health: {health}, Sanity: {sanity}, Speed: {speed}, Food: {food}, Water: {water}, Shelter: {shelter}, Allies: {allies}, Kills: {kills}"],
+        "winner": ["\nWinner: {name}!"]
+    }
+}

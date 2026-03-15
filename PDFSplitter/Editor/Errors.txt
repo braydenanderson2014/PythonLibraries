@@ -1,0 +1,22 @@
+
+2025-07-17 22:51:01,993 - pdf_utility - INFO - [EditorWindow]: Initializing MyPDFEditor...
+2025-07-17 22:51:02,007 - pdf_utility - INFO - [PluginManager]: Loaded renderer: PDFRenderer (priority: 10)
+2025-07-17 22:51:02,012 - pdf_utility - INFO - [PluginManager]: Loaded renderer: MarkdownRenderer (priority: 10)
+2025-07-17 22:51:02,188 - pdf_utility - INFO - [PluginManager]: Loaded renderer: HTMLRenderer (priority: 10)
+2025-07-17 22:51:02,192 - pdf_utility - INFO - [PluginManager]: Loaded renderer: editor.renderers.text_renderer.renderer (priority: 10)
+2025-07-17 22:51:02,198 - pdf_utility - WARNING - [PluginManager]: Failed to load renderer editor.renderers.cef_markdown_renderer.renderer: Python version not supported: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+2025-07-17 22:51:02,204 - pdf_utility - WARNING - [PluginManager]: Failed to load renderer editor.renderers.cef_html_renderer.renderer: Python version not supported: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+2025-07-17 22:51:02,322 - pdf_utility - INFO - [PluginManager]: Loaded renderer: PyQt Markdown Renderer (priority: 1)
+2025-07-17 22:51:02,400 - pdf_utility - INFO - [PluginManager]: Loaded renderer: PyQt HTML Renderer (priority: 1)
+2025-07-17 22:51:02,401 - pdf_utility - INFO - [PluginManager]: Using PDFRenderer as the renderer for .pdf (priority: 10)
+2025-07-17 22:51:02,401 - pdf_utility - INFO - [PluginManager]: Using PyQt Markdown Renderer as the renderer for .md (priority: 1)
+2025-07-17 22:51:02,402 - pdf_utility - INFO - [PluginManager]: Using PyQt Markdown Renderer as the renderer for .markdown (priority: 1)
+2025-07-17 22:51:02,402 - pdf_utility - INFO - [PluginManager]: Using PyQt HTML Renderer as the renderer for .html (priority: 1)
+2025-07-17 22:51:02,403 - pdf_utility - INFO - [PluginManager]: Using PyQt HTML Renderer as the renderer for .htm (priority: 1)
+2025-07-17 22:51:02,403 - pdf_utility - INFO - [PluginManager]: Using HTMLRenderer as the renderer 
+for .xhtml (priority: 10)
+2025-07-17 22:51:02,403 - pdf_utility - INFO - [PluginManager]: Using unnamed as the renderer for .txt (priority: 10)
+2025-07-17 22:51:02,404 - pdf_utility - INFO - [PDF Editor]: Registered renderers for: ['.htm', '.html', '.markdown', '.md', '.pdf', '.txt', '.xhtml']
+2025-07-17 22:51:02,416 - pdf_utility - ERROR - [PyQtHtmlRenderer]: Failed to create editor tab: 'EditorWindow' object has no attribute 'file_api'
+2025-07-17 22:51:02,417 - pdf_utility - WARNING - [FileTypeManager]: Dual tab creation failed for C:/Users/brayd/Desktop/Removed Apps.html: None. Falling back to single tab.
+Argument list is empty, the program name is not passed to QCoreApplication. base::CommandLine cannot be properly initialized.

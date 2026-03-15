@@ -1,0 +1,647 @@
+# editor/renderers/html_renderer/renderer.py
+import os
+import json
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk, messagebox
+from bs4 import BeautifulSoup, FeatureNotFound
+
+from ..base import BaseRenderer
+
+# Enhanced rendering capabilities
+try:
+    from enhanced_web_renderer import EnhancedWebRenderer
+    ENHANCED_RENDERING = True
+except ImportError:
+    ENHANCED_RENDERING = False
+
+from ...file_api          import FileAPI
+from PDFUtility.PDFLogger                import Logger
+
+from .css_interceptor         import CSSInterceptor
+from .java_script_interceptor import JavaScriptInterceptor
+
+# optional syntax highlighting
+try:
+    from pygments import highlight
+    from pygments.lexers import HtmlLexer
+    from pygments.formatters import HtmlFormatter
+    PYGMENTS_OK = True
+except ImportError:
+    PYGMENTS_OK = False
+
+# live preview widget
+
+# near the top of editor/renderers/html_renderer/renderer.py
+
+# instead of importing HTMLLabel directly:
+try:
+    from tkhtmlview import HTMLLabel as _HTMLLabel
+    class HTMLLabel(_HTMLLabel):
+        """A tiny subclass that safely ignores select_range calls."""
+        def select_range(self, start, end=None):
+            # no-op, so "Select All" won't crash
+            pass
+        def select_from(self, index):
+            pass
+        def select_to(self, index):
+            pass
+    HTML_OK = True
+except ImportError:
+    HTML_OK = False
+
+
+class Renderer(BaseRenderer):
+    _meta = None
+
+    @classmethod
+    def _load_meta(cls):
+        if cls._meta is None:
+            p = Path(__file__).parent / "settings.json"
+            cls._meta = json.loads(p.read_text(encoding="utf-8"))
+        return cls._meta
+
+    @classmethod
+    def extensions(cls):
+        return cls._load_meta()["supported_extensions"]
+
+    @classmethod
+    def preview_only(cls):
+        return False
+
+    @classmethod
+    def supports_dual_tabs(cls):
+        return True
+
+    @classmethod
+    def tools(cls):
+        return []
+
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.meta = self._load_meta()
+
+        self.locked        = bool(self.meta["locked"])
+        self.auto_format   = bool(self.meta["auto_format"])
+        self.live_preview  = bool(self.meta["live_preview"])
+        self.validate_html = bool(self.meta["validate_html"])
+
+        self.hooks         = self.meta["function_hooks"]
+        self._current_path = None
+        self.logger        = Logger()
+
+    def open(self, path: str) -> str:
+        return getattr(self, self.hooks["on_open"])(path)
+
+    def open_dual_tabs(self, path: str) -> tuple[str, str]:
+        """
+        Open HTML file with dual tabs (editor + preview).
+        Returns (editor_tab_id, preview_tab_id).
+        """
+        return self.load_html_dual_tabs(path)
+
+    def open_dual_tabs(self, path: str):
+        """
+        Open HTML file with dual tabs (editor + preview).
+        Returns (editor_tab_id, preview_tab_id).
+        """
+        if hasattr(self, self.hooks.get("on_open_dual")):
+            return getattr(self, self.hooks["on_open_dual"])(path)
+        else:
+            # Fallback to single tab
+            tab_id = self.open(path)
+            return tab_id, None
+
+    def save(self, tab_id: str):
+        return getattr(self, self.hooks["on_save"])(tab_id)
+
+    def save_as(self, tab_id: str, newpath: str):
+        self._current_path = newpath
+        return self.save(tab_id)
+
+    def toggle_edit(self, tab_id: str):
+        if self.locked:
+            return
+        return getattr(self, self.hooks["on_toggle_edit"])(tab_id)
+
+    # ── Hook implementations ──────────────────────────────────────────
+
+    def load_html_document(self, path: str) -> str:
+        if not HTML_OK:
+            messagebox.showwarning(
+                "tkhtmlview missing",
+                "Install tkhtmlview to preview/edit HTML."
+            )
+            return None
+
+        self._current_path = path
+        raw = Path(path).read_text("utf-8", errors="replace")
+
+        # ── 1) run interceptors ───────────────────────────────
+        base_dir = os.path.dirname(path)
+        raw = CSSInterceptor(raw, base_path=base_dir).inline_css()
+        raw = JavaScriptInterceptor(raw).strip_scripts()
+
+        # ── 2) optional syntax highlighting ───────────────────
+        if PYGMENTS_OK:
+            formatter = HtmlFormatter(noclasses=True)
+            raw = highlight(raw, HtmlLexer(), formatter)
+
+        # ── 3) build UI with proper scrolling ───────────────────────────────────────
+        tab       = ttk.Frame(self.editor.tab_manager.notebook)
+        container = ttk.Frame(tab);  container.pack(fill="both", expand=True)
+        
+        # Create scrollbars
+        vscroll   = ttk.Scrollbar(container, orient="vertical")
+        hscroll   = ttk.Scrollbar(container, orient="horizontal")
+        vscroll.pack(side="right", fill="y")
+        hscroll.pack(side="bottom", fill="x")
+
+        editor = tk.Text(
+            container,
+            wrap="none",
+            font=(self.meta.get("font_family","Consolas"),
+                  self.meta.get("font_size",12)),
+            yscrollcommand=vscroll.set,
+            xscrollcommand=hscroll.set
+        )
+        editor.insert("1.0", raw)
+        editor.pack(fill="both", expand=True)
+
+        # Create preview widget with proper scrolling
+        try:
+            from tkhtmlview import HTMLScrolledText
+            preview = HTMLScrolledText(container, html=raw)
+        except ImportError:
+            preview = HTMLLabel(container, html=raw, 
+                              yscrollcommand=vscroll.set,
+                              xscrollcommand=hscroll.set)
+        
+        if self.live_preview:
+            preview.pack_forget()
+
+        # Configure scrollbars
+        def scroll_both(*args):
+            editor.yview(*args)
+            if hasattr(preview, 'yview'):
+                preview.yview(*args)
+                
+        def scroll_both_x(*args):
+            editor.xview(*args)
+            if hasattr(preview, 'xview'):
+                preview.xview(*args)
+                
+        vscroll.config(command=scroll_both)
+        hscroll.config(command=scroll_both_x)
+
+        # ── 4) register in TabManager ────────────────────────
+        tab_id = self.editor.tab_manager.register_tab_widget(
+            tab, os.path.basename(path),
+            doc_model=None, preview_path=path,
+            renderer=self
+        )
+        info = self.editor.tab_manager.tabs[tab_id]
+        info.update({
+            "renderer_instance": self,
+            "renderer_meta":     self.meta,
+            "edit_widget":       editor,
+            "preview_widget":    preview,
+            "edit_mode":         True
+        })
+
+        editor.bind("<<Modified>>", lambda e: self._maybe_format_and_preview(tab_id))
+        FileAPI._register_tab(tab_id, None)
+        return tab_id
+
+    def save_html_document(self, tab_id: str):
+        info   = self.editor.tab_manager.tabs[tab_id]
+        widget = info["edit_widget"]
+        raw    = widget.get("1.0","end-1c")
+        target = self._current_path or info["preview_path"]
+        Path(target).write_text(raw, encoding="utf-8")
+
+        # re-run interceptors on save
+        base_dir = os.path.dirname(target)
+        cleaned  = CSSInterceptor(raw, base_path=base_dir).inline_css()
+        cleaned  = JavaScriptInterceptor(cleaned).strip_scripts()
+
+        info["preview_widget"].set_html(cleaned)
+        info.update({
+            "preview_path": target,
+            "preview_name": os.path.basename(target)
+        })
+        self.editor.tab_manager.refresh_tab_label(tab_id)
+
+    def toggle_edit_mode(self, tab_id: str):
+        info     = self.editor.tab_manager.tabs[tab_id]
+        editor   = info["edit_widget"]
+        preview  = info["preview_widget"]
+        if info["edit_mode"]:
+            editor.pack_forget()
+            if self.live_preview: preview.pack(fill="both", expand=True)
+        else:
+            preview.pack_forget()
+            editor.pack(fill="both", expand=True)
+        info["edit_mode"] = not info["edit_mode"]
+
+    def format_html_code(self, tab_id: str):
+        if not self.auto_format:
+            return
+        info = self.editor.tab_manager.tabs[tab_id]
+        txt  = info["edit_widget"]
+        raw  = txt.get("1.0","end-1c")
+
+        # ── pretty-print via BeautifulSoup ────────────────
+        try:
+            soup = BeautifulSoup(raw, "html5lib")
+            self.logger.debug("HTMLRenderer", "Using html5lib")
+        except FeatureNotFound:
+            try:
+                soup = BeautifulSoup(raw, "lxml")
+                self.logger.debug("HTMLRenderer", "Using lxml")
+            except FeatureNotFound:
+                soup = BeautifulSoup(raw, "html.parser")
+                self.logger.debug("HTMLRenderer", "Using built-in parser")
+        pretty = soup.prettify()
+        txt.delete("1.0","end")
+        txt.insert("1.0", pretty)
+
+    def insert_text_at_cursor(self, tab_id: str, text: str):
+        ed = self.editor.tab_manager.tabs[tab_id]["edit_widget"]
+        ed.insert("insert", text)
+
+    def delete_selected_text(self, tab_id: str):
+        ed = self.editor.tab_manager.tabs[tab_id]["edit_widget"]
+        try:
+            ed.delete("sel.first","sel.last")
+        except tk.TclError:
+            pass
+
+    def validate_html_syntax(self, tab_id: str):
+        raw = self.editor.tab_manager.tabs[tab_id]["edit_widget"].get("1.0","end-1c")
+        try:
+            BeautifulSoup(raw, "html5lib")
+            messagebox.showinfo("Validation", "No syntax errors.")
+        except Exception as e:
+            messagebox.showerror("Validation Error", str(e))
+
+    def update_live_preview(self, tab_id: str):
+        info = self.editor.tab_manager.tabs[tab_id]
+        if not info["edit_mode"]:
+            raw = info["edit_widget"].get("1.0","end-1c")
+            # re-apply interceptors before preview
+            base_dir = os.path.dirname(info["preview_path"])
+            clean    = CSSInterceptor(raw, base_path=base_dir).inline_css()
+            clean    = JavaScriptInterceptor(clean).strip_scripts()
+            info["preview_widget"].set_html(clean)
+
+    def _maybe_format_and_preview(self, tab_id: str):
+        txt = self.editor.tab_manager.tabs[tab_id]["edit_widget"]
+        if txt.edit_modified():
+            if self.auto_format:
+                self.format_html_code(tab_id)
+            if self.live_preview:
+                self.update_live_preview(tab_id)
+            txt.edit_modified(False)
+
+    def load_html_dual_tabs(self, file_path: str) -> tuple[str, str]:
+        """Load HTML file in dual tabs (editor + preview)."""
+        # Read the file content
+        try:
+            content = Path(file_path).read_text("utf-8", errors="replace")
+        except Exception as e:
+            self.logger.error("HTMLRenderer", f"Failed to read file {file_path}: {e}")
+            return None, None
+            
+        # Get tab IDs
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        
+        # Create editor tab frame
+        editor_tab_frame = ttk.Frame(self.editor.tab_manager.notebook)
+        editor_tab_id = self.editor.tab_manager.register_tab_widget(
+            editor_tab_frame,
+            display_name=f"{base_name} (Editor)",
+            preview_path=file_path,
+            renderer=self
+        )
+        
+        # Create preview tab frame  
+        preview_tab_frame = ttk.Frame(self.editor.tab_manager.notebook)
+        preview_tab_id = self.editor.tab_manager.register_tab_widget(
+            preview_tab_frame,
+            display_name=f"{base_name} (Preview)",
+            preview_path=file_path,
+            renderer=self
+        )
+        
+        # Set up the editor tab with text editing capabilities
+        editor_info = self.editor.tab_manager.tabs[editor_tab_id]
+        editor_info["edit_mode"] = True
+        editor_info["renderer"] = self
+        
+        # Create text editor widget for the editor tab
+        editor_text = tk.Text(editor_tab_frame, wrap="word", font=("Monaco", 10))
+        editor_text.pack(fill="both", expand=True)
+        editor_text.insert("1.0", content)
+        
+        # Add scrollbar to editor
+        editor_scrollbar = ttk.Scrollbar(editor_tab_frame, orient="vertical", command=editor_text.yview)
+        editor_text.configure(yscrollcommand=editor_scrollbar.set)
+        editor_scrollbar.pack(side="right", fill="y")
+        
+        # Store editor widget reference
+        editor_info["edit_widget"] = editor_text
+        editor_info["widget"] = editor_text
+        
+        # Set up live preview update
+        def update_preview(*args):
+            if preview_info.get("preview_widget"):
+                try:
+                    new_content = editor_text.get("1.0", "end-1c")
+                    base_dir = os.path.dirname(file_path)
+                    processed_content = CSSInterceptor(new_content, base_path=base_dir).inline_css()
+                    processed_content = JavaScriptInterceptor(processed_content).safe_scripts()
+                    
+                    preview_widget = preview_info["preview_widget"]
+                    if hasattr(preview_widget, 'set_html'):
+                        preview_widget.set_html(processed_content)
+                    elif hasattr(preview_widget, 'config'):
+                        # Enhanced fallback for Text widget
+                        try:
+                            from bs4 import BeautifulSoup
+                            soup = BeautifulSoup(processed_content, 'html.parser')
+                            
+                            title = soup.find('title')
+                            title_text = title.get_text() if title else "HTML Document"
+                            
+                            body = soup.find('body')
+                            if body:
+                                formatted_text = self._format_html_for_text_display(body)
+                            else:
+                                formatted_text = soup.get_text()
+                            
+                            preview_widget.config(state="normal")
+                            preview_widget.delete("1.0", "end")
+                            preview_widget.insert("1.0", f"=== {title_text} ===\n\n{formatted_text}")
+                            preview_widget.config(state="disabled")
+                        except ImportError:
+                            # Final fallback
+                            preview_widget.config(state="normal")
+                            preview_widget.delete("1.0", "end")
+                            preview_widget.insert("1.0", processed_content)
+                            preview_widget.config(state="disabled")
+                except Exception as e:
+                    self.logger.error("HTMLRenderer", f"Failed to update preview: {e}")
+        
+        # Bind content change event for live preview
+        editor_text.bind("<KeyRelease>", update_preview)
+        editor_text.bind("<<Modified>>", update_preview)
+        
+        # Set up the preview tab with HTML rendering
+        preview_info = self.editor.tab_manager.tabs[preview_tab_id]
+        preview_info["edit_mode"] = False
+        preview_info["renderer"] = self
+        
+        # Process HTML content with interceptors
+        base_dir = os.path.dirname(file_path)
+        processed_content = CSSInterceptor(content, base_path=base_dir).inline_css()
+        processed_content = JavaScriptInterceptor(processed_content).safe_scripts()
+        
+        # Create HTML preview widget
+        try:
+            from tkhtmlview import HTMLScrolledText
+            preview_widget = HTMLScrolledText(preview_tab_frame, html=processed_content)
+            preview_widget.pack(fill="both", expand=True)
+            preview_info["preview_widget"] = preview_widget
+            preview_info["widget"] = preview_widget
+        except ImportError:
+            # Enhanced fallback: Create a better HTML preview
+            self.logger.info("HTMLRenderer", "tkhtmlview not available, using enhanced text fallback")
+            
+            # Create a frame for the preview with scrollbar
+            preview_frame = ttk.Frame(preview_tab_frame)
+            preview_frame.pack(fill="both", expand=True)
+            
+            # Create scrolled text widget with better formatting
+            from tkinter import scrolledtext
+            preview_text = scrolledtext.ScrolledText(
+                preview_frame, 
+                wrap="word", 
+                font=("Consolas", 10),
+                state="disabled",
+                bg="#ffffff",
+                fg="#000000"
+            )
+            preview_text.pack(fill="both", expand=True)
+            
+            # Process HTML for better text display
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(processed_content, 'html.parser')
+                
+                # Extract and format text content
+                title = soup.find('title')
+                title_text = title.get_text() if title else "HTML Document"
+                
+                # Extract body content with basic formatting
+                body = soup.find('body')
+                if body:
+                    formatted_text = self._format_html_for_text_display(body)
+                else:
+                    formatted_text = soup.get_text()
+                
+                preview_text.config(state="normal")
+                preview_text.insert("1.0", f"=== {title_text} ===\n\n{formatted_text}")
+                preview_text.config(state="disabled")
+                
+            except ImportError:
+                # Final fallback: just show the processed HTML
+                preview_text.config(state="normal")
+                preview_text.insert("1.0", processed_content)
+                preview_text.config(state="disabled")
+            
+            preview_info["preview_widget"] = preview_text
+            preview_info["widget"] = preview_text
+        
+        # Link the tabs together
+        editor_info["preview_tab"] = preview_tab_id
+        preview_info["editor_tab"] = editor_tab_id
+        
+        return editor_tab_id, preview_tab_id
+        
+    def _setup_editor_tab(self, tab_id: str, file_path: str, content: str):
+        """Set up the editor tab with text editing widget."""
+        info = self.editor.tab_manager.tabs[tab_id]
+        
+        # Create text editor widget
+        import tkinter as tk
+        from tkinter import scrolledtext
+        
+        edit_widget = scrolledtext.ScrolledText(
+            self.editor.tab_manager.notebook,
+            wrap=tk.WORD,
+            font=("Consolas", 10),
+            bg="white",
+            fg="black"
+        )
+        
+        edit_widget.insert("1.0", content)
+        edit_widget.edit_modified(False)
+        
+        # Store widget reference
+        info["edit_widget"] = edit_widget
+        info["widget"] = edit_widget
+        
+        # Set up live preview if enabled
+        if self.live_preview:
+            preview_tab_id = info.get("preview_tab")
+            if preview_tab_id:
+                def on_text_change(event=None):
+                    self.update_live_preview(tab_id)
+                edit_widget.bind('<KeyRelease>', on_text_change)
+                edit_widget.bind('<Button-1>', on_text_change)
+                
+    def _setup_preview_tab(self, tab_id: str, file_path: str, content: str):
+        """Set up the preview tab with HTML rendering."""
+        info = self.editor.tab_manager.tabs[tab_id]
+        
+        # Create HTML widget for preview
+        try:
+            # Try to use tkinter_html if available
+            import tkinter_html
+            preview_widget = tkinter_html.HtmlFrame(
+                self.editor.tab_manager.notebook,
+                bg="white"
+            )
+        except ImportError:
+            try:
+                # Try to use tkhtmlview if available  
+                from tkhtmlview import HTMLScrolledText
+                preview_widget = HTMLScrolledText(
+                    self.editor.tab_manager.notebook,
+                    bg="white"
+                )
+            except ImportError:
+                # Fallback to text widget if HTML widget not available
+                import tkinter as tk
+                from tkinter import scrolledtext
+                preview_widget = scrolledtext.ScrolledText(
+                    self.editor.tab_manager.notebook,
+                    wrap=tk.WORD,
+                    font=("Consolas", 10),
+                    bg="white",
+                    fg="black",
+                    state="disabled"
+                )
+        
+        # Store widget reference
+        info["preview_widget"] = preview_widget
+        info["widget"] = preview_widget
+        
+        # Set up the preview content
+        self._update_preview_content(tab_id, content)
+        
+    def _update_preview_content(self, tab_id: str, content: str):
+        """Update the preview content for a tab."""
+        info = self.editor.tab_manager.tabs[tab_id]
+        preview_widget = info.get("preview_widget")
+        
+        if preview_widget:
+            # Apply interceptors before preview
+            base_dir = os.path.dirname(info.get("preview_path", ""))
+            clean = CSSInterceptor(content, base_path=base_dir).inline_css()
+            clean = JavaScriptInterceptor(clean).strip_scripts()
+            
+            # Update the preview widget based on its type
+            try:
+                # Try HTML widget methods first
+                if hasattr(preview_widget, 'set_content'):
+                    preview_widget.set_content(clean)
+                elif hasattr(preview_widget, 'set_html'):
+                    preview_widget.set_html(clean)
+                elif hasattr(preview_widget, 'load_html'):
+                    preview_widget.load_html(clean)
+                else:
+                    # Fallback for text widget
+                    preview_widget.config(state="normal")
+                    preview_widget.delete("1.0", "end")
+                    preview_widget.insert("1.0", clean)
+                    preview_widget.config(state="disabled")
+            except Exception:
+                # Final fallback for text widget
+                try:
+                    preview_widget.config(state="normal")
+                    preview_widget.delete("1.0", "end")
+                    preview_widget.insert("1.0", clean)
+                    preview_widget.config(state="disabled")
+                except Exception:
+                    pass
+
+    def scroll(self, tab_id: str, direction: str, amount: int):
+        """Scroll the HTML document by a certain delta."""
+        info = self.editor.tab_manager.tabs[tab_id]
+        
+        # Get the preview widget (HTML widget or text widget in edit mode)
+        if info.get("edit_mode"):
+            widget = info.get("edit_widget")
+        else:
+            widget = info.get("preview_widget")
+        
+        if not widget:
+            return
+        
+        # Scroll the widget
+        if hasattr(widget, 'yview_scroll'):
+            if direction == "up":
+                widget.yview_scroll(-amount, "units")
+            elif direction == "down":
+                widget.yview_scroll(amount, "units")
+        
+        if hasattr(widget, 'xview_scroll'):
+            if direction == "left":
+                widget.xview_scroll(-amount, "units")
+            elif direction == "right":
+                widget.xview_scroll(amount, "units")
+
+    def _format_html_for_text_display(self, soup):
+        """Format HTML content for better display in a text widget."""
+        formatted_lines = []
+        
+        # Process each element in the body
+        for element in soup.recursiveChildGenerator():
+            if hasattr(element, 'name'):
+                tag = element.name
+                if tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    text = element.get_text().strip()
+                    if text:
+                        level = int(tag[1])
+                        prefix = '=' * (7 - level)
+                        formatted_lines.append(f"\n{prefix} {text} {prefix}\n")
+                elif tag == 'p':
+                    text = element.get_text().strip()
+                    if text:
+                        formatted_lines.append(f"{text}\n")
+                elif tag == 'li':
+                    text = element.get_text().strip()
+                    if text:
+                        formatted_lines.append(f"• {text}")
+                elif tag == 'br':
+                    formatted_lines.append("\n")
+                elif tag in ['table']:
+                    # Basic table formatting
+                    rows = element.find_all('tr')
+                    if rows:
+                        formatted_lines.append("\n--- Table ---")
+                        for row in rows:
+                            cells = row.find_all(['td', 'th'])
+                            if cells:
+                                row_text = " | ".join(cell.get_text().strip() for cell in cells)
+                                formatted_lines.append(row_text)
+                        formatted_lines.append("--- End Table ---\n")
+            elif hasattr(element, 'string') and element.string:
+                # Plain text nodes
+                text = element.string.strip()
+                if text and text not in ['\n', '\r\n', '\t']:
+                    formatted_lines.append(text)
+        
+        return '\n'.join(formatted_lines)

@@ -1,0 +1,2011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hunger Games Simulator - Lobby</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 30px;
+            margin: 20px 0;
+            backdrop-filter: blur(10px);
+        }
+
+        h1, h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input, button, select {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        input {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .admin-btn {
+            background: #ff6b6b;
+        }
+
+        .admin-btn:hover {
+            background: #ff5252;
+        }
+
+        .lobby-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .player {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .game-settings {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .settings-group {
+            margin: 15px 0;
+        }
+
+        .settings-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .settings-group input, .settings-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        .admin-badge {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .tribute-upload {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .tribute-form {
+            margin-bottom: 30px;
+        }
+
+        .form-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-section h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #fff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 5px;
+        }
+
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .skill-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .skill-item label {
+            min-width: 100px;
+            font-size: 14px;
+        }
+
+        .skill-item input[type="range"] {
+            flex: 1;
+            max-width: 100px;
+        }
+
+        .skill-item span {
+            min-width: 20px;
+            text-align: center;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .relationship-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .relationship-item label {
+            font-weight: bold;
+        }
+
+        .relationship-item select {
+            width: 120px;
+        }
+
+        .json-upload-section {
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding-top: 20px;
+        }
+
+        .json-upload-section h4 {
+            margin-top: 0;
+            color: #fff;
+        }
+
+        .status-message {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .success {
+            background: rgba(76, 175, 80, 0.8);
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.8);
+        }
+
+        .info {
+            background: rgba(33, 150, 243, 0.8);
+        }
+
+        .game-status {
+            text-align: center;
+            font-size: 18px;
+            margin: 20px 0;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .tab-container {
+            margin-bottom: 20px;
+        }
+
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .tab-btn.active {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        /* Force edit tribute modal to stay hidden by default */
+        #editTributeModal {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .tribute-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+        }
+
+        .tribute-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .tribute-card h4 {
+            margin: 0 0 10px 0;
+            color: #fff;
+            font-size: 16px;
+        }
+
+        .tribute-stat {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .tribute-stat.health { color: #4CAF50; }
+        .tribute-stat.sanity { color: #2196F3; }
+        .tribute-stat.food { color: #FF9800; }
+        .tribute-stat.water { color: #00BCD4; }
+
+        .game-output-line {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #ccc;
+            margin: 2px 0;
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+
+        .game-output-container {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 60vh;
+            overflow: hidden;
+        }
+
+        .game-output {
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 15px;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+
+        .game-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .game-controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* Strategy Section Styles */
+        .strategy-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .strategy-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .tab-button.active {
+            background: #4CAF50;
+        }
+
+        .tab-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .strategy-tab {
+            display: none;
+        }
+
+        .strategy-tab.active {
+            display: block;
+        }
+
+        .alliance-form, .target-form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .strategy-select {
+            flex: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        .strategy-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .strategy-btn:hover {
+            background: #1976D2;
+        }
+
+        .strategy-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .strategy-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .strategy-item .players {
+            font-weight: bold;
+        }
+
+        .strategy-item .timestamp {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗡️ Hunger Games Simulator 🗡️</h1>
+
+        <div id="statusMessage" class="status-message hidden"></div>
+
+        <!-- Tribute Creation (Required First Step) -->
+        <div id="tributeSetup" class="tab-content active">
+            <h2>Create Your Tribute</h2>
+            <p>Customize your tribute's skills, weapons, and relationships. This is required before joining a lobby.</p>
+
+            <!-- Tribute Creation Form -->
+            <div class="tribute-form">
+                <div class="form-section">
+                    <h4>Basic Information</h4>
+                    <div class="form-group">
+                        <label for="tributeName">Tribute Name:</label>
+                        <input type="text" id="tributeName" placeholder="Enter tribute name">
+                    </div>
+                    <div class="form-group">
+                        <label for="district">District:</label>
+                        <input type="number" id="district" min="1" max="12" value="1">
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Skills (1-10)</h4>
+                    <div class="skills-grid">
+                        <div class="skill-item">
+                            <label for="intelligence">Intelligence:</label>
+                            <input type="range" id="intelligence" min="1" max="10" value="5" oninput="updateSkillValue('intelligence')">
+                            <span id="intelligence-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="hunting">Hunting:</label>
+                            <input type="range" id="hunting" min="1" max="10" value="5" oninput="updateSkillValue('hunting')">
+                            <span id="hunting-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="strength">Strength:</label>
+                            <input type="range" id="strength" min="1" max="10" value="5" oninput="updateSkillValue('strength')">
+                            <span id="strength-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="social">Social:</label>
+                            <input type="range" id="social" min="1" max="10" value="5" oninput="updateSkillValue('social')">
+                            <span id="social-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="stealth">Stealth:</label>
+                            <input type="range" id="stealth" min="1" max="10" value="5" oninput="updateSkillValue('stealth')">
+                            <span id="stealth-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="survival">Survival:</label>
+                            <input type="range" id="survival" min="1" max="10" value="5" oninput="updateSkillValue('survival')">
+                            <span id="survival-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="agility">Agility:</label>
+                            <input type="range" id="agility" min="1" max="10" value="5" oninput="updateSkillValue('agility')">
+                            <span id="agility-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="endurance">Endurance:</label>
+                            <input type="range" id="endurance" min="1" max="10" value="5" oninput="updateSkillValue('endurance')">
+                            <span id="endurance-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="charisma">Charisma:</label>
+                            <input type="range" id="charisma" min="1" max="10" value="5" oninput="updateSkillValue('charisma')">
+                            <span id="charisma-value">5</span>
+                        </div>
+                        <div class="skill-item">
+                            <label for="luck">Luck:</label>
+                            <input type="range" id="luck" min="1" max="10" value="5" oninput="updateSkillValue('luck')">
+                            <span id="luck-value">5</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Weapon Preferences</h4>
+                    <div class="form-group">
+                        <label for="preferredWeapon">Preferred Weapon:</label>
+                        <select id="preferredWeapon">
+                            <option value="Sword">Sword</option>
+                            <option value="Axe">Axe</option>
+                            <option value="Bow">Bow</option>
+                            <option value="Hammer">Hammer</option>
+                            <option value="Knife">Knife</option>
+                            <option value="Spear">Spear</option>
+                            <option value="Club">Club</option>
+                            <option value="Fists">Fists</option>
+                            <option value="Staff">Staff</option>
+                            <option value="Machete">Machete</option>
+                            <option value="Gun">Gun</option>
+                            <option value="Crossbow">Crossbow</option>
+                            <option value="Dagger">Dagger</option>
+                            <option value="Whip">Whip</option>
+                            <option value="Throwing Star">Throwing Star</option>
+                            <option value="Stick">Stick</option>
+                            <option value="Mace">Mace</option>
+                            <option value="Rock">Rock</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="saveTributeAndContinue()">Save Tribute & Continue</button>
+            </div>
+        </div>
+
+        <!-- Create Lobby Tab -->
+        <div id="createTab" class="tab-content">
+            <h2>Create New Lobby</h2>
+            <div class="form-group">
+                <label for="adminName">Your Name (Admin):</label>
+                <input type="text" id="adminName" placeholder="Enter your name">
+            </div>
+            <div class="form-group">
+                <label for="maxPlayers">Max Players:</label>
+                <select id="maxPlayers">
+                    <option value="2">2 Players</option>
+                    <option value="4">4 Players</option>
+                    <option value="8">8 Players</option>
+                    <option value="12">12 Players</option>
+                    <option value="16">16 Players</option>
+                    <option value="20">20 Players</option>
+                    <option value="24" selected>24 Players</option>
+                </select>
+            </div>
+            <button onclick="createLobby()">Create Lobby</button>
+            <button onclick="goBackToTribute()" style="margin-left: 10px; background: #666;">← Back</button>
+        </div>
+
+        <!-- Join Lobby Tab -->
+        <div id="joinTab" class="tab-content">
+            <h2>Join Existing Lobby</h2>
+            <div class="form-group">
+                <label for="lobbyCode">Lobby Code:</label>
+                <input type="text" id="lobbyCode" placeholder="Enter lobby code" style="text-transform: uppercase;">
+            </div>
+            <div class="form-group">
+                <label for="playerName">Your Name:</label>
+                <input type="text" id="playerName" placeholder="Enter your name">
+            </div>
+            <button onclick="joinLobby()">Join Lobby</button>
+            <button onclick="goBackToTribute()" style="margin-left: 10px; background: #666;">← Back</button>
+        </div>
+
+        <!-- Lobby View -->
+        <div id="lobbyView" class="hidden">
+            <h2>Lobby: <span id="currentLobbyCode"></span></h2>
+
+            <div class="lobby-info">
+                <h3>Players (<span id="playerCount">0</span>/<span id="maxPlayers">24</span>)</h3>
+                <div id="playerList" class="player-list"></div>
+            </div>
+
+            <div class="tribute-section">
+                <h3>Your Tribute</h3>
+                <div id="tributeSummary" class="tribute-summary">
+                    <!-- Tribute info will be displayed here -->
+                </div>
+                <button onclick="editTribute()" id="editTributeBtn" style="display: none;">Edit Tribute</button>
+                <button onclick="leaveLobby()" style="margin-left: 10px; background: #666;">Leave Lobby</button>
+            </div>
+
+            <div class="strategy-section">
+                <h3>🎯 Pre-Game Strategy</h3>
+                
+                <div class="strategy-tabs">
+                    <button class="tab-button active" onclick="showStrategyTab('alliances')">🤝 Alliances</button>
+                    <button class="tab-button" onclick="showStrategyTab('targets')">🎯 Targets</button>
+                </div>
+
+                <div id="alliancesTab" class="strategy-tab active">
+                    <p>Form alliances with other players. Alliances may not last throughout the entire game!</p>
+                    <div class="alliance-form">
+                        <select id="allianceTarget" class="strategy-select">
+                            <option value="">Select player to ally with...</option>
+                        </select>
+                        <button onclick="createAlliance()" class="strategy-btn">🤝 Form Alliance</button>
+                    </div>
+                    <div id="alliancesList" class="strategy-list">
+                        <!-- Alliances will be displayed here -->
+                    </div>
+                </div>
+
+                <div id="targetsTab" class="strategy-tab">
+                    <p>Set your initial target. You can change this later, but it may not stick!</p>
+                    <div class="target-form">
+                        <select id="targetPlayer" class="strategy-select">
+                            <option value="">Select player to target...</option>
+                        </select>
+                        <button onclick="setTarget()" class="strategy-btn">🎯 Set Target</button>
+                    </div>
+                    <div id="targetsList" class="strategy-list">
+                        <!-- Targets will be displayed here -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="gameSettings" class="game-settings hidden">
+                <h3>⚙️ Game Settings</h3>
+                <div class="settings-group">
+                    <label for="phaseDelay">Phase Delay (seconds):</label>
+                    <input type="number" id="phaseDelay" min="0" max="60" value="3">
+                </div>
+                <div class="settings-group">
+                    <label for="progressionMode">Progression Mode:</label>
+                    <select id="progressionMode">
+                        <option value="auto">Auto (timed progression)</option>
+                        <option value="manual">Manual (admin controls progression)</option>
+                    </select>
+                </div>
+                <button onclick="saveGameSettings()">Save Settings</button>
+            </div>
+
+            <div id="adminControls" class="hidden">
+                <button class="admin-btn" onclick="startGame()">Start Game</button>
+                <button onclick="leaveLobby()" style="margin-left: 10px; background: #666;">Leave Lobby</button>
+            </div>
+
+            <div id="gameStatus" class="game-status hidden">
+                <p>Game Status: <span id="gameStatusText">Initializing...</span></p>
+                <div id="gameResults" class="hidden"></div>
+            </div>
+        </div>
+
+        <!-- Game View -->
+        <div id="gameView" class="hidden">
+            <h2>🎮 Hunger Games - Live Simulation</h2>
+            
+            <div class="game-info">
+                <p><strong>Game ID:</strong> <span id="gameIdDisplay"></span></p>
+                <p><strong>Status:</strong> <span id="gameStatusDisplay">Initializing...</span></p>
+                <p><strong>Players:</strong> <span id="gamePlayersDisplay"></span></p>
+            </div>
+
+            <div class="tribute-section">
+                <h3>👥 Tribute Status</h3>
+                <div id="tributeContainer" class="tribute-container">
+                    <!-- Tributes will be populated here -->
+                </div>
+            </div>
+
+            <div class="game-output-container">
+                <h3>📺 Live Game Feed</h3>
+                <div id="gameOutput" class="game-output">
+                    <!-- Game output will be streamed here -->
+                </div>
+            </div>
+
+            <div id="gameResultsSection" class="hidden">
+                <h3>🏆 Final Results</h3>
+                <div id="finalResults"></div>
+            </div>
+
+            <div class="game-controls">
+                <button id="nextPhaseBtn" onclick="nextPhase()" style="background: #ff6b6b; display: none;">Next Phase →</button>
+                <button onclick="leaveGame()" style="background: #666;">← Back to Lobby</button>
+            </div>
+        </div>
+    <div id="generationConfirmModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Generate Missing Tributes?</h3>
+            <p id="generationMessage"></p>
+            <p>This will create random tributes to fill the lobby to 24 players total.</p>
+            <button onclick="confirmGeneration(true)">Yes, Generate Tributes</button>
+            <button onclick="confirmGeneration(false)" style="margin-left: 10px; background: #666;">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        // Immediately hide the modal before anything else runs
+        (function() {
+            const modal = document.getElementById('editTributeModal');
+            if (modal) {
+                modal.style.display = 'none';
+                modal.style.visibility = 'hidden';
+                modal.classList.add('hidden');
+                console.log('Modal hidden on script load');
+            }
+        })();
+
+        let currentLobbyCode = null;
+        let currentPlayerName = null;
+        let isAdmin = false;
+        let gameId = null;
+        let statusCheckInterval = null;
+        let lobbyUpdateInterval = null;
+        let currentTributeData = null;
+
+        // Persistence functions
+        function saveLobbyState() {
+            const state = {
+                lobbyCode: currentLobbyCode,
+                playerName: currentPlayerName,
+                isAdmin: isAdmin,
+                gameId: gameId,
+                tributeData: currentTributeData
+            };
+            localStorage.setItem('hungerGamesLobbyState', JSON.stringify(state));
+        }
+
+        function loadLobbyState() {
+            try {
+                const saved = localStorage.getItem('hungerGamesLobbyState');
+                if (saved) {
+                    const state = JSON.parse(saved);
+                    return state;
+                }
+            } catch (e) {
+                console.error('Error loading lobby state:', e);
+            }
+            return null;
+        }
+
+        function clearLobbyState() {
+            localStorage.removeItem('hungerGamesLobbyState');
+        }
+
+        // Live lobby updates
+        function startLobbyUpdates() {
+            let lastLobbyData = null;
+            
+            // Update every 5 seconds
+            lobbyUpdateInterval = setInterval(async () => {
+                if (!currentLobbyCode) return;
+
+                try {
+                    const response = await fetch(`/api/lobby/${currentLobbyCode}`);
+                    const data = await response.json();
+
+                    if (response.ok && data.lobby) {
+                        // Only update if the data has changed
+                        const currentData = JSON.stringify(data.lobby);
+                        if (lastLobbyData !== currentData) {
+                            updateLobbyInfo(data.lobby);
+                            lastLobbyData = currentData;
+                        }
+                        
+                        // Check if there's an active game
+                        if (data.active_game && !gameId) {
+                            console.log('Game detected, switching to game view:', data.active_game);
+                            gameId = data.active_game.id;
+                            startGameStatusCheck();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error updating lobby:', error);
+                }
+            }, 5000);
+        }
+
+        function stopLobbyUpdates() {
+            if (lobbyUpdateInterval) {
+                clearInterval(lobbyUpdateInterval);
+                lobbyUpdateInterval = null;
+            }
+        }
+
+        function leaveLobby() {
+            // Clear all state
+            currentLobbyCode = null;
+            currentPlayerName = null;
+            isAdmin = false;
+            gameId = null;
+            currentTributeData = null;
+            
+            // Clear localStorage
+            clearLobbyState();
+            
+            // Clear any running intervals
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+                statusCheckInterval = null;
+            }
+            stopLobbyUpdates();
+            
+            // Reset UI
+            showTab('tributeSetup');
+            document.getElementById('lobbyView').classList.add('hidden');
+            document.getElementById('gameStatus').classList.add('hidden');
+            document.getElementById('lobbyTabs').style.display = 'none';
+            
+            showStatus('Left lobby', 'info');
+        }
+
+        async function restoreLobbyState() {
+            const state = loadLobbyState();
+            if (!state || !state.lobbyCode) return false;
+
+            try {
+                // Verify the lobby still exists and we're still a member
+                const response = await fetch(`/api/lobby/${state.lobbyCode}`);
+                const data = await response.json();
+
+                if (response.ok && data.lobby) {
+                    // Restore our state
+                    currentLobbyCode = state.lobbyCode;
+                    currentPlayerName = state.playerName;
+                    gameId = state.gameId;
+                    currentTributeData = state.tributeData;
+
+                    // Check if we're still admin
+                    const lobbyResponse = await fetch(`/api/lobby/${currentLobbyCode}`);
+                    const lobbyData = await lobbyResponse.json();
+
+                    if (lobbyResponse.ok && lobbyData.lobby) {
+                        isAdmin = (lobbyData.lobby.admin === currentPlayerName);
+                        updateLobbyInfo(lobbyData.lobby);
+                    }
+
+                    // Show the appropriate UI
+                    showLobbyView();
+
+                    // Start live updates
+                    startLobbyUpdates();
+
+                    // If game is running, start status checking
+                    if (gameId) {
+                        startGameStatusCheck();
+                    }
+
+                    console.log('Restored lobby state:', { currentLobbyCode, currentPlayerName, isAdmin });
+                    return true;
+                } else {
+                    // Lobby no longer exists, clear state
+                    clearLobbyState();
+                }
+            } catch (error) {
+                console.error('Error restoring lobby state:', error);
+                clearLobbyState();
+            }
+            return false;
+        }
+
+        // Store the modal HTML for recreation
+        const modalHTML = `
+        <div id="editTributeModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Edit Your Tribute</h3>
+                <div class="tribute-form">
+                    <div class="form-section">
+                        <h4>Relationships</h4>
+                        <p>Set your relationships with other players in the lobby:</p>
+                        <div id="relationshipsContainer">
+                            <!-- Relationships will be populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+                <button onclick="saveTributeEdits()">Save Changes</button>
+                <button onclick="closeEditModal()" style="margin-left: 10px; background: #666;">Cancel</button>
+            </div>
+        </div>`;
+
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+
+        function goBackToTribute() {
+            if (currentLobbyCode) {
+                leaveLobby();
+            } else {
+                showTab('tributeSetup');
+            }
+        }
+
+        // Save tribute and continue to lobby selection
+        async function saveTributeAndContinue() {
+            const tributeName = document.getElementById('tributeName').value.trim();
+
+            if (!tributeName) {
+                showStatus('Please enter a tribute name', 'error');
+                return;
+            }
+
+            // Collect skills
+            const skills = {};
+            const skillNames = ['intelligence', 'hunting', 'strength', 'social', 'stealth', 'survival', 'agility', 'endurance', 'charisma', 'luck'];
+            skillNames.forEach(skill => {
+                skills[skill] = parseInt(document.getElementById(skill).value);
+            });
+
+            const district = parseInt(document.getElementById('district').value);
+            const preferredWeapon = document.getElementById('preferredWeapon').value;
+
+            // Create tribute data
+            try {
+                currentTributeData = {
+                    name: tributeName,
+                    district: district,
+                    skills: skills,
+                    weapons: ["Fists"],
+                    preferred_weapon: preferredWeapon,
+                    target_weapon: getTargetWeapon(preferredWeapon),
+                    health: 100,
+                    sanity: 100,
+                    speed: Math.floor((skills.agility + skills.endurance) / 2),
+                    has_camp: false,
+                    relationships: {}
+                };
+            } catch (error) {
+                console.error('Error creating tribute data:', error);
+                showStatus('Error creating tribute data', 'error');
+                return;
+            }
+
+            showStatus('Tribute saved! Choose to create or join a lobby.', 'success');
+            saveLobbyState();
+
+            // Show lobby selection tabs
+            document.getElementById('tributeSetup').classList.remove('active');
+            document.getElementById('createTab').classList.add('active');
+            document.getElementById('lobbyTabs').style.display = 'flex';
+        }
+
+        // Edit tribute modal
+        function editTribute() {
+            // Ensure we have tribute data
+            if (!currentTributeData) {
+                showStatus('Please create your tribute first', 'error');
+                return;
+            }
+            
+            // Recreate modal if it was removed
+            let modal = document.getElementById('editTributeModal');
+            if (!modal) {
+                console.log('Recreating modal');
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+                modal = document.getElementById('editTributeModal');
+            }
+            
+            // Ensure modal exists and is properly initialized
+            if (!modal) {
+                console.error('Modal could not be created');
+                return;
+            }
+            
+            updateRelationships();
+            modal.style.display = 'flex !important';
+            modal.style.visibility = 'visible !important';
+            modal.style.opacity = '1 !important';
+            modal.style.pointerEvents = 'auto !important';
+            console.log('Modal shown');
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editTributeModal');
+            if (modal) {
+                modal.style.display = 'none !important';
+                modal.style.visibility = 'hidden !important';
+                modal.style.opacity = '0 !important';
+                modal.style.pointerEvents = 'none !important';
+                // Remove from DOM to prevent any future interference
+                modal.remove();
+                console.log('Modal closed and removed');
+            }
+        }
+
+        // Generation confirm dialog
+        function showGenerationConfirmDialog(missingCount) {
+            const messageEl = document.getElementById('generationMessage');
+            messageEl.textContent = `You need ${missingCount} more tributes to reach 24 players total. Would you like to generate random tributes to fill the remaining slots?`;
+            
+            const modal = document.getElementById('generationConfirmModal');
+            modal.style.display = 'flex';
+            modal.style.visibility = 'visible';
+        }
+
+        function confirmGeneration(generate) {
+            const modal = document.getElementById('generationConfirmModal');
+            modal.style.display = 'none';
+            
+            if (generate) {
+                // Try again with generation enabled
+                startGameWithGeneration();
+            } else {
+                showStatus('Game cancelled. Please upload more tributes.', 'error');
+            }
+        }
+
+        function saveTributeEdits() {
+            // Ensure currentTributeData is an object with relationships
+            if (!currentTributeData || typeof currentTributeData !== 'object') {
+                showStatus('Error: Invalid tribute data', 'error');
+                closeEditModal();
+                return;
+            }
+
+            // Ensure relationships property exists
+            if (!currentTributeData.relationships) {
+                currentTributeData.relationships = {};
+            }
+
+            // Collect relationships
+            const relationships = {};
+            const relationshipElements = document.querySelectorAll('#relationshipsContainer select');
+            relationshipElements.forEach(element => {
+                const playerName = element.id.replace('relationship-', '');
+                relationships[playerName] = element.value;
+            });
+
+            // Update current tribute data
+            try {
+                currentTributeData.relationships = relationships;
+            } catch (error) {
+                console.error('Error updating relationships:', error);
+                showStatus('Error updating relationships', 'error');
+                closeEditModal();
+                return;
+            }
+
+            // Re-upload the tribute with updated relationships
+            uploadCurrentTribute();
+
+            closeEditModal();
+            showStatus('Tribute relationships updated!', 'success');
+        }
+
+        async function uploadCurrentTribute() {
+            if (!currentTributeData || !currentLobbyCode) return;
+
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/upload-tribute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        player_name: currentPlayerName,
+                        tribute_data: currentTributeData
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    updateTributeSummary();
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        function updateTributeSummary() {
+            if (!currentTributeData) {
+                document.getElementById('editTributeBtn').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('editTributeBtn').style.display = 'inline-block';
+            
+            const summary = document.getElementById('tributeSummary');
+            summary.innerHTML = `
+                <h4>${currentTributeData.name}</h4>
+                <p><strong>District:</strong> ${currentTributeData.district}</p>
+                <p><strong>Preferred Weapon:</strong> ${currentTributeData.preferred_weapon}</p>
+                <p><strong>Target Weapon:</strong> ${currentTributeData.target_weapon || 'None'}</p>
+                <p><strong>Relationships:</strong> ${Object.keys(currentTributeData.relationships).length} set</p>
+            `;
+        }
+
+        // Status message display
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+            statusEl.classList.remove('hidden');
+
+            setTimeout(() => {
+                statusEl.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Create lobby
+        async function createLobby() {
+            if (!currentTributeData) {
+                showStatus('Please create your tribute first', 'error');
+                showTab('tributeSetup');
+                return;
+            }
+
+            const adminName = document.getElementById('adminName').value.trim();
+            const maxPlayers = document.getElementById('maxPlayers').value;
+
+            if (!adminName) {
+                showStatus('Please enter your name', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/lobby/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        admin_name: adminName,
+                        max_players: parseInt(maxPlayers)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentLobbyCode = data.lobby_code;
+                    currentPlayerName = adminName;
+                    isAdmin = true;
+                    saveLobbyState();
+                    showLobbyView(data.lobby_code);
+                    showStatus(data.message, 'success');
+
+                    // Automatically upload tribute
+                    setTimeout(() => uploadCurrentTribute(), 500);
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        // Join lobby
+        async function joinLobby() {
+            if (!currentTributeData) {
+                showStatus('Please create your tribute first', 'error');
+                showTab('tributeSetup');
+                return;
+            }
+
+            const lobbyCode = document.getElementById('lobbyCode').value.trim().toUpperCase();
+            const playerName = document.getElementById('playerName').value.trim();
+
+            if (!lobbyCode || !playerName) {
+                showStatus('Please enter lobby code and your name', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/lobby/${lobbyCode}/join`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        player_name: playerName
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentLobbyCode = lobbyCode;
+                    currentPlayerName = playerName;
+                    isAdmin = (data.lobby.admin === playerName);
+                    saveLobbyState();
+                    showLobbyView(lobbyCode, data.lobby);
+                    showStatus(data.message, 'success');
+
+                    // Automatically upload tribute
+                    setTimeout(() => uploadCurrentTribute(), 500);
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        // Show lobby view
+        function showLobbyView(lobbyCode, lobbyData = null) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            document.getElementById('lobbyView').classList.remove('hidden');
+
+            document.getElementById('currentLobbyCode').textContent = lobbyCode;
+
+            if (lobbyData) {
+                updateLobbyInfo(lobbyData);
+            }
+
+            // Start polling for lobby updates
+            startLobbyUpdates();
+
+            if (isAdmin) {
+                document.getElementById('adminControls').classList.remove('hidden');
+                document.getElementById('gameSettings').classList.remove('hidden');
+                // Load current settings
+                loadGameSettings(lobbyData);
+            }
+
+            // Update tribute summary
+            updateTributeSummary();
+        }
+
+        // Update lobby information
+        function updateLobbyInfo(lobby) {
+            document.getElementById('playerCount').textContent = lobby.players.length;
+            document.getElementById('maxPlayers').textContent = lobby.max_players;
+
+            const playerList = document.getElementById('playerList');
+            playerList.innerHTML = '';
+
+            lobby.players.forEach(player => {
+                const playerEl = document.createElement('div');
+                playerEl.className = 'player';
+                if (player === lobby.admin) {
+                    playerEl.classList.add('admin-badge');
+                    playerEl.textContent = `${player} (Admin)`;
+                } else {
+                    playerEl.textContent = player;
+                }
+                playerList.appendChild(playerEl);
+            });
+
+            // Update strategy section with current players and alliances/targets
+            updateStrategyDisplay(lobby);
+            
+            // Update relationships section with current players
+            updateRelationships();
+        }
+
+        // Update skill value display
+        function updateSkillValue(skillName) {
+            const slider = document.getElementById(skillName);
+            const valueSpan = document.getElementById(skillName + '-value');
+            valueSpan.textContent = slider.value;
+        }
+
+        // Update relationships section
+        function updateRelationships() {
+            const container = document.getElementById('relationshipsContainer');
+            if (!container) {
+                console.error('Relationships container not found');
+                return;
+            }
+            
+            container.innerHTML = '';
+
+            // Check if we have the required data
+            if (!currentLobbyCode || !currentTributeData) {
+                container.innerHTML = '<p>Please join a lobby first.</p>';
+                return;
+            }
+
+            // Get current lobby info to see other players
+            fetch(`/api/lobby/${currentLobbyCode}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch lobby info');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    try {
+                        // Double-check that we still have tribute data
+                        if (!currentTributeData) {
+                            container.innerHTML = '<p>Tribute data not available.</p>';
+                            return;
+                        }
+                        
+                        const otherPlayers = data.lobby.players.filter(player => player !== currentPlayerName);
+                        if (otherPlayers.length === 0) {
+                            container.innerHTML = '<p>No other players in lobby yet.</p>';
+                            return;
+                        }
+
+                        otherPlayers.forEach(player => {
+                            const relationshipDiv = document.createElement('div');
+                            relationshipDiv.className = 'relationship-item';
+                            const currentRel = (currentTributeData && currentTributeData.relationships) ? 
+                                (currentTributeData.relationships[player] || 'neutral') : 'neutral';
+                            relationshipDiv.innerHTML = `
+                                <label>${player}:</label>
+                                <select id="relationship-${player}">
+                                    <option value="neutral" ${currentRel === 'neutral' ? 'selected' : ''}>Neutral</option>
+                                    <option value="ally" ${currentRel === 'ally' ? 'selected' : ''}>Ally</option>
+                                    <option value="rival" ${currentRel === 'rival' ? 'selected' : ''}>Rival</option>
+                                    <option value="enemy" ${currentRel === 'enemy' ? 'selected' : ''}>Enemy</option>
+                                    <option value="family" ${currentRel === 'family' ? 'selected' : ''}>Family</option>
+                                </select>
+                            `;
+                            container.appendChild(relationshipDiv);
+                        });
+                    } catch (error) {
+                        console.error('Error processing relationships:', error);
+                        container.innerHTML = '<p>Error loading relationships. Please try again.</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating relationships:', error);
+                    container.innerHTML = '<p>Error loading relationships. Please try again.</p>';
+                });
+        }
+
+        // Get target weapon based on preferred weapon
+        function getTargetWeapon(preferredWeapon) {
+            const weaponTargets = {
+                'Sword': 'Knife',
+                'Axe': 'Hammer',
+                'Bow': 'Crossbow',
+                'Hammer': 'Mace',
+                'Knife': 'Dagger',
+                'Spear': 'Staff',
+                'Club': 'Stick',
+                'Fists': 'Rock',
+                'Staff': 'Spear',
+                'Machete': 'Knife',
+                'Gun': 'Bow',
+                'Crossbow': 'Bow',
+                'Dagger': 'Knife',
+                'Whip': 'Staff',
+                'Throwing Star': 'Knife',
+                'Stick': 'Club',
+                'Mace': 'Hammer',
+                'Rock': 'Club'
+            };
+            return weaponTargets[preferredWeapon] || 'Knife';
+        }
+
+        // Start game
+        async function startGame() {
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        admin_name: currentPlayerName
+                    })
+                });
+
+                const data = await response.json();
+                console.log('Start game response:', response.status, data);
+
+                if (response.ok) {
+                    gameId = data.game_id;
+                    saveLobbyState();
+                    showStatus(data.message, 'success');
+                    startGameStatusCheck();
+                } else {
+                    // Check if we need to generate missing tributes
+                    if (data.need_generation) {
+                        showGenerationConfirmDialog(data.missing_count);
+                    } else {
+                        showStatus(data.error, 'error');
+                    }
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        // Start game with tribute generation
+        async function startGameWithGeneration() {
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        admin_name: currentPlayerName,
+                        generate_missing: true
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    gameId = data.game_id;
+                    showStatus(data.message + ' (Generated missing tributes)', 'success');
+                    startGameStatusCheck();
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        // Load game settings into the UI
+        function loadGameSettings(lobbyData) {
+            if (lobbyData && lobbyData.game_settings) {
+                const settings = lobbyData.game_settings;
+                document.getElementById('phaseDelay').value = settings.phase_delay_seconds || 3;
+                document.getElementById('progressionMode').value = settings.progression_mode || 'auto';
+            }
+        }
+
+        // Save game settings
+        async function saveGameSettings() {
+            const phaseDelay = parseInt(document.getElementById('phaseDelay').value) || 3;
+            const progressionMode = document.getElementById('progressionMode').value;
+
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/settings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        admin_name: currentPlayerName,
+                        settings: {
+                            phase_delay_seconds: phaseDelay,
+                            progression_mode: progressionMode
+                        }
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus('Game settings saved successfully', 'success');
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        // Start checking game status
+        function startGameStatusCheck() {
+            // Stop lobby updates since game has started
+            stopLobbyUpdates();
+
+            let lastOutputIndex = 0;
+
+            statusCheckInterval = setInterval(async () => {
+                if (!gameId) return;
+
+                try {
+                    const response = await fetch(`/api/game/${gameId}/status`);
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Show game view if not already shown
+                        if (document.getElementById('gameView').classList.contains('hidden')) {
+                            showGameView(data.game);
+                        }
+
+                        // Update status
+                        document.getElementById('gameStatusDisplay').textContent = data.game.status;
+
+                        // Update streaming output
+                        const outputStream = data.game.output_stream || [];
+                        if (outputStream.length > lastOutputIndex) {
+                            const gameOutputDiv = document.getElementById('gameOutput');
+                            for (let i = lastOutputIndex; i < outputStream.length; i++) {
+                                const outputItem = outputStream[i];
+                                const outputLine = document.createElement('div');
+                                outputLine.className = 'game-output-line';
+                                outputLine.textContent = outputItem.message;
+                                gameOutputDiv.appendChild(outputLine);
+
+                                // Update tributes if game_data is present
+                                if (outputItem.game_data && outputItem.game_data.active_tributes) {
+                                    updateTributeDisplay(outputItem.game_data.active_tributes);
+                                }
+                            }
+                            lastOutputIndex = outputStream.length;
+                            // Auto-scroll to bottom
+                            gameOutputDiv.scrollTop = gameOutputDiv.scrollHeight;
+                        }
+
+                        if (data.game.status === 'completed') {
+                            clearInterval(statusCheckInterval);
+                            showGameResults(data.game.results);
+                        } else if (data.game.status === 'error') {
+                            clearInterval(statusCheckInterval);
+                            showStatus('Game error: ' + data.game.error, 'error');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking game status:', error);
+                }
+            }, 1000);
+        }
+
+        // Show game view
+        function showGameView(gameData) {
+            // Hide lobby view
+            document.getElementById('lobbyView').classList.add('hidden');
+            
+            // Show game view
+            document.getElementById('gameView').classList.remove('hidden');
+            
+            // Update game info
+            document.getElementById('gameIdDisplay').textContent = gameId;
+            document.getElementById('gameStatusDisplay').textContent = gameData.status;
+            document.getElementById('gamePlayersDisplay').textContent = gameData.players.join(', ');
+            
+            // Clear any existing output
+            document.getElementById('gameOutput').innerHTML = '';
+            
+            // Show manual progression button if in manual mode
+            const settings = gameData.game_settings || {};
+            if (settings.progression_mode === 'manual') {
+                document.getElementById('nextPhaseBtn').style.display = 'inline-block';
+            } else {
+                document.getElementById('nextPhaseBtn').style.display = 'none';
+            }
+        }
+
+        // Leave game and go back to lobby
+        function leaveGame() {
+            // Hide game view
+            document.getElementById('gameView').classList.add('hidden');
+            
+            // Show lobby view
+            document.getElementById('lobbyView').classList.remove('hidden');
+            
+            // Clear game state
+            gameId = null;
+            saveLobbyState();
+            
+            // Stop status checking
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+                statusCheckInterval = null;
+            }
+        }
+
+        // Manual progression (placeholder for now)
+        function nextPhase() {
+            showStatus('Manual progression: Game will continue automatically. Full manual control coming soon!', 'info');
+        }
+
+        // Show game results
+        function showGameResults(results) {
+            const resultsDiv = document.getElementById('gameResultsSection');
+            const finalResultsDiv = document.getElementById('finalResults');
+            
+            finalResultsDiv.innerHTML = `
+                <h3>🏆 Game Complete!</h3>
+                <p><strong>Winner:</strong> ${results ? results.winner : 'Unknown'}</p>
+                <p><strong>Statistics:</strong></p>
+                <ul>
+                    <li>Total Tributes: ${results ? results.stats.total_tributes : 'N/A'}</li>
+                    <li>Turns Survived: ${results ? results.stats.turns_survived : 'N/A'}</li>
+                    <li>Final Tributes: ${results ? results.stats.final_tributes : 'N/A'}</li>
+                </ul>
+            `;
+            
+            resultsDiv.classList.remove('hidden');
+            document.getElementById('gameStatusDisplay').textContent = 'Completed';
+        }
+
+        // Update tribute display with live data
+        function updateTributeDisplay(activeTributes) {
+            const container = document.getElementById('tributeContainer');
+            
+            // Clear existing tributes
+            container.innerHTML = '';
+            
+            activeTributes.forEach(tribute => {
+                const tributeCard = document.createElement('div');
+                tributeCard.className = 'tribute-card';
+                tributeCard.id = `tribute-${tribute.id}`;
+                
+                tributeCard.innerHTML = `
+                    <h4>${tribute.name} (District ${tribute.district})</h4>
+                    <div class="tribute-stat health">Health: ${tribute.health}/100</div>
+                    <div class="tribute-stat sanity">Sanity: ${tribute.sanity}/100</div>
+                    <div class="tribute-stat food">Food: ${tribute.food}/100</div>
+                    <div class="tribute-stat water">Water: ${tribute.water}/100</div>
+                    <div class="tribute-stat">Status: ${tribute.status}</div>
+                    <div class="tribute-stat">Kills: ${tribute.kills.length}</div>
+                    <div class="tribute-stat">Weapons: ${tribute.weapons.join(', ')}</div>
+                `;
+                
+                container.appendChild(tributeCard);
+            });
+        }
+
+        // Strategy tab switching
+        function showStrategyTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.strategy-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            const tab = document.getElementById(tabName + 'Tab');
+            if (tab) {
+                tab.classList.add('active');
+            }
+            
+            // Add active class to clicked button
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+        }
+
+        // Create alliance
+        async function createAlliance() {
+            const targetName = document.getElementById('allianceTarget').value;
+            if (!targetName) {
+                showStatus('Please select a player to ally with', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/alliance`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        initiator_name: playerName,
+                        target_name: targetName
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus(data.message, 'success');
+                    if (data.narrative) {
+                        setTimeout(() => showStatus(`📖 ${data.narrative}`, 'info'), 2000);
+                    }
+                    document.getElementById('allianceTarget').value = '';
+                    // Refresh the lobby display to show new alliance
+                    const lobbyResponse = await fetch(`/api/lobby/${currentLobbyCode}`);
+                    if (lobbyResponse.ok) {
+                        const lobbyData = await lobbyResponse.json();
+                        updateLobbyInfo(lobbyData.lobby);
+                    }
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to create alliance: ' + error.message, 'error');
+            }
+        }
+
+        // Set target
+        async function setTarget() {
+            const targetName = document.getElementById('targetPlayer').value;
+            if (!targetName) {
+                showStatus('Please select a player to target', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/lobby/${currentLobbyCode}/target`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        hunter_name: playerName,
+                        target_name: targetName
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus(data.message, 'success');
+                    if (data.narrative) {
+                        setTimeout(() => showStatus(`🎯 ${data.narrative}`, 'info'), 2000);
+                    }
+                    document.getElementById('targetPlayer').value = '';
+                    // Refresh the lobby display to show new target
+                    const lobbyResponse = await fetch(`/api/lobby/${currentLobbyCode}`);
+                    if (lobbyResponse.ok) {
+                        const lobbyData = await lobbyResponse.json();
+                        updateLobbyInfo(lobbyData.lobby);
+                    }
+                } else {
+                    showStatus(data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to set target: ' + error.message, 'error');
+            }
+        }
+
+        // Update strategy dropdowns and lists
+        let lastStrategyUpdate = '';
+        
+        function updateStrategyDisplay(lobbyData) {
+            // Check if strategy data has actually changed
+            const strategyKey = JSON.stringify({
+                players: lobbyData.players,
+                alliances: lobbyData.alliances,
+                targets: lobbyData.targets
+            });
+            
+            if (lastStrategyUpdate === strategyKey) {
+                return; // No changes, skip update
+            }
+            
+            lastStrategyUpdate = strategyKey;
+            
+            const players = lobbyData.players || [];
+            const currentPlayer = playerName;
+            
+            // Update alliance dropdown (exclude current player)
+            const allianceSelect = document.getElementById('allianceTarget');
+            if (allianceSelect) {
+                const currentValue = allianceSelect.value;
+                allianceSelect.innerHTML = '<option value="">Select player to ally with...</option>';
+                
+                players.forEach(player => {
+                    if (player !== currentPlayer) {
+                        const option = document.createElement('option');
+                        option.value = player;
+                        option.textContent = player;
+                        allianceSelect.appendChild(option);
+                    }
+                });
+                
+                // Restore previous selection if still valid
+                if (currentValue && players.includes(currentValue)) {
+                    allianceSelect.value = currentValue;
+                }
+            }
+            
+            // Update target dropdown (exclude current player)
+            const targetSelect = document.getElementById('targetPlayer');
+            if (targetSelect) {
+                const currentValue = targetSelect.value;
+                targetSelect.innerHTML = '<option value="">Select player to target...</option>';
+                
+                players.forEach(player => {
+                    if (player !== currentPlayer) {
+                        const option = document.createElement('option');
+                        option.value = player;
+                        option.textContent = player;
+                        targetSelect.appendChild(option);
+                    }
+                });
+                
+                // Restore previous selection if still valid
+                if (currentValue && players.includes(currentValue)) {
+                    targetSelect.value = currentValue;
+                }
+            }
+            
+            // Update alliances list
+            const alliancesList = document.getElementById('alliancesList');
+            if (alliancesList) {
+                alliancesList.innerHTML = '';
+                
+                if (lobbyData.alliances && lobbyData.alliances.length > 0) {
+                    lobbyData.alliances.forEach(alliance => {
+                        const item = document.createElement('div');
+                        item.className = 'strategy-item';
+                        item.innerHTML = `
+                            <div class="players">🤝 ${alliance.initiator} ↔ ${alliance.target}</div>
+                            <div class="timestamp">${new Date(alliance.timestamp).toLocaleTimeString()}</div>
+                        `;
+                        alliancesList.appendChild(item);
+                    });
+                } else {
+                    alliancesList.innerHTML = '<p style="color: rgba(255,255,255,0.7); font-style: italic;">No alliances formed yet</p>';
+                }
+            }
+            
+            // Update targets list
+            const targetsList = document.getElementById('targetsList');
+            if (targetsList) {
+                targetsList.innerHTML = '';
+                
+                if (lobbyData.targets && lobbyData.targets.length > 0) {
+                    lobbyData.targets.forEach(target => {
+                        const item = document.createElement('div');
+                        item.className = 'strategy-item';
+                        item.innerHTML = `
+                            <div class="players">🎯 ${target.hunter} → ${target.target}</div>
+                            <div class="timestamp">${new Date(target.timestamp).toLocaleTimeString()}</div>
+                        `;
+                        targetsList.appendChild(item);
+                    });
+                } else {
+                    targetsList.innerHTML = '<p style="color: rgba(255,255,255,0.7); font-style: italic;">No targets set yet</p>';
+                }
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('DOMContentLoaded fired');
+            // Force modal to be hidden immediately and remove from DOM temporarily
+            const modal = document.getElementById('editTributeModal');
+            if (modal) {
+                modal.style.display = 'none !important';
+                modal.style.visibility = 'hidden';
+                modal.classList.add('hidden');
+                // Also set opacity to 0 as additional safeguard
+                modal.style.opacity = '0';
+                modal.style.pointerEvents = 'none';
+                // Remove from DOM to prevent any interference
+                modal.remove();
+                console.log('Modal removed from DOM on DOMContentLoaded');
+            }
+            
+            // Also hide generation confirm modal
+            const genModal = document.getElementById('generationConfirmModal');
+            if (genModal) {
+                genModal.style.display = 'none';
+                genModal.style.visibility = 'hidden';
+            }
+            
+            // Try to restore previous lobby state
+            const restored = await restoreLobbyState();
+            if (restored) {
+                console.log('Successfully restored lobby state');
+            }
+            
+            // Add tab switching buttons (only for create/join after tribute is set)
+            const tabContainer = document.createElement('div');
+            tabContainer.className = 'tab-container';
+            tabContainer.innerHTML = `
+                <div class="tab-buttons" id="lobbyTabs" style="display: none;">
+                    <button class="tab-btn active" onclick="showTab('create')">Create Lobby</button>
+                    <button class="tab-btn" onclick="showTab('join')">Join Lobby</button>
+                </div>
+            `;
+            document.querySelector('.container').insertBefore(tabContainer, document.querySelector('h1').nextSibling);
+        });
+
+        // Additional safeguard against modal opening
+        window.addEventListener('load', function() {
+            const modal = document.getElementById('editTributeModal');
+            if (modal) {
+                modal.style.display = 'none !important';
+                modal.style.visibility = 'hidden';
+                modal.classList.add('hidden');
+                modal.style.opacity = '0';
+                modal.style.pointerEvents = 'none';
+            }
+        });
+    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('connected', function(data) {
+            console.log('Server connection confirmed:', data.message);
+        });
+
+        socket.on('joined_game', function(data) {
+            console.log('Joined game:', data.game_id);
+        });
+
+        socket.on('game_update', function(data) {
+            console.log('Game update received:', data);
+            
+            // Handle different message types
+            if (data.message_type === 'phase_changed' && data.data && data.data.tribute_scoreboards) {
+                updateTributeDisplayFromScoreboards(data.data.tribute_scoreboards);
+            }
+            
+            // Also add to output if there's a message
+            if (data.message) {
+                const gameOutputDiv = document.getElementById('gameOutput');
+                if (gameOutputDiv) {
+                    const outputLine = document.createElement('div');
+                    outputLine.className = 'game-output-line';
+                    outputLine.textContent = data.message;
+                    gameOutputDiv.appendChild(outputLine);
+                    gameOutputDiv.scrollTop = gameOutputDiv.scrollHeight;
+                }
+            }
+        });
+
+        // Function to update tribute display from Aurora scoreboards
+        function updateTributeDisplayFromScoreboards(scoreboards) {
+            const container = document.getElementById('tributeContainer');
+            if (!container) return;
+            
+            // Clear existing tributes
+            container.innerHTML = '';
+            
+            Object.values(scoreboards).forEach(tribute => {
+                const tributeCard = document.createElement('div');
+                tributeCard.className = 'tribute-card';
+                tributeCard.id = `tribute-${tribute.id}`;
+                
+                tributeCard.innerHTML = `
+                    <h4>${tribute.name} (District ${tribute.district})</h4>
+                    <div class="tribute-stat health">Health: ${tribute.health}/100</div>
+                    <div class="tribute-stat sanity">Sanity: ${tribute.sanity}/100</div>
+                    <div class="tribute-stat food">Hunger: ${tribute.hunger}/100</div>
+                    <div class="tribute-stat water">Thirst: ${tribute.thirst}/100</div>
+                    <div class="tribute-stat">Fatigue: ${tribute.fatigue}/100</div>
+                    <div class="tribute-stat">Status: ${tribute.status}</div>
+                    <div class="tribute-stat">Weapons: ${tribute.weapons ? tribute.weapons.join(', ') : 'None'}</div>
+                    <div class="tribute-stat">Alliances: ${tribute.alliances ? tribute.alliances.join(', ') : 'None'}</div>
+                `;
+                
+                container.appendChild(tributeCard);
+            });
+        }
+
+        // Modify showGameView to join the game room
+        const originalShowGameView = window.showGameView;
+        window.showGameView = function(gameData) {
+            if (originalShowGameView) originalShowGameView(gameData);
+            
+            // Join the game room for Socket.IO updates
+            socket.emit('join_game', { game_id: gameId });
+        };
+    </script>
+</body>
+</html>

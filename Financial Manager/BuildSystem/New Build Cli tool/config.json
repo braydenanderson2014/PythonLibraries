@@ -1,0 +1,22 @@
+{
+  "log_level": "INFO",
+  "auto_update_modules": false,
+  "remote_module_repo": "https://github.com/your-org/buildcli-modules",
+  "module_cache_dir": "~/.buildcli/modules",
+  "temp_dir": "~/.buildcli/temp",
+  "parallel_execution": true,
+  "max_parallel_commands": 4,
+  "timeout_seconds": 300,
+  "pyinstaller": {
+    "one_file": true,
+    "console": true,
+    "icon": null,
+    "add_data": [],
+    "hidden_imports": [
+      "asyncio",
+      "importlib.util",
+      "modules.system",
+      "modules.pyinstaller_module"
+    ]
+  }
+}

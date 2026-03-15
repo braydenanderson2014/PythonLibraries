@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Timer Test</title>
+    <style>
+        .cornucopia-popup-timer {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            background: linear-gradient(135deg, #8B4513 0%, #A0522D 50%, #8B4513 100%);
+            border: 4px solid #DAA520;
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
+            transition: all 0.3s ease-out;
+            max-width: 400px;
+            min-width: 300px;
+        }
+
+        .cornucopia-popup-timer.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .popup-timer-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .popup-timer-title {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .popup-timer-display {
+            font-size: 4em;
+            font-weight: bold;
+            color: #FFFFFF;
+            margin: 20px 0;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.3);
+            border-radius: 50%;
+            width: 160px;
+            height: 160px;
+            line-height: 160px;
+            margin: 20px auto;
+            border: 4px solid #FFD700;
+        }
+
+        .popup-timer-message {
+            font-size: 1.2em;
+            color: #FFFFFF;
+            margin: 15px 0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Testing Cornucopia Timer Popup</h1>
+    <button onclick="testTimer()">Show Timer</button>
+    
+    <script>
+        function testTimer() {
+            // Remove any existing timer popup
+            const existingTimer = document.getElementById('cornucopia-popup-timer');
+            if (existingTimer) {
+                existingTimer.remove();
+            }
+            
+            // Create popup timer overlay
+            const timerPopup = document.createElement('div');
+            timerPopup.id = 'cornucopia-popup-timer';
+            timerPopup.className = 'cornucopia-popup-timer';
+            timerPopup.innerHTML = `
+                <div class="popup-timer-container">
+                    <div class="popup-timer-title">🏺 Cornucopia Countdown</div>
+                    <div class="popup-timer-display" id="popup-timer-display">60</div>
+                    <div class="popup-timer-message" id="popup-timer-message">Tributes, prepare yourselves!</div>
+                    <div class="popup-timer-warning">⚠️ Do not step off your platform early!</div>
+                </div>
+            `;
+            
+            // Add to body
+            document.body.appendChild(timerPopup);
+            
+            // Show with animation
+            setTimeout(() => {
+                timerPopup.classList.add('show');
+            }, 100);
+            
+            // Test countdown
+            let seconds = 60;
+            const interval = setInterval(() => {
+                seconds--;
+                document.getElementById('popup-timer-display').textContent = seconds;
+                
+                if (seconds <= 0) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        timerPopup.remove();
+                    }, 2000);
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

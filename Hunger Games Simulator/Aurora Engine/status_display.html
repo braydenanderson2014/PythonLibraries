@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Engine Status Display</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .status-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        .status-indicator.initializing { background-color: #ffa500; }
+        .status-indicator.lobby_created { background-color: #008000; }
+        .status-indicator.awaiting_players { background-color: #ffff00; }
+        .status-indicator.game_starting { background-color: #0000ff; }
+        .status-indicator.cornucopia_active { background-color: #ff0000; }
+        .status-indicator.generating_events { background-color: #800080; }
+        .status-indicator.pvp_active { background-color: #ff4500; }
+        .status-indicator.phase_transition { background-color: #00ffff; }
+        .status-indicator.game_ended { background-color: #808080; }
+        .status-indicator.error { background-color: #ff0000; }
+
+        .status-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0;
+        }
+
+        .status-message {
+            color: #666;
+            margin: 5px 0;
+        }
+
+        .status-details {
+            font-size: 14px;
+            color: #888;
+        }
+
+        .active-processes {
+            margin-top: 10px;
+        }
+
+        .active-processes ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+
+        .active-processes li {
+            color: #0066cc;
+        }
+
+        .game-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .info-label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .info-value {
+            color: #666;
+        }
+
+        .tribute-scoreboard {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+
+        .tribute-scoreboard.dead {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            opacity: 0.7;
+        }
+
+        .tribute-scoreboard.critical {
+            border-left-color: #fd7e14;
+        }
+
+        .tribute-scoreboard.injured {
+            border-left-color: #ffc107;
+        }
+
+        .tribute-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .tribute-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .tribute-district {
+            background: #007bff;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .tribute-status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .status-alive { background: #d4edda; color: #155724; }
+        .status-dead { background: #f8d7da; color: #721c24; }
+        .status-critical { background: #fff3cd; color: #856404; }
+        .status-injured { background: #fff3cd; color: #856404; }
+
+        .tribute-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .health-bar, .sanity-bar, .hunger-bar, .thirst-bar, .fatigue-bar {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e9ecef;
+            overflow: hidden;
+        }
+
+        .health-fill { background: linear-gradient(to right, #dc3545, #28a745); }
+        .sanity-fill { background: linear-gradient(to right, #6f42c1, #e83e8c); }
+        .hunger-fill { background: linear-gradient(to right, #28a745, #ffc107); }
+        .thirst-fill { background: linear-gradient(to right, #007bff, #17a2b8); }
+        .fatigue-fill { background: linear-gradient(to right, #6c757d, #343a40); }
+
+        .tribute-equipment {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .equipped-weapon {
+            font-weight: bold;
+            color: #dc3545;
+            margin-bottom: 5px;
+        }
+
+        .weapon-list, .inventory-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .weapon-item, .inventory-item {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #495057;
+        }
+
+        .tribute-location {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 Aurora Engine Status Monitor</h1>
+
+    <div id="connection-status" class="connection-status disconnected">
+        Disconnected
+    </div>
+
+    <div id="status-container" class="status-container">
+        <div class="status-header">
+            <div id="status-indicator" class="status-indicator initializing"></div>
+            <h2 id="status-title" class="status-title">Initializing...</h2>
+        </div>
+        <p id="status-message" class="status-message">Engine is starting up</p>
+        <div id="status-details" class="status-details">
+            Last updated: <span id="last-update">Never</span>
+        </div>
+        <div id="active-processes" class="active-processes" style="display: none;">
+            <strong>Active Processes:</strong>
+            <ul id="processes-list"></ul>
+        </div>
+    </div>
+
+    <div id="tribute-scoreboards" class="status-container" style="display: none;">
+        <h3>🏆 Tribute Scoreboards</h3>
+        <div id="scoreboards-container">
+            <!-- Tribute scoreboards will be dynamically added here -->
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const socket = io('http://localhost:8000');
+        const statusContainer = document.getElementById('status-container');
+        const gameInfo = document.getElementById('game-info');
+        const connectionStatus = document.getElementById('connection-status');
+
+        // Status mapping for CSS classes
+        const statusClasses = {
+            'initializing': 'initializing',
+            'lobby_created': 'lobby_created',
+            'awaiting_players': 'awaiting_players',
+            'game_starting': 'game_starting',
+            'cornucopia_active': 'cornucopia_active',
+            'generating_events': 'generating_events',
+            'pvp_active': 'pvp_active',
+            'phase_transition': 'phase_transition',
+            'game_ended': 'game_ended',
+            'error': 'error'
+        };
+
+        // Status display names
+        const statusNames = {
+            'initializing': 'Initializing',
+            'lobby_created': 'Lobby Created',
+            'awaiting_players': 'Awaiting Players',
+            'game_starting': 'Game Starting',
+            'cornucopia_active': 'Cornucopia Active',
+            'generating_events': 'Generating Events',
+            'pvp_active': 'PvP Active',
+            'phase_transition': 'Phase Transition',
+            'game_ended': 'Game Ended',
+            'error': 'Error'
+        };
+
+        socket.on('connect', () => {
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.className = 'connection-status connected';
+        });
+
+        socket.on('disconnect', () => {
+            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.className = 'connection-status disconnected';
+        });
+
+        socket.on('engine_status_update', (data) => {
+            updateEngineStatus(data.engine_status);
+            updateTributeScoreboards(data.tribute_scoreboards);
+        });
+
+        socket.on('game_update', (data) => {
+            // Handle game messages if needed
+            console.log('Game update:', data);
+        });
+
+        function updateEngineStatus(engineStatus) {
+            if (!engineStatus) return;
+
+            const status = engineStatus.status || 'unknown';
+            const message = engineStatus.message || 'No status message';
+            const timestamp = engineStatus.timestamp || new Date().toISOString();
+            const activeProcesses = engineStatus.active_processes || [];
+
+            // Update status indicator
+            const indicator = document.getElementById('status-indicator');
+            indicator.className = `status-indicator ${statusClasses[status] || 'initializing'}`;
+
+            // Update status title
+            const title = document.getElementById('status-title');
+            title.textContent = statusNames[status] || status;
+
+            // Update status message
+            const messageEl = document.getElementById('status-message');
+            messageEl.textContent = message;
+
+            // Update timestamp
+            const lastUpdate = document.getElementById('last-update');
+            lastUpdate.textContent = new Date(timestamp).toLocaleString();
+
+            // Update active processes
+            const processesContainer = document.getElementById('active-processes');
+            const processesList = document.getElementById('processes-list');
+
+            if (activeProcesses.length > 0) {
+                processesList.innerHTML = '';
+                activeProcesses.forEach(process => {
+                    const li = document.createElement('li');
+                    li.textContent = process;
+                    processesList.appendChild(li);
+                });
+                processesContainer.style.display = 'block';
+            } else {
+                processesContainer.style.display = 'none';
+            }
+
+            // Update game info if available
+            updateGameInfo(engineStatus);
+        }
+
+        function updateTributeScoreboards(scoreboards) {
+            if (!scoreboards) return;
+
+            const container = document.getElementById('scoreboards-container');
+            const scoreboardsDiv = document.getElementById('tribute-scoreboards');
+
+            // Clear existing scoreboards
+            container.innerHTML = '';
+
+            // Sort tributes: alive first, then by district
+            const sortedTributes = Object.values(scoreboards).sort((a, b) => {
+                if (a.status === 'alive' && b.status !== 'alive') return -1;
+                if (a.status !== 'alive' && b.status === 'alive') return 1;
+                return a.district - b.district;
+            });
+
+            sortedTributes.forEach(tribute => {
+                const scoreboard = createTributeScoreboard(tribute);
+                container.appendChild(scoreboard);
+            });
+
+            // Show scoreboards if we have tributes
+            scoreboardsDiv.style.display = sortedTributes.length > 0 ? 'block' : 'none';
+        }
+
+        function createTributeScoreboard(tribute) {
+            const div = document.createElement('div');
+            div.className = `tribute-scoreboard ${tribute.status}`;
+
+            div.innerHTML = `
+                <div class="tribute-header">
+                    <span class="tribute-name">${tribute.name}</span>
+                    <div>
+                        <span class="tribute-district">D${tribute.district}</span>
+                        <span class="tribute-status status-${tribute.status}">${tribute.status}</span>
+                    </div>
+                </div>
+
+                <div class="tribute-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Health</div>
+                        <div class="stat-value">${tribute.health}/100</div>
+                        <div class="health-bar">
+                            <div class="health-fill" style="width: ${tribute.health}%"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Sanity</div>
+                        <div class="stat-value">${tribute.sanity}/100</div>
+                        <div class="sanity-bar">
+                            <div class="sanity-fill" style="width: ${tribute.sanity}%"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Hunger</div>
+                        <div class="stat-value">${tribute.hunger}/100</div>
+                        <div class="hunger-bar">
+                            <div class="hunger-fill" style="width: ${tribute.hunger}%"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Thirst</div>
+                        <div class="stat-value">${tribute.thirst}/100</div>
+                        <div class="thirst-bar">
+                            <div class="thirst-fill" style="width: ${tribute.thirst}%"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Fatigue</div>
+                        <div class="stat-value">${tribute.fatigue}/100</div>
+                        <div class="fatigue-bar">
+                            <div class="fatigue-fill" style="width: ${tribute.fatigue}%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tribute-equipment">
+                    ${tribute.equipped_weapon ? `<div class="equipped-weapon">⚔️ ${tribute.equipped_weapon}</div>` : '<div class="equipped-weapon"> unarmed</div>'}
+
+                    ${tribute.weapons.length > 0 ? `
+                        <div><strong>Weapons:</strong></div>
+                        <div class="weapon-list">
+                            ${tribute.weapons.map(weapon => `<span class="weapon-item">${weapon}</span>`).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${tribute.inventory.length > 0 ? `
+                        <div><strong>Inventory:</strong></div>
+                        <div class="inventory-list">
+                            ${tribute.inventory.map(item => `<span class="inventory-item">${item}</span>`).join('')}
+                        </div>
+                    ` : ''}
+
+                    <div class="tribute-location">
+                        📍 ${tribute.location || 'Unknown'}
+                        ${tribute.has_shelter ? ' 🏠' : ''}
+                        ${tribute.has_fire ? ' 🔥' : ''}
+                    </div>
+                </div>
+            `;
+
+            return div;
+        }
+
+        // Initial status
+        updateEngineStatus({
+            status: 'initializing',
+            message: 'Connecting to Aurora Engine...',
+            timestamp: new Date().toISOString(),
+            active_processes: []
+        });
+    </script>
+</body>
+</html>

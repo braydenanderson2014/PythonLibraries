@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TamperMonkey Script Test</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h1>TamperMonkey Script Test Page</h1>
+    <p>Open browser console and check for HG Logger UI in bottom right corner.</p>
+    
+    <button onclick="testLogs()">Generate Test Logs</button>
+    <button onclick="testHGDebug()">Test HG Debug</button>
+    
+    <script>
+        function testLogs() {
+            console.log('Test: Generated via button click');
+            console.warn('Test: Warning message');
+            console.error('Test: Error message');
+            console.info('Test: Info message');
+            console.log('Test: Object log', { test: true, data: [1,2,3] });
+        }
+        
+        function testHGDebug() {
+            if (window.HGLoggerDebug) {
+                console.log('Testing HGLoggerDebug...');
+                window.HGLoggerDebug.testCapture();
+                console.log('Buffer size:', window.HGLoggerDebug.getBuffer().length);
+                console.log('Capture count:', window.HGLoggerDebug.getCaptureCount());
+            } else {
+                console.log('HGLoggerDebug not available');
+            }
+        }
+        
+        // Generate some initial test logs
+        setTimeout(() => {
+            console.log('Page loaded test log');
+            console.warn('Page loaded warning');
+        }, 1000);
+    </script>
+</body>
+</html>

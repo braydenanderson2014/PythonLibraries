@@ -1,0 +1,362 @@
+
+    def split_pdf_ui(self):
+        """Split PDFs UI function with improved progress display and cancellation"""
+        self.logger.info("PDFUtility","[PDFSplitter]: Splitting PDFs UI function")
+        selected_indices = self.listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "Please select PDF files to split")
+            self.logger.info("PDFUtility","No PDF files selected")
+            return
+
+        output_folder = self.settings.get("split_directory")
+        self.logger.debug("PDFUtility",f"Output folder: {output_folder}")
+        if not output_folder:
+            output_folder = os.path.join(os.getcwd(), "split_output")
+            os.makedirs(output_folder, exist_ok=True)
+
+        # Create enhanced dual progress dialog
+        progress = DualProgressDialog(
+            self.root, 
+            title="Splitting PDFs", 
+            message=f"Preparing to split {len(selected_indices)} PDF file(s)..."
+        )
+
+        # Store results
+        result = {
+            "new_files": [], 
+            "errors": [], 
+            "total_pages": 0, 
+            "start_time": time.time(),
+            "cancelled": False
+        }
+
+        def count_pages():
+            """First pass - count pages in all PDFs to show accurate overall progress"""
+            self.logger.info("PDFUtility","Counting pages in selected PDFs")
+            try:
+                total_files = len(selected_indices)
+                self.logger.info("PDFUtility",f"Counting pages in {total_files} files")
+                progress.update_message("Counting pages in selected PDFs...")
+                progress.update_overall_status("Analyzing files...")
+
+                # First pass - count total pages
+                total_pages = 0
+                file_page_counts = []
+
+                for i, index in enumerate(selected_indices):
+                    # Check for cancellation
+                    if progress.is_cancelled():
+                        result["cancelled"] = True
+                        self.root.after(100, complete_operation)
+                        self.logger.info("PDFUtility","Operation cancelled")
+                        return
+
+                    pdf_file = self.pdf_files[index]
+
+                    progress.update_overall_progress(i, total_files)
+                    progress.update_current_status(f"Analyzing: {os.path.basename(pdf_file)}")
+
+                    try:
+                        doc = fitz.open(pdf_file)
+                        page_count = len(doc)
+                        total_pages += page_count
+                        file_page_counts.append((pdf_file, page_count))
+                        doc.close()
+                        gc.collect()
+                        self.logger.info("PDFUtility",f"Counted {page_count} pages in {pdf_file}")
+                    except Exception as e:
+                        result["errors"].append((pdf_file, f"Error counting pages: {str(e)}"))
+                        file_page_counts.append((pdf_file, 0))
+                        self.logger.error("PDFUtility",f"Error counting pages in {pdf_file}: {str(e)}")
+
+                result["total_pages"] = total_pages
+
+                # Update progress message and start processing
+                if total_pages > 0 and not result["cancelled"]:
+                    progress.update_message(f"Splitting {len(selected_indices)} files with {total_pages} total pages...")
+                    self.logger.info("PDFUtility",f"Splitting {len(selected_indices)} files with {total_pages} total pages")
+                    self.root.after(100, lambda: process_pdfs(file_page_counts))
+                else:
+                    progress.update_message("No valid pages found to split.")
+                    self.logger.info("PDFUtility","No valid pages found to split")
+                    self.root.after(1000, complete_operation)
+
+            except Exception as e:
+                result["errors"].append(("General error", str(e)))
+                self.logger.error("PDFUtility",f"General error: {str(e)}")
+                self.root.after(100, complete_operation)
+
+        def process_pdfs(file_page_counts):
+            """Second pass - process each PDF and split into pages"""
+            self.logger.info("PDFUtility","Processing PDFs")
+            try:
+                total_files = len(file_page_counts)
+                processed_pages = 0
+                start_time = time.time()
+                last_time_update = time.time()
+
+                for i, (pdf_file, page_count) in enumerate(file_page_counts):
+                    # Check for cancellation
+                    if progress.is_cancelled():
+                        result["cancelled"] = True
+                        self.root.after(100, complete_operation)
+                        self.logger.info("PDFUtility","Operation cancelled")
+                        return
+
+                    if page_count == 0:
+                        self.logger.info("PDFUtility",f"Skipping empty file/page: {pdf_file}")
+                        continue  # Skip files with errors or no pages
+                    
+                    # Update overall progress based on pages
+                    progress.update_overall_progress(processed_pages, result["total_pages"])
+                    progress.update_overall_status(f"Processing file {i+1} of {total_files}: {os.path.basename(pdf_file)}")
+
+                    # Reset current file progress
+                    progress.reset_current_progress()
+                    self.logger.info("PDFUtility","Resetting current file progress")
+                    # Calculate estimated time remaining based on processing speed
+                    current_time = time.time()
+                    self.logger.debug("PDFUtility",f"Current time: {current_time} - Last time update: {last_time_update}")
+                    if processed_pages > 0 and current_time - last_time_update > 2:
+                        pages_per_second = processed_pages / (current_time - start_time) 
+                        self.logger.debug("PDFUtility", f"Pages per second: {pages_per_second}")
+                        if pages_per_second > 0:
+                            remaining_seconds = (result["total_pages"] - processed_pages) / pages_per_second
+                            remaining_time = self.format_time_remaining(remaining_seconds)
+                            self.logger.debug("PDFUtility", f"Remaining time: {remaining_time}")
+                            progress.update_time_remaining(remaining_time)
+                            self.logger.debug("PDFUtility", f"Last time update: {last_time_update}")
+                            last_time_update = current_time
+
+                    # Page progress callback with cancellation check
+                    def page_progress_callback(page_num, total_pages):
+                        # Check for cancellation
+                        if progress.is_cancelled():
+                            self.logger.warning("PDFUtility","Operation cancelled by user")
+                            raise Exception("Operation cancelled by user")
+
+                        # Update current file progress
+                        progress.update_current_progress(page_num, total_pages)
+                        progress.update_current_status(f"Page {page_num + 1} of {total_pages}")
+
+                        # Don't update overall too frequently to avoid UI lag
+                        nonlocal processed_pages
+                        if page_num > 0 and (page_num % 5 == 0 or page_num == total_pages - 1):
+                            overall_pos = processed_pages + page_num
+                            self.logger.info("PDFUtility",f"Updating overall progress to {overall_pos} of {result['total_pages']}")
+                            progress.update_overall_progress(overall_pos, result["total_pages"])
+
+                    try:
+                        # Split the PDF with page progress updates
+                        new_files = self.split_pdf(pdf_file, output_folder, page_progress_callback)
+                        result["new_files"].extend(new_files)
+                        processed_pages += page_count
+                        self.logger.info("PDFUtility",f"Processed {page_count} pages in {pdf_file}")
+                    except Exception as e:
+                        if "Operation cancelled by user" in str(e):
+                            result["cancelled"] = True
+                            self.root.after(100, complete_operation)
+                            self.logger.info("PDFUtility","Operation cancelled")
+                            return
+                        result["errors"].append((pdf_file, str(e)))
+                        self.logger.error("PDFUtility",f"Error splitting {pdf_file}: {str(e)}")
+
+                # Final update
+                if not result["cancelled"]:
+                    progress.update_overall_progress(result["total_pages"], result["total_pages"])
+                    progress.update_message("Processing complete!")
+                    progress.update_overall_status("Finalizing...")
+                    self.logger.info("PDFUtility","Processing complete!")
+
+                # Schedule UI update on main thread
+                self.root.after(100, complete_operation)
+
+            except Exception as e:
+                if "Operation cancelled by user" in str(e):
+                    result["cancelled"] = True
+                    self.logger.info("PDFUtility","Operation cancelled")
+                else:
+                    result["errors"].append(("General error", str(e)))
+                    self.logger.error("PDFUtility",f"General error: {str(e)}")
+                self.root.after(100, complete_operation)
+
+        def complete_operation():
+            """Complete the operation on the main thread"""
+            # Close progress dialog
+            progress.close()
+
+            # Handle cancellation
+            if result["cancelled"]:
+                self.status_label.config(text="Split operation cancelled")
+                self.logger.info("PDFUtility","Split operation cancelled")
+                return
+
+            # Update file list
+            if result["new_files"]:
+                self.pdf_files.extend(result["new_files"])
+                self.logger.info("PDFUtility",f"Added {len(result['new_files'])} new files")
+                self.update_listbox()
+
+            # Show result
+            if result["errors"]:
+                error_msg = "\n".join([f"{os.path.basename(f)}: {e}" for f, e in result["errors"]])
+                messagebox.showerror("Error", f"Errors occurred during splitting:\n{error_msg}")
+                self.logger.warning("PDFUtility",f"Errors occurred during splitting:\n{error_msg}")
+            else:
+                self.status_label.config(text=f"Split {len(selected_indices)} PDF(s) into {len(result['new_files'])} pages")
+                self.logger.info("PDFUtility",f"Split {len(selected_indices)} PDF(s) into {len(result['new_files'])} pages")
+
+        # Start processing in background thread
+        Thread(target=count_pages, daemon=True).start() 
+
+
+    def merge_pdf_ui(self):
+        """Merge PDFs UI function with improved progress display and cancellation"""
+        self.logger.info("PDFUtility","Merging PDFs")
+        selected_indices = self.listbox.curselection()
+        if len(selected_indices) < 2:
+            messagebox.showinfo("Info", "Please select at least 2 PDF files to merge")
+            self.logger.info("PDFUtility","Please select at least 2 PDF files to merge")
+            return
+
+        # Get merge directory from settings
+        merge_directory = self.settings.get("merge_directory")
+        self.logger.info("PDFUtility",f"Using merge directory: {merge_directory}")
+        if not merge_directory:
+            merge_directory = os.path.join(os.getcwd(), "merge_output")
+            self.logger.warning("PDFUtility","Merge directory not set, using default: merge_output")
+        # Ensure the directory exists
+        os.makedirs(merge_directory, exist_ok=True)
+
+        # Get filename from user
+        self.logger.info("PDFUtility","Getting merge filename from user")
+        output_pdf = self.get_merge_filename(merge_directory)
+        if not output_pdf:
+            self.logger.info("PDFUtility","User canceled")
+            return  # User canceled
+        self.logger.info("PDFUtility",f"Got merge filename: {output_pdf}")
+
+        # Create enhanced progress dialog
+        progress = ProgressDialog(
+            self.root, 
+            title="Merging PDFs", 
+            message=f"Preparing to merge {len(selected_indices)} PDF files..."
+        )
+
+        # Store results
+        result = {"merged_file": None, "error": None, "start_time": time.time()}
+        
+        def process_pdfs():
+            """Process PDFs in background thread with cancellation support"""
+            self.logger.info("PDFUtility","Processing PDFs")
+            try:
+                # Get selected files
+                selected_files = [self.pdf_files[index] for index in selected_indices]
+                self.logger.info("PDFUtility",f"Got {len(selected_files)} selected files")
+                # Last status update time to reduce flashing
+                last_update_time = time.time()
+                last_time_update = time.time()
+                last_progress = 0
+                current_message = ""
+
+                # Define progress callback
+                def update_progress(percent, message):
+                    nonlocal last_update_time, last_time_update, last_progress, current_message
+                    current_time = time.time()
+
+                    # Always update progress bar
+                    progress.update_progress(percent)
+
+                    # Check for cancellation frequently
+                    if progress.is_cancelled():
+                        self.logger.warning("PDFUtility","Operation cancelled by user")
+                        raise Exception("Operation cancelled by user")
+
+                    # Update status text less frequently (every 0.5 seconds)
+                    if current_time - last_update_time > 0.5 or abs(percent - last_progress) > 5:
+                        progress.update_status(message)
+                        current_message = message
+                        last_update_time = current_time
+                        last_progress = percent
+                        self.logger.debug("PDFUtility", f"Updated progress to {percent}%")
+
+                    # Update time remaining less frequently (every 2 seconds)
+                    if current_time - last_time_update > 2 and percent > 5 and percent < 95:
+                        elapsed = current_time - result["start_time"]
+                        self.logger.info("PDFUtility",f"Elapsed Time: {elapsed}")
+                        if percent > 0:
+                            estimated_total = elapsed / (percent / 100)
+                            remaining = estimated_total - elapsed
+                            if remaining > 0:
+                                time_msg = self.format_time_remaining(remaining)
+                                self.logger.info("PDFUtility",f"Time remaining: {time_msg}")
+                                progress.update_time_remaining(time_msg)
+                        last_time_update = current_time
+
+                # Merge PDFs with progress tracking
+                result["merged_file"] = self.merge_pdfs(selected_files, output_pdf, update_progress)
+
+                # Schedule UI update on main thread
+                self.root.after(100, complete_operation)
+
+            except Exception as e:
+                if str(e) == "Operation cancelled by user":
+                    result["cancelled"] = True
+                    self.logger.info("PDFUtility","Operation cancelled by user")
+                else:
+                    result["error"] = f"Error: {str(e)}"
+                    self.logger.error("PDFUtility",f"Error: {str(e)}")
+                self.root.after(100, complete_operation)
+
+        def complete_operation():
+            """Complete the operation on the main thread"""
+            # Close progress dialog
+            progress.close()
+
+            # Handle cancellation
+            if result.get("cancelled"):
+                self.status_label.config(text="Merge operation cancelled")
+                self.logger.info("PDFUtility","Merge operation cancelled")
+                # Remove partial output file if it exists
+                if result["merged_file"] and os.path.exists(result["merged_file"]):
+                    try:
+                        os.remove(result["merged_file"])
+                        self.logger.info("PDFUtility",f"Removed partial output file: {result['merged_file']}")
+                    except:
+                        self.logger.error("PDFUtility",f"Error removing partial output file: {result['merged_file']}")
+                        pass
+                return
+
+            # Handle errors
+            if result["error"]:
+                messagebox.showerror("Error", result["error"])
+                self.logger.warning("PDFUtility",f"Error: {result['error']}")
+                return
+
+            # Update file list with merged file
+            if result["merged_file"] and os.path.exists(result["merged_file"]):
+                try:
+                    # Verify the file with PyMuPDF
+                    doc = fitz.open(result["merged_file"])
+                    page_count = len(doc)
+                    self.logger.info("PDFUtility",f"Opened {result['merged_file']} with {page_count} pages")
+                    doc.close()
+
+                    # Add to file list
+                    self.pdf_files.append(result["merged_file"])
+                    self.logger.info("PDFUtility","Addded Merged Document to list")
+                    self.update_listbox()
+
+                    # Show success message with page count
+                    self.status_label.config(
+                        text=f"Merged {len(selected_indices)} PDFs to {os.path.basename(result['merged_file'])} ({page_count} pages)"
+                    )
+                except Exception as e:
+                    messagebox.showerror("Error", f"Error verifying merged file: {str(e)}")
+                    self.logger.error("PDFUtility",f"Error verifying merged file: {str(e)}")
+            else:
+                messagebox.showerror("Error", "Merge completed but the output file wasn't created.")
+                self.logger.error("PDFUtility",f"Merge completed but the output file wasn't created.")
+        # Start processing in background thread
+        Thread(target=process_pdfs, daemon=True).start()
+    

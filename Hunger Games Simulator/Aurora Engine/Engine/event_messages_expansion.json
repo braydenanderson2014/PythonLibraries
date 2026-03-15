@@ -1,0 +1,571 @@
+{
+    "events": {
+        "idle_events_expanded": {
+            "hunting_success": {
+                "description": "{tribute1} successfully hunts for food",
+                "narrative": "{tribute1} moves silently through the underbrush, eyes scanning for prey. A swift throw brings down a rabbit. Food secured.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "hunger": {"min": -40, "max": -60, "description": "Fresh meat sates hunger"},
+                    "fatigue": {"min": 10, "max": 20, "description": "Hunting requires energy"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"food_supplies": {"min": 2, "max": 4}},
+                    "inventory": ["Fresh Meat"],
+                    "description": "Secures food for multiple meals"
+                }
+            },
+            "hunting_failure": {
+                "description": "{tribute1} hunts unsuccessfully",
+                "narrative": "{tribute1} spends hours stalking prey that never materializes. Empty-handed and exhausted, they return to camp as darkness falls.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 15, "max": 25, "description": "Wasted effort drains energy"},
+                    "sanity": {"min": -5, "max": -10, "description": "Frustration takes a mental toll"}
+                },
+                "participants": "random_1"
+            },
+            "water_source_found": {
+                "description": "{tribute1} discovers a fresh water source",
+                "narrative": "{tribute1} follows the sound of trickling water to a hidden spring. Clear, cold water - a lifesaving find in this brutal arena.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "thirst": {"min": -50, "max": -80, "description": "Drinks deeply from pure water"},
+                    "sanity": {"min": 5, "max": 10, "description": "Relief washes over them"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"water_supplies": {"min": 3, "max": 6}},
+                    "description": "Fills containers with fresh water"
+                }
+            },
+            "shelter_built": {
+                "description": "{tribute1} constructs a shelter",
+                "narrative": "{tribute1} gathers branches, leaves, and vines, weaving them into a crude but effective shelter. Protection from the elements at last.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "fatigue": {"min": 20, "max": 30, "description": "Building is exhausting work"},
+                    "sanity": {"min": 10, "max": 15, "description": "Having shelter brings peace of mind"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "has_shelter": {
+                        "duration_phases": 999,
+                        "description": "Protected from weather and can rest better"
+                    }
+                }
+            },
+            "fire_started": {
+                "description": "{tribute1} successfully starts a fire",
+                "narrative": "{tribute1} sparks a flame after patient effort. The warmth and light chase away the darkness and cold of the arena night.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {"min": 8, "max": 12, "description": "Fire provides comfort"},
+                    "fatigue": {"min": -5, "max": -10, "description": "Warmth aids recovery"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "has_fire": {
+                        "duration_phases": 2,
+                        "description": "Fire provides warmth and can cook food"
+                    }
+                }
+            },
+            "gather_berries": {
+                "description": "{tribute1} gathers edible berries",
+                "narrative": "{tribute1} carefully identifies edible berries among the poisonous varieties. A small meal, but better than nothing.",
+                "intensity": "low",
+                "stat_effects": {
+                    "hunger": {"min": -15, "max": -30, "description": "Berries provide modest nourishment"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"food_supplies": {"min": 1, "max": 2}},
+                    "description": "Collects berries for later"
+                }
+            },
+            "fishing_attempt": {
+                "description": "{tribute1} attempts to fish",
+                "narrative": "{tribute1} fashions a crude fishing spear and wades into shallow water, waiting patiently for fish to approach.",
+                "intensity": "low",
+                "stat_effects": {
+                    "hunger": {"min": -20, "max": -40, "description": "Catches fish after patient effort"},
+                    "fatigue": {"min": 10, "max": 15, "description": "Standing in cold water is tiring"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"food_supplies": {"min": 1, "max": 3}},
+                    "inventory": ["Fish"],
+                    "description": "Catches fish for a meal"
+                }
+            },
+            "set_traps": {
+                "description": "{tribute1} sets snares and traps",
+                "narrative": "{tribute1} uses their survival knowledge to set snares along game trails. If luck holds, they'll have food by morning.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 10, "max": 15, "description": "Setting traps requires focus"}
+                },
+                "participants": "random_1"
+            },
+            "check_traps": {
+                "description": "{tribute1} checks their traps",
+                "narrative": "{tribute1} returns to the snares set earlier. Success - a small animal is caught in one of the traps!",
+                "intensity": "low",
+                "stat_effects": {
+                    "hunger": {"min": -25, "max": -45, "description": "Trapped animal provides food"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"food_supplies": {"min": 2, "max": 3}},
+                    "description": "Retrieves trapped prey"
+                }
+            },
+            "medicinal_plants": {
+                "description": "{tribute1} forages for medicinal plants",
+                "narrative": "{tribute1} searches for healing herbs and plants, gathering a small supply that could help treat injuries later.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 5, "max": 10, "description": "Foraging is light work"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["Healing Herbs", "Medicinal Plants"],
+                    "description": "Collects plants with healing properties"
+                }
+            },
+            "water_purification": {
+                "description": "{tribute1} purifies water",
+                "narrative": "{tribute1} boils questionable water over their fire, making it safe to drink. Not fresh, but it won't kill them.",
+                "intensity": "low",
+                "stat_effects": {
+                    "thirst": {"min": -30, "max": -50, "description": "Purified water quenches thirst"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "resources": {"water_supplies": {"min": 2, "max": 3}},
+                    "description": "Purifies water for safe drinking"
+                }
+            },
+            "weapon_maintenance": {
+                "description": "{tribute1} maintains their weapons",
+                "narrative": "{tribute1} sharpens blades and checks weapon integrity. In the arena, a dull knife could mean death.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {"min": 3, "max": 5, "description": "Productive activity calms nerves"}
+                },
+                "participants": "random_1"
+            },
+            "scout_surroundings": {
+                "description": "{tribute1} scouts the surrounding area",
+                "narrative": "{tribute1} carefully surveys their surroundings, mapping escape routes and noting locations of resources and dangers.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 10, "max": 20, "description": "Scouting requires careful movement"}
+                },
+                "participants": "random_1"
+            },
+            "rest_in_shelter": {
+                "description": "{tribute1} rests in their shelter",
+                "narrative": "{tribute1} takes advantage of their shelter to rest properly. True sleep, not just fitful dozing. Their body begins to recover.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": -30, "max": -50, "description": "Proper rest in shelter restores energy"},
+                    "health": {"min": 5, "max": 15, "description": "Rest aids natural healing"}
+                },
+                "participants": "random_1"
+            },
+            "camouflage_position": {
+                "description": "{tribute1} camouflages their position",
+                "narrative": "{tribute1} uses mud, leaves, and branches to disguise their shelter and hide signs of their presence. Stealth is survival.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 5, "max": 10, "description": "Camouflaging requires effort"}
+                },
+                "participants": "random_1"
+            }
+        },
+        "medical_events": {
+            "bleeding_wound": {
+                "description": "{tribute1} suffers a bleeding wound",
+                "narrative": "{tribute1} clutches a deep cut that won't stop bleeding. Without treatment, this could become serious.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {"min": -15, "max": -30, "description": "Bleeding causes immediate health loss"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "bleeding": {
+                        "duration_phases": 3,
+                        "description": "Loses health each phase until treated",
+                        "stat_modifiers": {
+                            "health": -10,
+                            "fatigue": 5
+                        }
+                    }
+                }
+            },
+            "treat_bleeding": {
+                "description": "{tribute1} treats their bleeding wound",
+                "narrative": "{tribute1} uses medical supplies to clean and bandage the wound. The bleeding stops, crisis averted for now.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "health": {"min": 10, "max": 20, "description": "Treatment prevents further deterioration"}
+                },
+                "participants": "random_1"
+            },
+            "infection_sets_in": {
+                "description": "{tribute1}'s wound becomes infected",
+                "narrative": "{tribute1}'s untreated wound has festered. Red streaks spread from the injury. Infection is setting in.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -20, "max": -40, "description": "Infection ravages the body"},
+                    "fatigue": {"min": 20, "max": 35, "description": "Fighting infection exhausts the body"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "infected": {
+                        "duration_phases": 5,
+                        "description": "Severe illness, loses health each phase",
+                        "stat_modifiers": {
+                            "health": -15,
+                            "fatigue": 10,
+                            "sanity": -5
+                        }
+                    }
+                }
+            },
+            "fever_onset": {
+                "description": "{tribute1} develops a fever",
+                "narrative": "{tribute1} shivers despite the heat. Fever burns through them. Without medicine, this could be fatal.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {"min": -10, "max": -25, "description": "Fever weakens the body"},
+                    "sanity": {"min": -10, "max": -20, "description": "Delirium sets in"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "feverish": {
+                        "duration_phases": 3,
+                        "description": "Weakened and delirious from fever",
+                        "stat_modifiers": {
+                            "health": -8,
+                            "sanity": -5
+                        }
+                    }
+                }
+            },
+            "broken_bone": {
+                "description": "{tribute1} suffers a broken bone",
+                "narrative": "{tribute1} hears the sickening crack as bone breaks. Pain shoots through them. Movement will be agony.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -25, "max": -45, "description": "Broken bone causes severe injury"},
+                    "fatigue": {"min": 20, "max": 30, "description": "Pain is exhausting"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "broken_bone": {
+                        "duration_phases": 10,
+                        "description": "Mobility severely reduced, constant pain",
+                        "stat_modifiers": {
+                            "health": -5,
+                            "fatigue": 10
+                        }
+                    }
+                }
+            },
+            "poisoned": {
+                "description": "{tribute1} is poisoned",
+                "narrative": "{tribute1} realizes too late that something was wrong with what they consumed. Poison courses through their veins.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -30, "max": -60, "description": "Poison deals severe damage"},
+                    "sanity": {"min": -10, "max": -15, "description": "Panic from poisoning"}
+                },
+                "participants": "random_1",
+                "status_effects": {
+                    "poisoned": {
+                        "duration_phases": 4,
+                        "description": "Poison damages health each phase",
+                        "stat_modifiers": {
+                            "health": -12,
+                            "fatigue": 8
+                        }
+                    }
+                }
+            },
+            "antidote_found": {
+                "description": "{tribute1} finds an antidote",
+                "narrative": "{tribute1} discovers sponsor-sent medicine that counteracts the poison. They drink it desperately, feeling the poison's grip loosen.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "health": {"min": 15, "max": 30, "description": "Antidote heals poison damage"},
+                    "sanity": {"min": 10, "max": 15, "description": "Relief from imminent death"}
+                },
+                "participants": "random_1"
+            },
+            "dehydration_severe": {
+                "description": "{tribute1} suffers from severe dehydration",
+                "narrative": "{tribute1} can barely stand. Lips cracked, vision blurring. Without water soon, they won't last much longer.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -20, "max": -35, "description": "Dehydration damages organs"},
+                    "fatigue": {"min": 25, "max": 40, "description": "Extreme weakness from dehydration"},
+                    "sanity": {"min": -10, "max": -20, "description": "Delirium from lack of water"}
+                },
+                "participants": "random_1"
+            },
+            "starvation_onset": {
+                "description": "{tribute1} begins starving",
+                "narrative": "{tribute1}'s body is consuming itself. Days without food have left them gaunt and weak. Every movement is a struggle.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -15, "max": -30, "description": "Starvation damages the body"},
+                    "fatigue": {"min": 20, "max": 35, "description": "No energy without food"},
+                    "sanity": {"min": -8, "max": -15, "description": "Hunger madness sets in"}
+                },
+                "participants": "random_1"
+            },
+            "sponsor_medicine": {
+                "description": "{tribute1} receives sponsor medicine",
+                "narrative": "A silver parachute descends. {tribute1} tears it open to find precious medicine from a Capitol sponsor. Hope.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "health": {"min": 25, "max": 50, "description": "Capitol medicine is highly effective"},
+                    "sanity": {"min": 10, "max": 20, "description": "Someone cares if they live"}
+                },
+                "participants": "random_1",
+                "winner_effects": {
+                    "inventory": ["Capitol Medicine", "Bandages", "Antibiotics"],
+                    "description": "Receives high-quality medical supplies"
+                }
+            }
+        },
+        "social_events": {
+            "alliance_formed": {
+                "description": "{tribute1} and {tribute2} form an alliance",
+                "narrative": "{tribute1} and {tribute2} agree to watch each other's backs. In the arena, allies can mean survival - or eventual betrayal.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {"min": 10, "max": 20, "description": "Having an ally provides comfort"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": true,
+                    "relationship_change": {"min": 30, "max": 50}
+                }
+            },
+            "share_supplies": {
+                "description": "{tribute1} shares supplies with {tribute2}",
+                "narrative": "{tribute1} offers some of their precious supplies to {tribute2}. A gesture of trust, or a calculated investment?",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {"min": 5, "max": 10, "description": "Cooperation lifts spirits"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": 15, "max": 25}
+                }
+            },
+            "betrayal": {
+                "description": "{tribute1} betrays {tribute2}",
+                "narrative": "In a moment of cold calculation, {tribute1} turns on their ally {tribute2}. The alliance is shattered in blood.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -30, "max": -70, "description": "Betrayal strikes without warning", "target": "tribute2"},
+                    "sanity": {"min": -15, "max": -30, "description": "Guilt and trauma from betrayal", "target": "tribute1"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "alliance": false,
+                    "relationship_change": {"min": -80, "max": -50}
+                }
+            },
+            "argument_over_supplies": {
+                "description": "{tribute1} and {tribute2} argue over supplies",
+                "narrative": "Tension boils over as {tribute1} and {tribute2} clash over who gets the food. Their alliance strains to breaking point.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {"min": -5, "max": -15, "description": "Conflict causes stress"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": -20, "max": -10}
+                }
+            },
+            "watch_shift": {
+                "description": "{tribute1} keeps watch while {tribute2} rests",
+                "narrative": "{tribute1} guards the camp through the night while {tribute2} sleeps. Trust, for now, holds between them.",
+                "intensity": "low",
+                "stat_effects": {
+                    "fatigue": {"min": 15, "max": 25, "description": "Staying awake all night is exhausting", "target": "tribute1"},
+                    "fatigue": {"min": -20, "max": -35, "description": "Safe sleep restores energy", "target": "tribute2"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": 5, "max": 15}
+                }
+            },
+            "trust_builds": {
+                "description": "{tribute1} and {tribute2} bond over shared experiences",
+                "narrative": "{tribute1} and {tribute2} share stories of home, of the families they're fighting for. The alliance deepens into something more.",
+                "intensity": "low",
+                "stat_effects": {
+                    "sanity": {"min": 10, "max": 15, "description": "Connection to humanity preserves sanity"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": 15, "max": 30}
+                }
+            },
+            "jealousy_arises": {
+                "description": "{tribute1} grows jealous of {tribute2}",
+                "narrative": "{tribute1} watches {tribute2} receive sponsor gifts and attention. Jealousy festers. Alliances built on envy rarely last.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {"min": -8, "max": -15, "description": "Jealousy corrodes mental state"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": -15, "max": -5}
+                }
+            },
+            "save_ally": {
+                "description": "{tribute1} saves {tribute2} from danger",
+                "narrative": "{tribute1} risks their life to pull {tribute2} from mortal danger. The bond between them strengthens through shared survival.",
+                "intensity": "high",
+                "stat_effects": {
+                    "health": {"min": -10, "max": -25, "description": "Rescue attempt causes minor injuries", "target": "tribute1"},
+                    "sanity": {"min": 15, "max": 25, "description": "Gratitude for saved life", "target": "tribute2"}
+                },
+                "participants": "random_2",
+                "relationship_effects": {
+                    "relationship_change": {"min": 30, "max": 50}
+                }
+            }
+        },
+        "weather_events_persistent": {
+            "acid_rain_begins": {
+                "description": "Acid rain begins falling across the arena",
+                "narrative": "The sky opens up with rain that burns on contact. Tributes scramble for cover as the Gamemakers unleash this deadly weather.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -15, "max": -30, "description": "Acid burns exposed skin"},
+                    "sanity": {"min": -10, "max": -20, "description": "Terror of burning rain"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "acid_rain": {
+                        "duration_phases": 3,
+                        "description": "Acid rain damages health each phase unless sheltered",
+                        "stat_modifiers": {
+                            "health": -12,
+                            "sanity": -5
+                        }
+                    }
+                }
+            },
+            "heat_wave_starts": {
+                "description": "An oppressive heat wave descends on the arena",
+                "narrative": "The temperature soars to unbearable levels. The arena becomes an oven. Water becomes more precious than gold.",
+                "intensity": "high",
+                "stat_effects": {
+                    "thirst": {"min": 15, "max": 30, "description": "Extreme heat accelerates dehydration"},
+                    "fatigue": {"min": 10, "max": 20, "description": "Heat saps energy"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "heat_wave": {
+                        "duration_phases": 4,
+                        "description": "Extreme heat increases thirst and fatigue",
+                        "stat_modifiers": {
+                            "thirst": 10,
+                            "fatigue": 8
+                        }
+                    }
+                }
+            },
+            "freezing_cold_begins": {
+                "description": "Freezing temperatures grip the arena",
+                "narrative": "The temperature plummets. Frost forms on everything. Without shelter and fire, tributes will freeze.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -10, "max": -25, "description": "Cold damages exposed tributes"},
+                    "fatigue": {"min": 15, "max": 25, "description": "Fighting cold is exhausting"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "freezing": {
+                        "duration_phases": 3,
+                        "description": "Extreme cold damages health unless near fire",
+                        "stat_modifiers": {
+                            "health": -10,
+                            "fatigue": 10,
+                            "sanity": -5
+                        }
+                    }
+                }
+            },
+            "fog_rolls_in": {
+                "description": "Thick fog engulfs the arena",
+                "narrative": "Dense fog rolls across the arena, reducing visibility to mere feet. Tributes become disoriented, unable to see threats.",
+                "intensity": "medium",
+                "stat_effects": {
+                    "sanity": {"min": -10, "max": -20, "description": "Fog creates disorientation and fear"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "fog_blindness": {
+                        "duration_phases": 2,
+                        "description": "Severely reduced visibility",
+                        "stat_modifiers": {
+                            "sanity": -5
+                        }
+                    }
+                }
+            },
+            "toxic_gas_released": {
+                "description": "Toxic gas spreads through a section of the arena",
+                "narrative": "Green gas seeps from vents in the arena floor. The Gamemakers are driving tributes together. Run or die.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -25, "max": -50, "description": "Gas causes severe damage to unprotected tributes"},
+                    "fatigue": {"min": 20, "max": 35, "description": "Panicked flight exhausts tributes"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "toxic_zone": {
+                        "duration_phases": 2,
+                        "description": "Toxic gas forces tributes to relocate",
+                        "stat_modifiers": {
+                            "health": -20
+                        }
+                    }
+                }
+            },
+            "wildfire_starts": {
+                "description": "Wildfire erupts in the arena",
+                "narrative": "Flames tear through the arena vegetation. The fire spreads rapidly, smoke choking the air. Tributes must run or burn.",
+                "intensity": "very_high",
+                "stat_effects": {
+                    "health": {"min": -20, "max": -45, "description": "Fire and smoke cause severe damage"},
+                    "fatigue": {"min": 25, "max": 40, "description": "Fleeing fire is exhausting"}
+                },
+                "participants": "all",
+                "status_effects": {
+                    "wildfire": {
+                        "duration_phases": 2,
+                        "description": "Fire sweeps through sections of arena",
+                        "stat_modifiers": {
+                            "health": -15,
+                            "fatigue": 15,
+                            "sanity": -10
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

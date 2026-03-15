@@ -1,0 +1,263 @@
+{
+  "config": {
+    "engine": {
+      "name": "Aurora Engine",
+      "version": "1.0.0",
+      "description": "Core engine for the Hunger Games Simulator.",
+      "author": "Your Name",
+      "license": "MIT"
+    },
+    "settings": {
+      "enable_logging": true,
+      "log_level": "DEBUG",
+      "max_participants": 24,
+      "min_participants": 2,
+      "phase_duration_minutes": 60,
+      "phases_per_day": 3
+    },
+    "timers": {
+      "event_cooldowns": {
+        "Arena Events": 30,
+        "Combat Events": 45,
+        "Idle Events": 15,
+        "Custom Events": 20,
+        "PvP Events": 60
+      },
+      "phase_transitions": {
+        "cornucopia": 30,
+        "day_phase": 60,
+        "night_phase": 180
+      },
+      "minimum_time_between_events": 5,
+      "maximum_events_per_phase": 8
+    },
+    "pvp_settings": {
+      "allow_player_initiated_pvp": false,
+      "allow_random_encounters": true,
+      "random_encounter_chance": 0.3,
+      "min_tributes_per_encounter": 2,
+      "max_tributes_per_encounter": 5,
+      "pvp_cooldown_seconds": 300,
+      "max_concurrent_pvp_battles": 3,
+      "pvp_damage_multiplier": 1.2
+    },
+    "phases": {
+      "total_days": 7,
+      "phases_per_day": 3,
+      "cornucopia_phase": {
+        "name": "Cornucopia",
+        "is_special_phase": true,
+        "allowed_events": [
+          "Arena Events",
+          "Combat Events"
+        ],
+        "duration_minutes": 30
+      },
+      "day_phases": {
+        "1": {
+          "name": "Morning Phase",
+          "allowed_events": [
+            "Idle Events",
+            "Arena Events"
+          ],
+          "intensity": "low"
+        },
+        "2": {
+          "name": "Afternoon Phase",
+          "allowed_events": [
+            "Arena Events",
+            "Combat Events",
+            "Idle Events"
+          ],
+          "intensity": "medium"
+        },
+        "3": {
+          "name": "Evening Phase",
+          "allowed_events": [
+            "Combat Events",
+            "Arena Events"
+          ],
+          "intensity": "high"
+        }
+      }
+    },
+    "cornucopia_settings": {
+      "death_chance": 0.6,
+      "inventory": {}
+    }
+  },
+  "current_day": 1,
+  "current_phase": 0,
+  "game_start_time": "2025-10-16T22:39:11.672256",
+  "last_event_time": null,
+  "phase_start_time": "2025-10-16T22:39:11.672323",
+  "tribute_id_mapping": {
+    "Katniss Everdeen": [
+      "player_1"
+    ],
+    "Peeta Mellark": [
+      "player_2"
+    ],
+    "Gale Hawthorne": [
+      "player_3"
+    ]
+  },
+  "primary_tribute_ids": {
+    "Katniss Everdeen": "player_1",
+    "Peeta Mellark": "player_2",
+    "Gale Hawthorne": "player_3"
+  },
+  "event_history": [],
+  "recent_events": [],
+  "event_timers": {
+    "Arena Events": "2025-10-16T22:39:11.672341",
+    "Combat Events": "2025-10-16T22:39:11.672341",
+    "Idle Events": "2025-10-16T22:39:11.672341",
+    "Custom Events": "2025-10-16T22:39:11.672341",
+    "PvP Events": "2025-10-16T22:39:11.672341"
+  },
+  "phase_timer": null,
+  "pvp_cooldowns": {
+    "player_1": "2025-10-16T22:44:11.678880",
+    "player_2": "2025-10-16T22:44:11.679052",
+    "player_3": "2025-10-16T22:44:11.679106"
+  },
+  "active_pvp_battles": [],
+  "pending_pvp_requests": [],
+  "input_queue": [],
+  "tributes": {
+    "player_1": {
+      "tribute_id": "player_1",
+      "name": "Katniss Everdeen",
+      "district": 12,
+      "health": 100,
+      "sanity": 100,
+      "hunger": 0,
+      "thirst": 0,
+      "fatigue": 0,
+      "skills": {
+        "strength": 6,
+        "agility": 9,
+        "intelligence": 7,
+        "survival": 10
+      },
+      "inventory": [],
+      "weapons": [],
+      "food_supplies": 0,
+      "water_supplies": 0,
+      "medical_supplies": [],
+      "has_shelter": false,
+      "has_fire": false,
+      "location": "arena",
+      "terrain_type": "unknown",
+      "relationships": {},
+      "alliances": [],
+      "enemies": [],
+      "status": "alive",
+      "status_effects": [],
+      "personality_traits": {
+        "aggressive": 0.2395414277232684,
+        "cautious": 0.23005095330495773,
+        "social": 0.1032655340531409,
+        "selfish": 0.23800626258600047,
+        "intelligent": 0.18913582233263257
+      },
+      "current_goal": "survive",
+      "risk_tolerance": 0.6465138092410895,
+      "social_preference": -0.13474072853285957,
+      "decision_history": []
+    },
+    "player_2": {
+      "tribute_id": "player_2",
+      "name": "Peeta Mellark",
+      "district": 12,
+      "health": 100,
+      "sanity": 100,
+      "hunger": 0,
+      "thirst": 0,
+      "fatigue": 0,
+      "skills": {
+        "strength": 8,
+        "agility": 5,
+        "intelligence": 6,
+        "survival": 7
+      },
+      "inventory": [],
+      "weapons": [],
+      "food_supplies": 0,
+      "water_supplies": 0,
+      "medical_supplies": [],
+      "has_shelter": false,
+      "has_fire": false,
+      "location": "arena",
+      "terrain_type": "unknown",
+      "relationships": {},
+      "alliances": [],
+      "enemies": [],
+      "status": "alive",
+      "status_effects": [],
+      "personality_traits": {
+        "aggressive": 0.2364012355863037,
+        "cautious": 0.279835932903366,
+        "social": 0.20257311150034293,
+        "selfish": 0.06679701352488894,
+        "intelligent": 0.21439270648509848
+      },
+      "current_goal": "survive",
+      "risk_tolerance": 0.5121337451954345,
+      "social_preference": 0.13577609797545398,
+      "decision_history": []
+    },
+    "player_3": {
+      "tribute_id": "player_3",
+      "name": "Gale Hawthorne",
+      "district": 12,
+      "health": 100,
+      "sanity": 100,
+      "hunger": 0,
+      "thirst": 0,
+      "fatigue": 0,
+      "skills": {
+        "strength": 9,
+        "agility": 7,
+        "intelligence": 5,
+        "survival": 8
+      },
+      "inventory": [],
+      "weapons": [],
+      "food_supplies": 0,
+      "water_supplies": 0,
+      "medical_supplies": [],
+      "has_shelter": false,
+      "has_fire": false,
+      "location": "arena",
+      "terrain_type": "unknown",
+      "relationships": {},
+      "alliances": [],
+      "enemies": [],
+      "status": "alive",
+      "status_effects": [],
+      "personality_traits": {
+        "aggressive": 0.1917488305585528,
+        "cautious": 0.2701575272168241,
+        "social": 0.09919388448335341,
+        "selfish": 0.22465532406873398,
+        "intelligent": 0.21424443367253562
+      },
+      "current_goal": "survive",
+      "risk_tolerance": 0.4972496101861843,
+      "social_preference": -0.12546143958538059,
+      "decision_history": []
+    }
+  },
+  "tribute_statuses": {
+    "player_1": "alive",
+    "player_2": "alive",
+    "player_3": "alive"
+  },
+  "tribute_relationships": {
+    "player_1": {},
+    "player_2": {},
+    "player_3": {}
+  }
+}

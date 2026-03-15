@@ -1,0 +1,29 @@
+{
+  "admin": {
+    "KO": {
+      "symbol": "KO",
+      "quantity": 1.02,
+      "avg_cost": 70.5
+    },
+    "PEP": {
+      "symbol": "PEP",
+      "quantity": 1.03,
+      "avg_cost": 150.11
+    },
+    "TSLA": {
+      "symbol": "TSLA",
+      "quantity": 0.056,
+      "avg_cost": 470.91
+    },
+    "ANGX": {
+      "symbol": "ANGX",
+      "quantity": 30.0,
+      "avg_cost": 4.87
+    },
+    "AMC": {
+      "symbol": "AMC",
+      "quantity": 1.0,
+      "avg_cost": 1.82
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+    "name": "image_converter",
+    "title": "Image Converter Tutorial",
+    "description": "Learn how to convert images to PDF and PDF to images",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "image_add_images_btn",
+            "text": "<b>🖼️ Add Images to Convert</b><br><br>Select image files (PNG, JPG, TIFF, BMP, etc.) to convert to PDF format. Each image becomes a page in the PDF.",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "image_add_folder_btn",
+            "text": "<b>📂 Scan Directory for Images</b><br><br>Add all images from a folder at once! This opens a file type selector where you can choose which image formats to scan for.<br><br><em>💡 Perfect for processing entire photo folders!</em>",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "image_file_list",
+            "text": "<b>🎨 Image Preview List</b><br><br>Your selected images appear here. You can:<br>• Reorder images by dragging<br>• Remove unwanted images<br>• Preview image details",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "image_remove_selected_btn",
+            "text": "<b>🗑️ Remove Selected Files</b><br><br>Select unwanted files in the list and click here to remove them. Use Ctrl+Click or Shift+Click to select multiple files.",
+            "button_text": "Next",
+            "highlight_style": "dashed_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "image_clear_all_btn",
+            "text": "<b>🧹 Clear All Files</b><br><br>Need a fresh start? This button removes all files from the list at once. Great for switching between different projects.",
+            "button_text": "Next",
+            "highlight_style": "dashed_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "image_img_to_pdf_btn",
+            "text": "<b>📄 Convert Images to PDF</b><br><br>Convert your images to a PDF document. Each image becomes a separate page with optimal formatting and quality preservation.",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        },
+        {
+            "target": "image_pdf_to_img_btn",
+            "text": "<b>🖼️ Convert PDF to Images</b><br><br>Convert PDF pages to individual image files. Each page becomes a separate image file in your chosen format (PNG, JPG, etc.).",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        },
+        {
+            "target": "image_copy_pdfs_btn",
+            "text": "<b>🔗 Share PDFs with Other Widgets</b><br><br>Got PDF files in your list? This button copies them to the shared file lists in the Split and Merge widgets, so you can easily work with them there too!<br><br><em>💡 Great workflow integration!</em>",
+            "button_text": "Perfect!",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        }
+    ]
+}

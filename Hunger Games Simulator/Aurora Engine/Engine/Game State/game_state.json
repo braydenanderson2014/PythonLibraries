@@ -1,0 +1,14 @@
+{
+    "game_active": false,
+    "current_day": 1,
+    "current_phase": 0,
+    "cornucopia_completed": false,
+    "players": [],
+    "event_history": [],
+    "game_settings": {
+        "max_days": 7,
+        "phases_per_day": 3,
+        "phase_duration_minutes": 60
+    },
+    "last_updated": null
+}

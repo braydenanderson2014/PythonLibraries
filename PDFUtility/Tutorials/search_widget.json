@@ -1,0 +1,57 @@
+{
+    "name": "search_widget",
+    "title": "File Search Tutorial",
+    "description": "Learn how to search for files and integrate with other tools",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "filename_pattern_edit",
+            "text": "<b>🔍 File Search Patterns</b><br><br>Enter search terms to find files by name. Use wildcards (*) for pattern matching, or simple text to find files containing those words.",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "path_edit",
+            "text": "<b>📂 Search Location</b><br><br>Choose which directory to search in. You can search your entire system or limit to specific folders for faster, targeted results.",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "browse_button",
+            "text": "<b>🔍 Browse for Folder</b><br><br>Click here to visually select a folder to search in. Much easier than typing long paths!",
+            "button_text": "Next",
+            "highlight_style": "dashed_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "include_subdirs_cb",
+            "text": "<b>📁 Include Subdirectories</b><br><br>Check this to search within all subfolders too. Uncheck for faster searches limited to the main folder only.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "search_memory_cb",
+            "text": "<b>💾 Search Loaded PDFs</b><br><br>Search through PDFs currently loaded in other widgets (Split, Merge, etc.) without scanning the filesystem.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "search_button",
+            "text": "<b>🚀 Start Search</b><br><br>Begin searching for files matching your criteria. Results will appear below with file details, size, dates, and relevance scoring.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "left"
+        },
+        {
+            "target": "add_to_list_button",
+            "text": "<b>➕ Quick Integration</b><br><br>Send selected search results directly to other tools like Split PDF or Merge PDFs for immediate processing! Great workflow integration.",
+            "button_text": "Perfect!",
+            "highlight_style": "pulse",
+            "arrow_direction": "auto"
+        }
+    ]
+}

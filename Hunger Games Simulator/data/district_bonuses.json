@@ -1,0 +1,142 @@
+{
+  "district_bonuses": {
+    "1": {
+      "name": "Career District",
+      "description": "Elite training district with superior physical conditioning",
+      "bonuses": {
+        "strength": 2,
+        "endurance": 1
+      }
+    },
+    "2": {
+      "name": "Agile District",
+      "description": "Known for speed and stealth, perfect for evasion",
+      "bonuses": {
+        "agility": 2,
+        "stealth": 1
+      }
+    },
+    "3": {
+      "name": "Intellectual District",
+      "description": "Centers of learning and strategy",
+      "bonuses": {
+        "intelligence": 2,
+        "social": 1
+      }
+    },
+    "4": {
+      "name": "Hunter District",
+      "description": "Masters of tracking and wilderness survival",
+      "bonuses": {
+        "hunting": 2,
+        "survival": 1
+      }
+    },
+    "5": {
+      "name": "Lucky District",
+      "description": "District known for fortunate outcomes",
+      "bonuses": {
+        "luck": 2,
+        "charisma": 1
+      }
+    },
+    "6": {
+      "name": "Industrial District",
+      "description": "Manufacturing district with practical skills",
+      "bonuses": {
+        "strength": 1,
+        "endurance": 1
+      }
+    },
+    "7": {
+      "name": "Swift District",
+      "description": "District focused on speed and precision",
+      "bonuses": {
+        "agility": 1,
+        "stealth": 1
+      }
+    },
+    "8": {
+      "name": "Academic District",
+      "description": "District of scholars and innovators",
+      "bonuses": {
+        "intelligence": 1,
+        "social": 1
+      }
+    },
+    "9": {
+      "name": "Rural District",
+      "description": "Agricultural district with hunting knowledge",
+      "bonuses": {
+        "hunting": 1,
+        "survival": 1
+      }
+    },
+    "10": {
+      "name": "Coastal District",
+      "description": "District known for adaptability and charm",
+      "bonuses": {
+        "luck": 1,
+        "charisma": 1
+      }
+    },
+    "11": {
+      "name": "Poor District",
+      "description": "Struggling district with limited resources",
+      "bonuses": {
+        "strength": -1,
+        "endurance": -1
+      }
+    },
+    "12": {
+      "name": "Outcast District",
+      "description": "District of outsiders and survivors",
+      "bonuses": {
+        "agility": -1,
+        "stealth": -1
+      }
+    }
+  },
+  "trait_scoring": {
+    "strength": {
+      "description": "Physical power and combat effectiveness",
+      "weight": 1.0
+    },
+    "endurance": {
+      "description": "Stamina and resistance to fatigue",
+      "weight": 1.0
+    },
+    "agility": {
+      "description": "Speed and dexterity",
+      "weight": 1.0
+    },
+    "stealth": {
+      "description": "Ability to move undetected",
+      "weight": 1.0
+    },
+    "intelligence": {
+      "description": "Problem-solving and strategy",
+      "weight": 1.0
+    },
+    "social": {
+      "description": "Charisma and interpersonal skills",
+      "weight": 1.0
+    },
+    "hunting": {
+      "description": "Tracking and foraging abilities",
+      "weight": 1.0
+    },
+    "survival": {
+      "description": "Wilderness and environmental adaptation",
+      "weight": 1.0
+    },
+    "luck": {
+      "description": "Fortune and random chance factors",
+      "weight": 0.8
+    },
+    "charisma": {
+      "description": "Personal appeal and leadership",
+      "weight": 0.8
+    }
+  }
+}

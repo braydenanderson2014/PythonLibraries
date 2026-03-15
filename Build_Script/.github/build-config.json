@@ -1,0 +1,96 @@
+{
+  "_comment": "Build configuration for multi-platform PyInstaller builds",
+  "_description": "Customize these settings for your specific project needs",
+  
+  "name": "MyApp",
+  "version": "auto",
+  "append_version": true,
+  "append_date": false,
+  "windowed": false,
+  "main_file": "auto",
+  "python_version": "3.13.3",
+  "build_type": "onefile",
+  
+  "platforms": ["windows", "linux", "macos"],
+  
+  "architectures": {
+    "windows": ["x64", "x86"],
+    "linux": ["x64", "arm64"],
+    "macos": ["x64", "arm64"]
+  },
+  
+  "additional_flags": [
+    "--clean"
+  ],
+  
+  "resource_scanning": {
+    "directories": {
+      "assets": ["icons", "splash", "data", "images"],
+      "resources": ["icons", "config", "data"], 
+      "config": ["config"],
+      "configs": ["config"],
+      "data": ["data"],
+      "templates": ["templates"],
+      "views": ["templates"],
+      "docs": ["help"],
+      "tutorials": ["tutorials"],
+      "help": ["help"],
+      "images": ["icons"]
+    },
+    "naming_conventions": {
+      "prefixes": {
+        "tutorials": ["TUTORIAL_", "LESSON_", "GUIDE_"],
+        "help": ["HELP_", "HOWTO_", "FAQ_", "MANUAL_"],
+        "splash": ["SPLASH_", "BANNER_", "STARTUP_"],
+        "icons": ["ICON_", "LOGO_", "IMAGE_"],
+        "config": ["CONFIG_", "SETTINGS_", "CFG_"],
+        "data": ["DATA_", "DB_", "DATASET_"]
+      }
+    },
+    "filters": {
+      "icons": ["icon", "splash", "logo"],
+      "config": ["config", "settings"],
+      "help": ["tutorial", "guide", "manual", "help_", "howto"],
+      "tutorials": ["tutorial", "guide", "lesson", "tutorial_"],
+      "splash": ["splash", "banner", "startup"]
+    },
+    "file_types": {
+      "tutorials": [".json", ".xml", ".md", ".txt", ".html"],
+      "help": [".json", ".xml", ".md", ".txt", ".html", ".pdf"],
+      "config": [".json", ".yaml", ".yml", ".toml", ".ini"],
+      "icons": [".png", ".jpg", ".jpeg", ".ico", ".svg"],
+      "splash": [".png", ".jpg", ".jpeg", ".ico", ".svg"]
+    },
+    "scan_icons": true,
+    "scan_config": true,
+    "scan_data": true,
+    "scan_templates": true,
+    "scan_help": true,
+    "scan_tutorials": true
+  },
+  
+  "advanced": {
+    "exclude_modules": [],
+    "hidden_imports": [],
+    "add_data": [],
+    "icon_file": null,
+    "splash_image": null
+  },
+  
+  "platform_specific": {
+    "windows": {
+      "version_info": {
+        "company": "Your Company",
+        "description": "Your Application Description",
+        "copyright": "© 2025 Your Company"
+      }
+    },
+    "linux": {
+      "desktop_file": true
+    },
+    "macos": {
+      "bundle_identifier": "com.yourcompany.yourapp",
+      "codesign": false
+    }
+  }
+}

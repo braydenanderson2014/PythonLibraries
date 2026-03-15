@@ -1,0 +1,66 @@
+{
+  "github": {
+    "personal_access_token": "",
+    "username": "",
+    "default_organization": "",
+    "repositories": {
+      "modules": "",
+      "templates": "",
+      "configs": ""
+    },
+    "api": {
+      "base_url": "https://api.github.com",
+      "timeout": 30,
+      "max_retries": 3
+    },
+    "download": {
+      "prefer_releases": true,
+      "fallback_to_main": true,
+      "cache_duration_hours": 24,
+      "auto_update": false
+    },
+    "authentication": {
+      "method": "token",
+      "token_env_var": "BUILDCLI_GITHUB_TOKEN",
+      "use_ssh": false,
+      "ssh_key_path": ""
+    }
+  },
+  "module_sources": {
+    "primary": {
+      "type": "github",
+      "url": "https://github.com/your-org/buildcli-modules",
+      "branch": "main",
+      "enabled": true,
+      "trusted": true
+    },
+    "community": {
+      "type": "github",
+      "url": "https://github.com/buildcli-community/modules",
+      "branch": "main",
+      "enabled": false,
+      "trusted": false
+    },
+    "enterprise": {
+      "type": "github_enterprise",
+      "url": "https://github.company.com/api/v3",
+      "organization": "company-buildcli",
+      "repository": "modules",
+      "enabled": false,
+      "trusted": true
+    }
+  },
+  "security": {
+    "verify_signatures": false,
+    "allowed_authors": [],
+    "blocked_authors": [],
+    "require_code_review": false,
+    "scan_for_vulnerabilities": true
+  },
+  "local_overrides": {
+    "cache_directory": "",
+    "temp_directory": "",
+    "backup_modules": true,
+    "keep_source": false
+  }
+}

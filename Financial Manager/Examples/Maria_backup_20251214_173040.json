@@ -1,0 +1,238 @@
+{
+  "backup_date": "2025-12-14T17:30:46.068029",
+  "tenant_name": "Eduardo/Maria",
+  "tenant_data": {
+    "name": "Eduardo/Maria",
+    "contact_info": {
+      "phone": "",
+      "email": "",
+      "address": ""
+    },
+    "rent_amount": 1350.0,
+    "deposit_amount": 0.0,
+    "rental_period": {
+      "start_date": "2025-01-01",
+      "end_date": "2026-12-14",
+      "lease_type": "Fixed Term"
+    },
+    "rent_due_date": "1",
+    "account_status": "Active",
+    "delinquency_balance": 3700.0,
+    "overpayment_credit": 200.0,
+    "service_credit": 0.0,
+    "payment_history": [
+      {
+        "amount": 800.0,
+        "type": "Zelle",
+        "date": "2025-07-26",
+        "payment_month": "2025-08",
+        "year": 2025,
+        "month": 8,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 600.0,
+        "type": "Cash",
+        "date": "2025-08-24",
+        "payment_month": "2025-08",
+        "year": 2025,
+        "month": 8,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 266.0,
+        "type": "Cash",
+        "date": "2025-06-30",
+        "payment_month": "2025-07",
+        "year": 2025,
+        "month": 7,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 484.0,
+        "type": "Zelle",
+        "date": "2025-06-29",
+        "payment_month": "2025-07",
+        "year": 2025,
+        "month": 7,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1350.0,
+        "type": "Cash",
+        "date": "2025-01-01",
+        "payment_month": "2025-01",
+        "year": 2025,
+        "month": 1,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 950.0,
+        "type": "Zelle",
+        "date": "2025-02-01",
+        "payment_month": "2025-02",
+        "year": 2025,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1350.0,
+        "type": "Zelle",
+        "date": "2025-03-02",
+        "payment_month": "2025-03",
+        "year": 2025,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1350.0,
+        "type": "Zelle",
+        "date": "2025-04-01",
+        "payment_month": "2025-04",
+        "year": 2025,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 400.0,
+        "type": "Cash",
+        "date": "2025-02-01",
+        "payment_month": "2025-02",
+        "year": 2025,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 600.0,
+        "type": "Zelle",
+        "date": "2025-05-02",
+        "payment_month": "2025-05",
+        "year": 2025,
+        "month": 5,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 600.0,
+        "type": "Zelle",
+        "date": "2025-05-19",
+        "payment_month": "2025-05",
+        "year": 2025,
+        "month": 5,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 750.0,
+        "type": "Zelle",
+        "date": "2025-05-30",
+        "payment_month": "2025-06",
+        "year": 2025,
+        "month": 6,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 750.0,
+        "type": "Zelle",
+        "date": "2025-05-16",
+        "payment_month": "2025-06",
+        "year": 2025,
+        "month": 6,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 550.0,
+        "type": "Zelle",
+        "date": "2025-07-12",
+        "payment_month": "2025-07",
+        "year": 2025,
+        "month": 7,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 50.0,
+        "type": "Cash",
+        "date": "2025-07-31",
+        "payment_month": "2025-07",
+        "year": 2025,
+        "month": 7,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 550.0,
+        "type": "Zelle",
+        "date": "2025-10-12",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": -550.0,
+        "type": "Zelle",
+        "date": "2025-10-12",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 700.0,
+        "type": "Zelle",
+        "date": "2025-10-10",
+        "payment_month": "2025-10",
+        "year": 2025,
+        "month": 10,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 500.0,
+        "type": "Cash",
+        "date": "2025-10-29",
+        "payment_month": "2025-10",
+        "year": 2025,
+        "month": 10,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 500.0,
+        "type": "Cash",
+        "date": "2025-11-03",
+        "payment_month": "2025-11",
+        "year": 2025,
+        "month": 11,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 150.0,
+        "type": "Cash",
+        "date": "2025-10-31",
+        "payment_month": "2025-10",
+        "year": 2025,
+        "month": 10,
+        "is_credit_usage": false,
+        "notes": ""
+      }
+    ],
+    "notes": "",
+    "last_modified": "2025-12-14T17:30:46.068061"
+  }
+}

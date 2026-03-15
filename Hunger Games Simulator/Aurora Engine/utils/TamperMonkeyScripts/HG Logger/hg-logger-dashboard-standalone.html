@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HG Logger Dashboard - Standalone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 30px;
+        }
+        
+        .stat-box {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #764ba2;
+        }
+        
+        button.secondary {
+            background: #999;
+        }
+        
+        button.secondary:hover {
+            background: #666;
+        }
+        
+        button.danger {
+            background: #ff6b6b;
+        }
+        
+        button.danger:hover {
+            background: #ee5a52;
+        }
+        
+        .filters {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-group label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        select, input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        input[type="text"] {
+            min-width: 200px;
+        }
+        
+        .logs-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 70vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .logs-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .logs-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        .log-entry {
+            padding: 15px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.2s;
+            display: grid;
+            grid-template-columns: 100px 80px 150px 1fr;
+            gap: 15px;
+            align-items: start;
+            font-size: 13px;
+        }
+        
+        .log-entry:hover {
+            background: #f8f9fa;
+        }
+        
+        .log-timestamp {
+            color: #999;
+            font-family: 'Consolas', 'Monaco', monospace;
+            word-break: break-word;
+        }
+        
+        .log-method {
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        
+        .log-method.log {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .log-method.info {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+        
+        .log-method.warn {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
+        .log-method.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+        
+        .log-method.debug {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+        
+        .log-method.clear {
+            background: #e0f2f1;
+            color: #00897b;
+        }
+        
+        .log-host {
+            color: #667eea;
+            font-family: 'Consolas', 'Monaco', monospace;
+            word-break: break-word;
+        }
+        
+        .log-content {
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #333;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        
+        .log-content pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .storage-debug {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-size: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        
+        .storage-debug h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .storage-debug pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .warning-banner {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 HG Logger Dashboard</h1>
+            <div class="header-info">
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number" id="totalSites">0</div>
+                        <div class="stat-label">Sites</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="totalLogs">0</div>
+                        <div class="stat-label">Logs</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="lastUpdate">—</div>
+                        <div class="stat-label">Last Update</div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button onclick="refreshLogs()">🔄 Refresh</button>
+                    <button class="secondary" onclick="exportLogs()">📥 Export</button>
+                    <button class="danger" onclick="clearAllLogs()">🗑️ Clear All</button>
+                </div>
+            </div>
+        </header>
+
+        <div id="warningBanner"></div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Site</label>
+                <select id="siteFilter" onchange="applyFilters()">
+                    <option value="all">All Sites</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Method</label>
+                <select id="methodFilter" onchange="applyFilters()">
+                    <option value="all">All Methods</option>
+                    <option value="log">Log</option>
+                    <option value="info">Info</option>
+                    <option value="warn">Warn</option>
+                    <option value="error">Error</option>
+                    <option value="debug">Debug</option>
+                    <option value="clear">Clear</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Search</label>
+                <input type="text" id="searchInput" placeholder="Search logs..." onchange="applyFilters()">
+            </div>
+        </div>
+
+        <div class="logs-container">
+            <div class="logs-header">
+                <span id="logCount">0 logs</span> • <span id="displayMode">Showing latest</span>
+            </div>
+            <div class="logs-list" id="logsList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>No logs captured yet</p>
+                    <p style="font-size: 12px; margin-top: 10px;">Visit websites with the Collector script running to capture console logs</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="storage-debug">
+            <h3>📊 Storage Debug Info</h3>
+            <button onclick="toggleDebugInfo()" style="margin-bottom: 10px;">Show Raw Storage Data</button>
+            <pre id="debugInfo" style="display: none;"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Storage keys
+        const STORAGE_KEY = 'hg_logger_all_logs';
+        const STATS_KEY = 'hg_logger_stats';
+
+        // Application state
+        let allLogs = {};
+        let filteredLogs = [];
+        let stats = {};
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            console.log('[Dashboard] Initializing...');
+            refreshLogs();
+            
+            // Auto-refresh every 2 seconds
+            setInterval(refreshLogs, 2000);
+        });
+
+        function loadFromStorage() {
+            try {
+                const logsData = localStorage.getItem(STORAGE_KEY);
+                const statsData = localStorage.getItem(STATS_KEY);
+                
+                allLogs = logsData ? JSON.parse(logsData) : {};
+                stats = statsData ? JSON.parse(statsData) : {};
+                
+                console.log('[Dashboard] Loaded from storage:', {
+                    logsCount: Object.keys(allLogs).length,
+                    totalLogs: Object.values(allLogs).flat().length,
+                    stats: stats
+                });
+                
+                return true;
+            } catch (e) {
+                console.error('[Dashboard] Failed to load from storage:', e);
+                return false;
+            }
+        }
+
+        function refreshLogs() {
+            if (!loadFromStorage()) {
+                showWarning('Failed to read from localStorage. Storage may be inaccessible.');
+                return;
+            }
+
+            updateStats();
+            updateSiteFilter();
+            applyFilters();
+            updateDebugInfo();
+        }
+
+        function updateStats() {
+            const totalSites = Object.keys(allLogs).length;
+            const totalLogs = Object.values(allLogs).flat().length;
+            const lastUpdate = stats.lastUpdate ? new Date(stats.lastUpdate).toLocaleTimeString() : '—';
+            
+            document.getElementById('totalSites').textContent = totalSites;
+            document.getElementById('totalLogs').textContent = totalLogs;
+            document.getElementById('lastUpdate').textContent = lastUpdate;
+
+            if (totalLogs === 0) {
+                showWarning('⚠️ No logs found in storage. Make sure the Collector script is running on web pages.');
+            } else {
+                clearWarning();
+            }
+        }
+
+        function updateSiteFilter() {
+            const siteSelect = document.getElementById('siteFilter');
+            const currentValue = siteSelect.value;
+            const sites = Object.keys(allLogs).sort();
+            
+            // Keep "All Sites" option, remove old custom options
+            while (siteSelect.options.length > 1) {
+                siteSelect.remove(1);
+            }
+            
+            // Add site options
+            sites.forEach(site => {
+                const option = document.createElement('option');
+                option.value = site;
+                option.textContent = `${site} (${allLogs[site].length} logs)`;
+                siteSelect.appendChild(option);
+            });
+            
+            // Restore previous selection if still available
+            if (Array.from(siteSelect.options).some(opt => opt.value === currentValue)) {
+                siteSelect.value = currentValue;
+            }
+        }
+
+        function applyFilters() {
+            const siteFilter = document.getElementById('siteFilter').value;
+            const methodFilter = document.getElementById('methodFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            filteredLogs = [];
+
+            // Collect logs from selected site(s)
+            const sitesToShow = siteFilter === 'all' ? Object.keys(allLogs) : [siteFilter];
+            
+            sitesToShow.forEach(site => {
+                if (allLogs[site]) {
+                    allLogs[site].forEach(log => {
+                        // Apply method filter
+                        if (methodFilter !== 'all' && log.method !== methodFilter) {
+                            return;
+                        }
+
+                        // Apply search filter
+                        if (searchTerm) {
+                            const logContent = JSON.stringify(log.args).toLowerCase();
+                            if (!logContent.includes(searchTerm)) {
+                                return;
+                            }
+                        }
+
+                        filteredLogs.push(log);
+                    });
+                }
+            });
+
+            // Sort by timestamp (newest first)
+            filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+            renderLogs();
+        }
+
+        function renderLogs() {
+            const container = document.getElementById('logsList');
+            const countEl = document.getElementById('logCount');
+            const modeEl = document.getElementById('displayMode');
+
+            countEl.textContent = `${filteredLogs.length} log${filteredLogs.length !== 1 ? 's' : ''}`;
+            modeEl.textContent = `Showing latest`;
+
+            if (filteredLogs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No logs match your filters</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Limit display to last 500 logs
+            const logsToDisplay = filteredLogs.slice(0, 500);
+            
+            container.innerHTML = logsToDisplay.map(log => `
+                <div class="log-entry">
+                    <div class="log-timestamp">${new Date(log.timestamp).toLocaleTimeString()}</div>
+                    <div class="log-method ${log.method}">${log.method}</div>
+                    <div class="log-host">${log.host}</div>
+                    <div class="log-content">
+                        <pre>${escapeHtml(JSON.stringify(log.args, null, 2))}</pre>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function applyFilters() {
+            const siteFilter = document.getElementById('siteFilter').value;
+            const methodFilter = document.getElementById('methodFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            filteredLogs = [];
+
+            // Collect logs from selected site(s)
+            const sitesToShow = siteFilter === 'all' ? Object.keys(allLogs) : [siteFilter];
+            
+            sitesToShow.forEach(site => {
+                if (allLogs[site]) {
+                    allLogs[site].forEach(log => {
+                        // Apply method filter
+                        if (methodFilter !== 'all' && log.method !== methodFilter) {
+                            return;
+                        }
+
+                        // Apply search filter
+                        if (searchTerm) {
+                            const logContent = JSON.stringify(log.args).toLowerCase();
+                            if (!logContent.includes(searchTerm)) {
+                                return;
+                            }
+                        }
+
+                        filteredLogs.push(log);
+                    });
+                }
+            });
+
+            // Sort by timestamp (newest first)
+            filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+            renderLogs();
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function exportLogs() {
+            const data = {
+                exportDate: new Date().toISOString(),
+                stats: stats,
+                logs: allLogs
+            };
+            
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `hg-logs-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function clearAllLogs() {
+            if (confirm('Are you sure you want to clear all logs? This cannot be undone.')) {
+                localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(STATS_KEY);
+                allLogs = {};
+                stats = {};
+                refreshLogs();
+            }
+        }
+
+        function toggleDebugInfo() {
+            const debugEl = document.getElementById('debugInfo');
+            debugEl.style.display = debugEl.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function updateDebugInfo() {
+            const debugEl = document.getElementById('debugInfo');
+            const debugInfo = {
+                timestamp: new Date().toISOString(),
+                storageKeys: Object.keys(localStorage),
+                logsKey: {
+                    exists: STORAGE_KEY in localStorage,
+                    sites: Object.keys(allLogs),
+                    siteBreakdown: Object.fromEntries(
+                        Object.entries(allLogs).map(([site, logs]) => [site, logs.length])
+                    )
+                },
+                statsKey: {
+                    exists: STATS_KEY in localStorage,
+                    data: stats
+                },
+                browserStorageAccess: {
+                    canRead: !!localStorage.getItem(STORAGE_KEY),
+                    canWrite: true
+                }
+            };
+            debugEl.textContent = JSON.stringify(debugInfo, null, 2);
+        }
+
+        function showWarning(message) {
+            const banner = document.getElementById('warningBanner');
+            banner.innerHTML = `<div class="warning-banner">${message}</div>`;
+        }
+
+        function clearWarning() {
+            document.getElementById('warningBanner').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

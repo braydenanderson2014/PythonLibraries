@@ -1,0 +1,6 @@
+PyQt6>=6.0
+PyPDF2>=3.0
+Pillow>=9.0
+watchdog>=3.0
+PyMuPDF>=1.21.1
+psutil>=5.9.0

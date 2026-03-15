@@ -1,0 +1,81 @@
+What’s Still Needed for ML (Next Steps Recommendation)
+To move from raw storage to trainable datasets:
+
+Data Acquisition Enhancements
+
+Add real providers (e.g., Alpha Vantage, Polygon, Twelve Data, Yahoo Finance unofficial) for:
+Historical daily & intraday candles (backfill).
+Fundamentals / ratios (TTM & quarterly).
+Sector / industry classification enrichment.
+Corporate actions (splits/dividends) to adjust history.
+Add an ingestion scheduler to backfill missing intervals (avoid gaps).
+Feature Engineering Layer (new module, e.g. features.py)
+
+Rolling stats: SMA, EMA, RSI, MACD, Bollinger Bands.
+Volatility: ATR, realized variance.
+Returns: 1D/5D/21D log returns, momentum windows.
+Gap features: open - previous close, high-low range ratios.
+Volume indicators: volume moving averages, volume spike ratios.
+Fundamental deltas: PE trend, EPS growth %, dividend yield stability.
+Cross-sectional (market-wide): z-score of stock return vs sector & market average.
+Market regime flags (e.g., VIX proxy, breadth metrics).
+Labeling Strategies (decide training objective)
+
+Regression: future n‑period return (normalized).
+Classification: up/down beyond threshold; volatility breakout; relative outperformance.
+Multi-horizon labels (1D, 5D, 21D) for multi-task learning.
+Dataset Builder
+
+Window extraction with proper leakage prevention.
+Align fundamentals (point-in-time) using timestamp <= snapshot time.
+Optional normalization (z-score by trailing window; robust scaling).
+Train/val/test chronological splits.
+Model Options
+
+Baseline: Gradient Boosted Trees (LightGBM / XGBoost) for tabular features.
+Advanced: Temporal models (Temporal Fusion Transformer, LSTM, 1D CNN).
+Cross-sectional ranking model for long/short strategies, not just directional classification.
+Evaluation Metrics
+
+Predictive: MSE / MAE (regression), ROC-AUC / F1 (classification).
+Financial: Information ratio, hit rate, average return per trade, max drawdown simulation.
+Turnover / slippage estimates to avoid over-optimistic backtests.
+Risk & Data Quality
+
+Adjust for splits/dividends.
+Watch survivorship bias (need delisted tickers if long horizon).
+Handle missing fundamentals gracefully (imputation vs indicator flags).
+Proposed Architecture Extensions (Code Additions)
+Planned new modules:
+
+data_sources/ (different provider clients; unify to canonical dict format).
+backfill.py (bulk download + populate candles/history).
+features.py (feature calculators using history/candles/fundamentals).
+dataset_builder.py (turn features + labels into trainable tensors/dataframes).
+models/ (baseline training scripts + persistence).
+experiments/ (config-driven experiment runner, maybe YAML based).
+Minimal Immediate Next Steps (If You Say “Implement”)
+Add dependencies: pandas, numpy, scikit-learn, and optionally ta (technical indicators) or implement in-house.
+Create features.py with:
+compute_rolling_features(store, symbol, window_spec: dict, interval='1d') -> DataFrame
+Basic features: close, returns, rolling mean/std, volume z-score.
+Add a basic dataset builder producing a CSV for a symbol with future return label.
+Add one simple training script (e.g., LightGBM-like using sklearn’s GradientBoostingRegressor if you don’t want new deps yet).
+Optional API Additions to StockDataManager (Future)
+backfill_candles(symbol, interval, start, end, provider)
+ensure_candles(symbol, interval, lookback_days)
+sector_universe(sector) (derive from fundamentals)
+group_stats(interval='1d', symbols=None) for cross-sectional features.
+Data Needed for Better Performance
+If you want higher quality predictive signals, consider adding:
+
+Market indices (SPY, QQQ, sector ETFs) as comparative baselines.
+Macro (FED rates, CPI, unemployment) if doing longer horizon forecasts.
+News sentiment (later phase).
+Short interest, insider trades (advanced).
+
+Pending / Potential Future Enhancements
+Integrate cross-sectional z-score directly into dataset builder (currently a separate utility; not yet wired).
+Add scheduling/backfill script for automated benchmark/macro updates (currently manual via add_* functions).
+Provide tests for sentiment and short-interest enrichment once real data points are seeded.
+Enhance experiment runner to log metrics or save comparative report.

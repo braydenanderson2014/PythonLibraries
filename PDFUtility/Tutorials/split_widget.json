@@ -1,0 +1,50 @@
+{
+    "name": "split_widget",
+    "title": "PDF Splitter Tutorial",
+    "description": "Learn how to split PDF files into smaller documents",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "split_add_pdf_btn",
+            "text": "<b>📁 Add PDF Files to Split</b><br><br>Click here to select PDF files you want to split. You can select multiple files to process them in batch.<br><br><em>💡 Tip: You can also drag and drop files directly!</em>",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "split_add_folder_btn",
+            "text": "<b>📂 Scan Directory Feature</b><br><br>Want to add all PDFs from a folder? Click here to scan an entire directory! This feature is available on all widgets that work with files.<br><br><em>💡 Great for batch processing multiple files at once!</em>",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "split_pdf_list",
+            "text": "<b>📋 File List</b><br><br>Your selected PDF files appear here. You can:<br>• Remove files by selecting and pressing Delete<br>• Reorder files by dragging<br>• See file details and page counts",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "split_mode_combo",
+            "text": "<b>⚙️ Split Options</b><br><br>Choose how to split your PDFs:<br>• <b>Page Range</b>: Split at specific page numbers<br>• <b>Page Count</b>: Split into equal chunks<br>• <b>Extract Pages</b>: Pull out specific pages",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "split_browse_output_btn",
+            "text": "<b>📂 Output Directory</b><br><br>Select where your split PDF files will be saved. The default output directory can be changed in Settings.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "left"
+        },
+        {
+            "target": "split_btn",
+            "text": "<b>🚀 Start Processing</b><br><br>Ready to split your PDFs? Click here to begin! Watch the progress in the status bar below.",
+            "button_text": "Got it!",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

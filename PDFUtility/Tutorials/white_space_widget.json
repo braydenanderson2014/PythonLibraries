@@ -1,0 +1,43 @@
+{
+    "name": "white_space_widget",
+    "title": "White Space Removal Tutorial",
+    "description": "Learn how to remove white space and blank pages from PDFs",
+    "priority": 10,
+    "steps": [
+        {
+            "target": "ws_add_files_btn",
+            "text": "<b>📁 Add PDFs to Optimize</b><br><br>Select PDF files that contain unnecessary white space or blank pages that you want to remove for cleaner documents.",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "ws_scan_dir_btn",
+            "text": "<b>📂 Bulk Processing</b><br><br>Need to process many files? Use Scan Directory to add all PDFs from a folder at once. Perfect for cleaning up document archives!",
+            "button_text": "Next",
+            "highlight_style": "solid_border",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "ws_file_list",
+            "text": "<b>📋 Files to Process</b><br><br>Your PDFs are listed here. The tool will analyze each file for white space and blank pages to remove. You can drag to reorder or select specific files.",
+            "button_text": "Next",
+            "highlight_style": "glow",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "ws_remove_selected_btn",
+            "text": "<b>🗑️ Remove Selected Files</b><br><br>Changed your mind about some files? Select them in the list and click here to remove them before processing.",
+            "button_text": "Next",
+            "highlight_style": "dashed_border",
+            "arrow_direction": "auto"
+        },
+        {
+            "target": "ws_process_btn",
+            "text": "<b>✂️ Remove White Space</b><br><br>Process your PDFs to remove blank pages and unnecessary white space, creating cleaner, smaller files. Great for reducing file sizes and removing scanner artifacts!",
+            "button_text": "Perfect!",
+            "highlight_style": "pulse",
+            "arrow_direction": "bottom"
+        }
+    ]
+}

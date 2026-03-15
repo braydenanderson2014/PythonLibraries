@@ -1,0 +1,13 @@
+{
+  "virtual_environments": {
+    "myproject": {
+      "name": "myproject",
+      "python_version": "3.13.7",
+      "python_executable": "C:\\Users\\brayd\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "created_date": "2025-09-24T20:55:57.407713",
+      "path": "C:\\Users\\brayd\\.buildcli\\venvs\\myproject",
+      "packages": []
+    }
+  },
+  "active_venv": "test-env"
+}

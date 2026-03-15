@@ -1,0 +1,739 @@
+name: Advanced Multi-Platform Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build for (comma-separated: windows,linux,macos)'
+        required: false
+        default: ''
+      config_override:
+        description: 'JSON configuration override'
+        required: false
+        default: '{}'
+      build_cli_version:
+        description: 'Build CLI version'
+        required: false
+        default: '2.0.0-core'
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+env:
+  BUILD_CLI_VERSION: ${{ github.event.inputs.build_cli_version || '2.0.0-core' }}
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    outputs:
+      config: ${{ steps.setup.outputs.config }}
+      platforms: ${{ steps.setup.outputs.platforms }}
+      matrix: ${{ steps.setup.outputs.matrix }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup build configuration
+      id: setup
+      shell: bash
+      run: |
+        # Default configuration
+        DEFAULT_CONFIG='{
+          "name": "PDF-Utility",
+          "version": "auto",
+          "append_version": true,
+          "append_date": false,
+          "windowed": false,
+          "main_file": "auto",
+          "platforms": ["windows", "linux", "macos"],
+          "architectures": {
+            "windows": ["x64"],
+            "linux": ["x64", "arm64"],
+            "macos": ["x64", "arm64"]
+          },
+          "python_version": "3.13.3",
+          "build_type": "onefile",
+          "additional_flags": []
+        }'
+        
+        # Check for repository-specific configuration
+        if [[ -f ".github/build-config.json" ]]; then
+          echo "📋 Found repository build configuration"
+          # Validate JSON first
+          if jq empty .github/build-config.json 2>/dev/null; then
+            REPO_CONFIG=$(cat .github/build-config.json)
+            echo "✅ Repository config JSON is valid"
+            # Merge with defaults (repo config takes precedence)
+            CONFIG=$(echo "$DEFAULT_CONFIG" "$REPO_CONFIG" | jq -s '.[0] * .[1]')
+          else
+            echo "❌ Invalid JSON in build-config.json, using defaults"
+            CONFIG="$DEFAULT_CONFIG"
+          fi
+        else
+          echo "📋 Using default build configuration"
+          CONFIG="$DEFAULT_CONFIG"
+        fi
+        
+        # Get workflow inputs with proper fallback
+        CONFIG_OVERRIDE="${{ github.event.inputs.config_override }}"
+        PLATFORMS_INPUT="${{ github.event.inputs.platforms }}"
+        
+        # Override with workflow input if provided
+        if [[ -n "$CONFIG_OVERRIDE" && "$CONFIG_OVERRIDE" != "{}" && "$CONFIG_OVERRIDE" != "" ]]; then
+          echo "🔧 Applying workflow input overrides"
+          echo "Config override: $CONFIG_OVERRIDE"
+          # Validate override JSON
+          if echo "$CONFIG_OVERRIDE" | jq empty 2>/dev/null; then
+            CONFIG=$(echo "$CONFIG" "$CONFIG_OVERRIDE" | jq -s '.[0] * .[1]')
+            echo "✅ Applied configuration overrides"
+          else
+            echo "❌ Invalid JSON in config override, ignoring"
+          fi
+        fi
+        
+        # Override platforms from input if provided
+        if [[ -n "$PLATFORMS_INPUT" && "$PLATFORMS_INPUT" != "" ]]; then
+          echo "🔧 Applying platform overrides: $PLATFORMS_INPUT"
+          PLATFORMS_ARRAY=$(echo "$PLATFORMS_INPUT" | jq -R 'split(",") | map(select(length > 0) | ascii_downcase)')
+          CONFIG=$(echo "$CONFIG" | jq --argjson platforms "$PLATFORMS_ARRAY" '.platforms = $platforms')
+          echo "✅ Applied platform overrides"
+        fi
+        
+        # Generate build matrix
+        PLATFORMS=$(echo "$CONFIG" | jq -c '.platforms')
+        ARCHITECTURES=$(echo "$CONFIG" | jq -c '.architectures')
+        EXCLUDED_ARCHITECTURES=$(echo "$CONFIG" | jq -c '.excluded_architectures // {}')
+        
+        echo "🏗️ Building matrix with exclusions..."
+        echo "Excluded architectures: $EXCLUDED_ARCHITECTURES"
+        
+        # Create matrix combinations
+        MATRIX_JSON='{"include": []}'
+        
+        for platform in $(echo "$PLATFORMS" | jq -r '.[]'); do
+          case $platform in
+            windows)
+              OS="windows-latest"
+              ;;
+            linux)
+              OS="ubuntu-latest" 
+              ;;
+            macos)
+              OS="macos-latest"
+              ;;
+            *)
+              echo "❌ Unknown platform: $platform"
+              continue
+              ;;
+          esac
+          
+          PLATFORM_ARCHES=$(echo "$ARCHITECTURES" | jq -c ".${platform} // []")
+          EXCLUDED_ARCHES=$(echo "$EXCLUDED_ARCHITECTURES" | jq -c ".${platform} // []")
+          
+          for arch in $(echo "$PLATFORM_ARCHES" | jq -r '.[]'); do
+            # Check if this architecture is excluded
+            IS_EXCLUDED=$(echo "$EXCLUDED_ARCHES" | jq --arg arch "$arch" 'index($arch) != null')
+            
+            if [[ "$IS_EXCLUDED" == "true" ]]; then
+              echo "⚠️ Excluding ${platform}-${arch} due to configuration"
+              continue
+            fi
+            
+            MATRIX_ENTRY=$(jq -n --arg os "$OS" --arg platform "$platform" --arg arch "$arch" '{
+              os: $os,
+              platform: $platform,
+              arch: $arch
+            }')
+            MATRIX_JSON=$(echo "$MATRIX_JSON" | jq ".include += [$MATRIX_ENTRY]")
+          done
+        done
+        
+        # Output results
+        echo "config<<EOF" >> $GITHUB_OUTPUT
+        echo "$CONFIG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
+        
+        echo "matrix<<EOF" >> $GITHUB_OUTPUT
+        echo "$MATRIX_JSON" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "📊 Final Build Configuration:"
+        echo "$CONFIG" | jq .
+        
+        echo "🏗️ Build Matrix:"
+        echo "$MATRIX_JSON" | jq .
+
+  build:
+    needs: configure
+    if: ${{ fromJson(needs.configure.outputs.matrix).include[0] }}
+    strategy:
+      fail-fast: false  # Allow other builds to continue if one fails
+      matrix: ${{ fromJson(needs.configure.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ fromJson(needs.configure.outputs.config).python_version }}
+        architecture: ${{ matrix.arch == 'x86' && 'x86' || 'x64' }}
+        
+    - name: Install dependencies
+      timeout-minutes: 15
+      run: |
+        echo "🔧 Installing Python dependencies for ${{ matrix.platform }}-${{ matrix.arch }}"
+        python -m pip install --upgrade pip
+        
+        echo "📦 Installing PyInstaller and build dependencies..."
+        pip install PyInstaller
+        
+        # Install additional build dependencies that build_cli.py might need
+        echo "🔧 Installing build system dependencies..."
+        pip install setuptools wheel
+        
+        # Ensure standard library extensions are available
+        pip install distutils-extra || echo "⚠️ distutils-extra not needed on this platform"
+        
+        # Get configuration for dependency fallbacks
+        CONFIG='${{ needs.configure.outputs.config }}'
+        DEPENDENCY_FALLBACKS=$(echo "$CONFIG" | jq -c '.dependency_fallbacks // {}' 2>/dev/null || echo '{}')
+        
+        echo "📋 Dependency fallbacks configuration:"
+        echo "$DEPENDENCY_FALLBACKS" | jq . || echo "No fallbacks configured"
+        
+        # Function to try installing a package with fallbacks
+        install_with_fallbacks() {
+          local package_key="$1"
+          local fallbacks=$(echo "$DEPENDENCY_FALLBACKS" | jq -c ".${package_key} // []")
+          
+          if [[ "$fallbacks" == "[]" ]]; then
+            echo "📦 No fallbacks configured for $package_key, trying direct install..."
+            pip install "$package_key" --timeout 300 && return 0 || return 1
+          fi
+          
+          echo "📦 Trying $package_key with fallbacks..."
+          local fallback_count=$(echo "$fallbacks" | jq length)
+          
+          for ((i=0; i<fallback_count; i++)); do
+            local fallback=$(echo "$fallbacks" | jq -r ".[$i]")
+            local package=$(echo "$fallback" | jq -r '.package')
+            local reason=$(echo "$fallback" | jq -r '.reason // "No reason specified"')
+            
+            echo "🔄 Trying $package ($reason)..."
+            
+            if pip install "$package" --timeout 300; then
+              echo "✅ Successfully installed $package"
+              return 0
+            else
+              echo "⚠️ Failed to install $package"
+            fi
+          done
+          
+          echo "❌ All fallback attempts failed for $package_key"
+          return 1
+        }
+        
+        # Install core dependencies
+        echo "📦 Installing core dependencies..."
+        pip install PyPDF2>=3.0 || echo "⚠️ PyPDF2 install failed"
+        pip install watchdog>=3.0 || echo "⚠️ Watchdog install failed"
+        pip install psutil>=5.9.0 || echo "⚠️ Psutil install failed"
+        
+        # Try PyMuPDF (usually works better than PyQt on limited systems)
+        echo "📦 Installing PyMuPDF..."
+        pip install PyMuPDF>=1.21.1 || echo "⚠️ PyMuPDF install failed"
+        
+        # Install Pillow with fallbacks
+        echo "�️ Installing Pillow with fallback support..."
+        install_with_fallbacks "Pillow" || echo "⚠️ Pillow installation failed with all fallbacks"
+        
+        # Handle PyQt installation with comprehensive fallbacks
+        echo "🖥️ Installing GUI dependencies with smart fallbacks..."
+        
+        if ! install_with_fallbacks "PyQt6"; then
+          echo "⚠️ PyQt6 installation failed with all fallbacks"
+          echo "🔧 This build will use tkinter-only GUI or may have limited functionality"
+        fi
+        
+        # Find and process requirements file
+        REQUIREMENTS_FILE=""
+        if [ -f "requirements.txt" ]; then
+          REQUIREMENTS_FILE="requirements.txt"
+        elif [ -f "test_requirements.txt" ]; then
+          REQUIREMENTS_FILE="test_requirements.txt"
+        elif [ -f "BuildSystem/PDFUtility_requirements.txt" ]; then
+          REQUIREMENTS_FILE="BuildSystem/PDFUtility_requirements.txt"
+        fi
+        
+        # Also check for BuildSystem requirements
+        BUILDSYSTEM_REQUIREMENTS=""
+        if [ -f "BuildSystem/requirements.txt" ]; then
+          BUILDSYSTEM_REQUIREMENTS="BuildSystem/requirements.txt"
+        fi
+        
+        # Install BuildSystem requirements first if they exist
+        if [ -n "$BUILDSYSTEM_REQUIREMENTS" ] && [ -f "$BUILDSYSTEM_REQUIREMENTS" ]; then
+          echo "🔧 Installing BuildSystem requirements from $BUILDSYSTEM_REQUIREMENTS..."
+          
+          # Create filtered requirements for BuildSystem (exclude packages we handled above)
+          grep -v -E "^(PyQt[56]|pyinstaller|PyInstaller|PyPDF2|Pillow|watchdog|psutil|PyMuPDF)" "$BUILDSYSTEM_REQUIREMENTS" > temp_buildsystem_requirements.txt 2>/dev/null || true
+          
+          if [ -s temp_buildsystem_requirements.txt ]; then
+            echo "📦 Installing additional BuildSystem requirements..."
+            
+            while IFS= read -r requirement; do
+              if [ -n "$requirement" ] && ! echo "$requirement" | grep -q "^[[:space:]]*#"; then
+                package_name=$(echo "$requirement" | sed 's/[<>=!].*//' | tr -d ' ')
+                echo "📦 Installing: $requirement"
+                if ! install_with_fallbacks "$package_name"; then
+                  pip install "$requirement" --timeout 300 || echo "⚠️ Failed to install: $requirement"
+                fi
+              fi
+            done < temp_buildsystem_requirements.txt
+          fi
+          
+          rm -f temp_buildsystem_requirements.txt
+        else
+          # If no BuildSystem requirements file found, install the core ones manually
+          echo "📦 Installing core BuildSystem dependencies manually..."
+          pip install PyPDF2>=3.0 || echo "⚠️ PyPDF2 install failed"
+          pip install watchdog>=3.0 || echo "⚠️ Watchdog install failed"  
+          pip install psutil>=5.9.0 || echo "⚠️ Psutil install failed"
+          pip install PyMuPDF>=1.21.1 || echo "⚠️ PyMuPDF install failed"
+          install_with_fallbacks "Pillow" || echo "⚠️ Pillow installation failed"
+          install_with_fallbacks "PyQt6" || echo "⚠️ PyQt6 installation failed"
+        fi
+        
+        # Verify build_cli.py dependencies specifically
+        echo "🔍 Verifying build_cli.py can run..."
+        if python BuildSystem/build_cli.py --help > /dev/null 2>&1; then
+          echo "✅ build_cli.py is working correctly"
+        else
+          echo "⚠️ build_cli.py may have dependency issues, but continuing build..."
+        fi
+        
+        if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then
+          echo "📋 Processing additional requirements from $REQUIREMENTS_FILE..."
+          
+          # Create filtered requirements (exclude packages we already handled)
+          grep -v -E "^(PyQt[56]|pyinstaller|PyInstaller|PyPDF2|Pillow|watchdog|psutil|PyMuPDF)" "$REQUIREMENTS_FILE" > temp_requirements.txt 2>/dev/null || true
+          
+          if [ -s temp_requirements.txt ]; then
+            echo "📦 Installing additional requirements with fallback support..."
+            
+            while IFS= read -r requirement; do
+              # Skip empty lines and comments
+              if [ -n "$requirement" ] && ! echo "$requirement" | grep -q "^[[:space:]]*#"; then
+                # Extract package name for fallback lookup
+                package_name=$(echo "$requirement" | sed 's/[<>=!].*//' | tr -d ' ')
+                
+                echo "📦 Installing: $requirement"
+                if ! install_with_fallbacks "$package_name"; then
+                  # If no fallbacks configured, try direct install
+                  pip install "$requirement" --timeout 300 || echo "⚠️ Failed to install: $requirement"
+                fi
+              fi
+            done < temp_requirements.txt
+          else
+            echo "📝 No additional requirements to install"
+          fi
+          
+          rm -f temp_requirements.txt
+        fi
+        
+        echo "📊 Final installed packages:"
+        pip list | grep -E "(PyQt|Pillow|PyPDF|PyMuPDF|watchdog|psutil|numpy|pandas|matplotlib)" || echo "No GUI/processing packages found"
+      shell: bash
+      
+    - name: Initialize build system
+      shell: bash
+      env:
+        PYTHONIOENCODING: utf-8
+        PYTHONUTF8: 1
+      run: |
+        echo "🔧 Initializing BuildSystem for ${{ matrix.platform }}-${{ matrix.arch }}..."
+        
+        # Change to project root
+        cd "$GITHUB_WORKSPACE"
+        
+        # Set encoding for Python on Windows
+        if [[ "${{ matrix.platform }}" == "windows" ]]; then
+          export PYTHONIOENCODING=utf-8
+          export PYTHONUTF8=1
+        fi
+        
+        # Check if BuildSystem is available
+        if [ ! -f "BuildSystem/build_cli.py" ]; then
+          echo "❌ BuildSystem/build_cli.py not found!"
+          exit 1
+        fi
+        
+        # Initialize build system with clear memory and auto-detection
+        echo "🔄 Clearing previous scan results..."
+        python BuildSystem/build_cli.py --clear-memory
+        
+        echo "🔍 Running auto-detection scan..."
+        python BuildSystem/build_cli.py --scan python --auto
+        
+        # Scan for specific resource types using targeted approaches
+        echo "🔍 Scanning for comprehensive resources..."
+        
+        # Scan Help Documents folder specifically
+        echo "📚 Scanning Help Documents folder..."
+        python BuildSystem/build_cli.py --distant-scan "./Help Documents" --type help --append || echo "⚠️ No help files found in Help Documents"
+        
+        # Scan Tutorials folder for JSON files (tutorial files are .json) 
+        echo "📖 Scanning Tutorials folder..."
+        python BuildSystem/build_cli.py --distant-scan "./Tutorials" --type json --append || echo "⚠️ No tutorial JSON files found in Tutorials"
+        
+        # Scan for specific important files by name/pattern
+        echo "🎨 Scanning for splash screens and icons..."
+        python BuildSystem/build_cli.py --scan splash --append || echo "⚠️ No splash files found"
+        python BuildSystem/build_cli.py --scan icons --append || echo "⚠️ No icon files found"
+        
+        # Scan for environment and configuration files
+        echo "⚙️ Scanning for configuration files..."
+        python BuildSystem/build_cli.py --scan config --append || echo "⚠️ No config files found"
+        
+        # Scan for additional resources
+        python BuildSystem/build_cli.py --scan images --append || echo "⚠️ No additional images found"
+        python BuildSystem/build_cli.py --scan data --append || echo "⚠️ No data files found"
+        python BuildSystem/build_cli.py --scan templates --append || echo "⚠️ No templates found"
+        python BuildSystem/build_cli.py --scan docs --append || echo "⚠️ No additional docs found"
+        
+        # Show comprehensive scan results
+        echo "📋 Complete build system memory status:"
+        python BuildSystem/build_cli.py --show-memory
+      
+    - name: Build application
+      shell: bash
+      env:
+        PYTHONIOENCODING: utf-8
+        PYTHONUTF8: 1
+      run: |
+        CONFIG='${{ needs.configure.outputs.config }}'
+        
+        # Set encoding for Python on Windows
+        if [[ "${{ matrix.platform }}" == "windows" ]]; then
+          export PYTHONIOENCODING=utf-8
+          export PYTHONUTF8=1
+        fi
+        
+        # Extract configuration values with error handling
+        APP_NAME=$(echo "$CONFIG" | jq -r '.name // "PDF-Utility"' 2>/dev/null || echo "PDF-Utility")
+        WINDOWED=$(echo "$CONFIG" | jq -r '.windowed // false' 2>/dev/null || echo "false")
+        
+        # Change to project root for proper file detection
+        cd "$GITHUB_WORKSPACE"
+        
+        # Clean any previous build artifacts to avoid conflicts
+        echo "🧹 Cleaning previous build artifacts..."
+        rm -rf build/ dist/ *.spec __pycache__/ || true
+        find . -name "*.pyc" -delete || true
+        find . -name "__pycache__" -type d -exec rm -rf {} + || true
+        
+        # Also clean any cached spec files that might have wrong --add-data syntax
+        echo "🧹 Removing any existing .spec files to avoid cached configurations..."
+        rm -f *.spec || true
+        
+        # List any remaining build-related files for debugging
+        echo "📋 Remaining build files after cleanup:"
+        find . -name "*.spec" -o -name "build" -o -name "dist" -type f -o -type d || echo "No build files found"
+        
+        # Verify PyInstaller is accessible directly (debugging)
+        echo "🔍 Checking PyInstaller accessibility..."
+        if command -v pyinstaller >/dev/null 2>&1; then
+          echo "✅ pyinstaller found in PATH: $(which pyinstaller)"
+          pyinstaller --version
+        else
+          echo "⚠️ pyinstaller not found in PATH, checking python module..."
+          if python -m PyInstaller --version >/dev/null 2>&1; then
+            echo "✅ PyInstaller available as Python module"
+            python -m PyInstaller --version
+          else
+            echo "❌ PyInstaller not accessible"
+          fi
+        fi
+        
+        # Use the proper BuildSystem build CLI
+        echo "🏗️ Using BuildSystem/build_cli.py for comprehensive build..."
+        echo "📱 App Name: $APP_NAME"
+        echo "🖥️ Windowed: $WINDOWED"
+        echo "�️ Platform: ${{ matrix.platform }}-${{ matrix.arch }}"
+        
+        # Build command arguments
+        BUILD_ARGS="--name \"$APP_NAME\" --start build --auto"
+        
+        if [[ "$WINDOWED" == "true" ]]; then
+          BUILD_ARGS="$BUILD_ARGS --windowed"
+        fi
+        
+        # Execute the build using the proper build system
+        echo "🔨 Executing build command:"
+        echo "python BuildSystem/build_cli.py $BUILD_ARGS"
+        
+        # Run the build with proper error handling
+        if python BuildSystem/build_cli.py $BUILD_ARGS; then
+          echo "✅ Build completed successfully!"
+        else
+          echo "❌ Build failed!"
+          exit 1
+        fi
+        
+        # List generated files
+        echo "📋 Build artifacts:"
+        if [[ -d "dist" ]]; then
+          ls -la dist/
+        else
+          echo "⚠️ No dist directory found"
+          find . -name "*.exe" -o -name "$APP_NAME" -type f 2>/dev/null || echo "No executable found"
+        fi
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ fromJson(needs.configure.outputs.config).name }}-${{ matrix.platform }}-${{ matrix.arch }}
+        path: |
+          dist/*
+          !dist/*.spec
+
+  create-release:
+    needs: [configure, build]
+    if: always() && (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+        
+    - name: Create release packages
+      run: |
+        echo "📦 Creating release packages..."
+        
+        # Create release directory
+        mkdir -p release
+        
+        # Get app name from config
+        APP_NAME="${{ fromJson(needs.configure.outputs.config).name }}"
+        
+        # Get version info
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+          VERSION="${{ github.ref_name }}"
+          echo "🏷️ Tagged Release Version: $VERSION"
+        else
+          # Use date-based version for manual builds
+          VERSION="dev-$(date +%Y%m%d-%H%M%S)"
+          echo "🏷️ Development Version: $VERSION"
+        fi
+        
+        echo "🏷️ Version: $VERSION"
+        echo "📱 App: $APP_NAME"
+        
+        # Process each artifact
+        for artifact_dir in ./artifacts/*/; do
+          if [[ -d "$artifact_dir" ]]; then
+            artifact_name=$(basename "$artifact_dir")
+            echo "📦 Processing artifact: $artifact_name"
+            
+            # Create zip for this platform
+            cd "$artifact_dir"
+            if [[ -f *.exe ]]; then
+              # Windows executable
+              zip -r "../../release/${artifact_name}-${VERSION}.zip" .
+            elif [[ -f * ]]; then
+              # Linux/macOS executable  
+              tar -czf "../../release/${artifact_name}-${VERSION}.tar.gz" .
+            fi
+            cd ../..
+          fi
+        done
+        
+        # List created packages
+        echo "📋 Created release packages:"
+        ls -la release/
+        
+    - name: Generate release notes
+      run: |
+        echo "📝 Generating release notes..."
+        
+        APP_NAME="${{ fromJson(needs.configure.outputs.config).name }}"
+        VERSION="${{ github.event_name == 'push' && github.ref_name || 'Development Build' }}"
+        BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
+        
+        cat > release-notes.md << EOF
+        # $APP_NAME $VERSION
+        
+        ## Build Information
+        - **Version**: $VERSION
+        - **Build Date**: $BUILD_DATE
+        - **Build Type**: ${{ github.event_name == 'push' && 'Release' || 'Development' }}
+        - **Commit**: ${{ github.sha }}
+        
+        ## Included Platforms
+        EOF
+        
+        # Add platform info based on successful builds
+        for artifact_dir in ./artifacts/*/; do
+          if [[ -d "$artifact_dir" ]]; then
+            artifact_name=$(basename "$artifact_dir")
+            platform=$(echo "$artifact_name" | cut -d'-' -f2)
+            arch=$(echo "$artifact_name" | cut -d'-' -f3)
+            
+            case $platform in
+              windows)
+                icon="🪟"
+                ;;
+              linux) 
+                icon="🐧"
+                ;;
+              macos)
+                icon="🍎"
+                ;;
+              *)
+                icon="💻"
+                ;;
+            esac
+            
+            echo "- $icon **$platform-$arch**: \`${artifact_name}-${VERSION}\`" >> release-notes.md
+          fi
+        done
+        
+        cat >> release-notes.md << EOF
+        
+        ## Installation
+        1. Download the appropriate package for your platform
+        2. Extract the archive
+        3. Run the executable
+        
+        ## Notes
+        - **All builds**: Include core PDF processing functionality
+        - **GUI**: PyQt6/PyQt5 interface with tkinter fallback
+        
+        ## Support
+        If you encounter issues, please check the build logs or report them in the issues section.
+        EOF
+        
+        echo "📄 Release notes:"
+        cat release-notes.md
+        
+    - name: Debug release conditions
+      run: |
+        echo "🔍 Release Debug Information:"
+        echo "Event name: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Ref name: ${{ github.ref_name }}"
+        echo "Ref type: ${{ github.ref_type }}"
+        echo "Is push event: ${{ github.event_name == 'push' }}"
+        echo "Starts with refs/tags/: ${{ startsWith(github.ref, 'refs/tags/') }}"
+        echo "Should create release: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}"
+        echo "Should create dev artifacts: ${{ github.event_name == 'workflow_dispatch' }}"
+        
+        # List available artifacts
+        echo "📋 Available artifacts:"
+        find ./artifacts -type f -name "*.exe" -o -name "PDF-Utility*" 2>/dev/null || echo "No artifacts found"
+        
+    - name: Create GitHub Release
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "🚀 Creating GitHub release..."
+        
+        APP_NAME="${{ fromJson(needs.configure.outputs.config).name }}"
+        TAG_NAME="${{ github.ref_name }}"
+        RELEASE_NAME="$APP_NAME $TAG_NAME"
+        
+        # Verify GitHub CLI and authentication
+        echo "🔐 Verifying GitHub CLI authentication..."
+        gh auth status || echo "⚠️ GitHub CLI auth status check failed"
+        
+        # Check release directory contents
+        echo "📦 Checking release artifacts..."
+        ls -la release/ || echo "⚠️ Release directory not found"
+        find release/ -type f -name "*.exe" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.zip" || echo "⚠️ No release binaries found"
+        
+        # Ensure release notes exist
+        if [ ! -f "release-notes.md" ]; then
+          echo "📝 Creating default release notes..."
+          echo "# $RELEASE_NAME" > release-notes.md
+          echo "" >> release-notes.md
+          echo "## Changes" >> release-notes.md
+          echo "- Automated build release" >> release-notes.md
+          echo "- Comprehensive resource inclusion (Help Documents, Tutorials, Splash screens)" >> release-notes.md
+          echo "- Cross-platform binaries" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "## Build Information" >> release-notes.md
+          echo "- **Build Date**: \$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
+          echo "- **Commit**: ${{ github.sha }}" >> release-notes.md
+          echo "- **Branch**: ${{ github.ref_name }}" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "## Included Resources" >> release-notes.md
+          echo "- Help Documents from Help Documents folder" >> release-notes.md
+          echo "- Tutorial files from Tutorials folder" >> release-notes.md
+          echo "- Splash.png and PDF_Utility.ico" >> release-notes.md
+          echo "- Environment configuration (.env)" >> release-notes.md
+          echo "- All necessary dependencies" >> release-notes.md
+        fi
+        
+        # Determine if this is a prerelease
+        PRERELEASE_FLAG=""
+        if [[ "$TAG_NAME" =~ (alpha|beta|rc) ]]; then
+          PRERELEASE_FLAG="--prerelease"
+          echo "🚧 Detected prerelease version"
+        fi
+        
+        # Create the release with enhanced error handling
+        echo "🎯 Creating release: $RELEASE_NAME"
+        if gh release create "$TAG_NAME" \
+          --title "$RELEASE_NAME" \
+          --notes-file release-notes.md \
+          $PRERELEASE_FLAG \
+          release/*; then
+          echo "✅ Release created successfully!"
+          
+          # Verify release was created
+          echo "🔍 Verifying release creation..."
+          gh release view "$TAG_NAME" || echo "⚠️ Could not view created release"
+        else
+          echo "❌ Release creation failed!"
+          echo "🔍 Debug information:"
+          echo "Tag: $TAG_NAME"
+          echo "Release name: $RELEASE_NAME"
+          echo "GitHub event: ${{ github.event_name }}"
+          echo "GitHub ref: ${{ github.ref }}"
+          
+          # Try alternative approach
+          echo "🔄 Attempting alternative release creation..."
+          gh release create "$TAG_NAME" --title "$RELEASE_NAME" --notes "Automated release for $TAG_NAME" $PRERELEASE_FLAG || echo "❌ Alternative approach also failed"
+          
+          exit 1
+        fi
+        
+    - name: Upload Development Artifacts
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v4
+      with:
+        name: development-release-${{ github.run_number }}
+        path: |
+          release/*
+          release-notes.md
+        retention-days: 30

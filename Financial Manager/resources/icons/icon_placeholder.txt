@@ -1,0 +1,3 @@
+# Icon placeholder for FinancialManager
+# Replace this with your actual icon file (.ico, .png)
+# Recommended sizes: 16x16, 32x32, 48x48, 256x256

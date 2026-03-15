@@ -1,0 +1,22 @@
+{
+    "name": "ocr",
+    "title": "OCR Tutorial",
+    "description": "Learn how to extract text from scanned PDFs using OCR",
+    "priority": 15,
+    "steps": [
+        {
+            "target": "ocr_add_files_btn",
+            "text": "<b>📄 Add PDFs for OCR</b><br><br>Select scanned PDF files or PDFs with images that contain text you want to extract. OCR (Optical Character Recognition) can read text from images!<br><br><em>💡 Perfect for digitizing scanned documents, receipts, and photos of text!</em>",
+            "button_text": "Next",
+            "highlight_style": "pulse",
+            "arrow_direction": "right"
+        },
+        {
+            "target": "ocr_process_btn",
+            "text": "<b>🔍 Extract Text with OCR</b><br><br>Click here to start the OCR process. The system will:<br>• Analyze each page of your PDFs<br>• Recognize and extract text from images<br>• Save the text to .txt files<br><br><em>⚠️ Note: Tesseract OCR must be installed on your system for this to work.</em>",
+            "button_text": "Finish",
+            "highlight_style": "solid_border",
+            "arrow_direction": "up"
+        }
+    ]
+}

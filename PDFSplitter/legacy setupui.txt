@@ -1,0 +1,149 @@
+def setup_ui(self):
+        self.logger.info("PDFUtility","Setting up user interface")
+        self.root.title("PDF Utility")
+        self.root.geometry("1200x700")
+        self.settings = self.load_settings()
+        if(self.settings["theme"] == "Light"):
+            self.root.configure(bg="white")
+        else:
+            self.root.configure(bg="black") 
+
+        # Configure main grid columns
+        self.root.columnconfigure(0, weight=8)
+        self.root.columnconfigure(1, weight=1)
+        self.root.rowconfigure(1, weight=2)
+        self.root.minsize(1000, 600)
+
+        # Create main content frame
+        main_content = tk.Frame(self.root)
+        if(self.settings["theme"] == "Light"):
+            main_content.configure(bg="white")
+        else:
+            main_content.configure(bg="black")  
+
+        main_content.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=10, pady=10)
+        main_content.columnconfigure(0, weight=1)
+        main_content.rowconfigure(1, weight=2)  
+
+        # Create header frame
+        header_frame = tk.Frame(main_content)
+        header_frame.grid(row=0, column=0, sticky="ew")
+        if(self.settings["theme"] == "Light"):
+            header_frame.configure(bg="white")
+        else:
+            header_frame.configure(bg="black")
+
+        # Configure header frame columns
+        header_frame.columnconfigure(0, weight=0)  # Settings icon column
+        header_frame.columnconfigure(1, weight=1)  # Title column
+
+        # Settings icon on left
+        self.settings_icon = tk.Button(header_frame, text="⚙", command=self.open_settings, 
+                                      font=("Arial", 12), width=3, height=1)
+        self.settings_icon.grid(row=0, column=0, pady=10, padx=10, sticky="w")
+
+        # PDF Files title in center
+        tk.Label(header_frame, text="PDF Files", font=("Arial", 14)).grid(row=0, column=1, pady=10, sticky="ew")
+
+        # Listbox frame
+        list_frame = tk.Frame(main_content)
+        list_frame.grid(row=1, column=0, sticky="nsew")
+        list_frame.rowconfigure(0, weight=1)
+        list_frame.columnconfigure(0, weight=1) 
+
+        scrollbar_y = ttk.Scrollbar(list_frame, orient="vertical")
+        scrollbar_x = ttk.Scrollbar(list_frame, orient="horizontal")    
+
+        self.listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED,
+                                 yscrollcommand=scrollbar_y.set,
+                                 xscrollcommand=scrollbar_x.set,
+                                 activestyle='none')
+        self.listbox.grid(row=0, column=0, sticky="nsew")   
+
+        scrollbar_y.grid(row=0, column=1, sticky="ns")
+        scrollbar_x.grid(row=1, column=0, sticky="ew")  
+
+        scrollbar_y.config(command=self.listbox.yview)
+        scrollbar_x.config(command=self.listbox.xview)  
+
+        # Button frame layout
+        button_frame = tk.Frame(main_content)
+        button_frame.grid(row=2, column=0, pady=10, sticky="ew")
+        button_frame.columnconfigure((0, 1, 2), weight=1)  # Add third column for buttons
+
+
+        # First row - Add/Remove
+        tk.Button(button_frame, text="Add Files", command=self.add_files, width=15).grid(row=0, column=0, padx=5)
+        self.remove_selected = tk.Button(button_frame, text="Remove Selected", command=self.remove_file, width=15, state=tk.DISABLED)
+        self.remove_selected.grid(row=0, column=1, padx=5, pady=5)
+        tk.Button(button_frame, text="Scan Folder", command=self.scan_folder, width=15).grid(row=0, column=2, padx=5, pady=5)   
+
+        # Second row - Split/Merge/Repair
+        self.split_button = tk.Button(button_frame, text="Split PDF", command=self.split_pdf_ui, width=15, state=tk.DISABLED)
+        self.split_button.grid(row=1, column=0, pady=5, padx=5) 
+
+        self.merge_button = tk.Button(button_frame, text="Merge PDFs", command=self.merge_pdf_ui, width=15, state=tk.DISABLED)
+        self.merge_button.grid(row=1, column=1, pady=5, padx=5) 
+
+        self.repair_button = tk.Button(button_frame, text="Repair PDF", command=self.repair_pdf_ui, width=15, state=tk.DISABLED)
+        self.repair_button.grid(row=1, column=2, pady=5, padx=5)    
+
+        # Third row - View/Rename/Delete
+        self.view_button = tk.Button(button_frame, text="View PDF", command=self.view_selected, width=15, state=tk.DISABLED)
+        self.view_button.grid(row=2, column=0, pady=5, padx=5)
+
+        self.rename_button = tk.Button(button_frame, text="Rename PDF", command=self.rename_pdf, width=15, state=tk.DISABLED)
+        self.rename_button.grid(row=2, column=1, pady=5, padx=5)    
+
+        self.delete_button = tk.Button(button_frame, text="Delete PDF", command=self.delete_pdf, width=15, state=tk.DISABLED)
+        self.delete_button.grid(row=2, column=2, pady=5, padx=5)    
+
+        # Fourth row - Help/Remove White Pages/Duplicate
+        tk.Button(button_frame, text="Help", command=self.view_help, width=15).grid(row=3, column=0, pady=5, padx=5)
+
+        self.remove_white_button = tk.Button(button_frame, text="Remove White Pages", command=self.remove_white_pages_ui, width=15, state=tk.DISABLED)
+        self.remove_white_button.grid(row=3, column=1, pady=5, padx=5)
+
+        self.duplicate_button = tk.Button(button_frame, text="Duplicate PDF", command=self.duplicate_file, width=15, state=tk.DISABLED)
+        self.duplicate_button.grid(row=3, column=2, pady=5, padx=5) 
+
+        # Fifth row - Convert/Selection controls
+        tk.Button(button_frame, text="Convert Images", command=self.convert_image_to_pdf, width=15).grid(row=4, column=0, pady=5, padx=5)
+
+        self.clear_selection_button = tk.Button(button_frame, text="Clear Selection", command=self.clear_selection, width=15, state=tk.DISABLED)
+        self.clear_selection_button.grid(row=4, column=1, pady=5, padx=5)
+
+        self.select_all_button = tk.Button(button_frame, text="Select All", command=self.select_all, width=15, state=tk.DISABLED)
+        self.select_all_button.grid(row=4, column=2, pady=5, padx=5)    
+
+        # Sixth row - Exit
+        tk.Button(button_frame, text="Exit", command=self.root.quit, width=15).grid(row=5, column=1, pady=5, padx=5)    
+
+        # Status label
+        self.status_label = tk.Label(button_frame, text="", font=("Arial", 10))
+        self.status_label.grid(row=6, column=0, columnspan=3, pady=5)   
+
+        # Ad Section
+        self.ad_frame = tk.Frame(self.root, bg="lightgray", width=150)
+        self.ad_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=5, pady=5)
+        self.ad_frame.grid_propagate(False) 
+
+        tk.Label(self.ad_frame, text="Advertisement", font=("Arial", 12), bg="lightgray").grid(row=0, column=0, pady=5) 
+
+        self.ad_content = tk.Frame(self.ad_frame, bg="white")
+        self.ad_content.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+
+        # Bind events
+        self.listbox.bind('<Button-1>', self.toggle_selection)  # Single left click
+        self.listbox.bind('<<ListboxSelect>>', lambda e: self.update_buttons())  # Selection changes
+
+        # Save references to frames
+        self.main_content = main_content
+        self.list_frame = list_frame
+        self.button_frame = button_frame
+
+        # Apply theme
+        self.apply_theme()
+
+        # Explicitly update buttons at the end of setup
+        self.update_buttons()

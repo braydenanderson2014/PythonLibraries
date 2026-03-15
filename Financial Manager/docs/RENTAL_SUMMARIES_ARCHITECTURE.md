@@ -1,0 +1,437 @@
+# Rental Summaries System - Architecture & Flow
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Financial Manager                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌──────────────────┐         ┌──────────────────┐             │
+│  │  TenantManager   │         │  RentTracker     │             │
+│  ├──────────────────┤         ├──────────────────┤             │
+│  │ • List tenants   │         │ • Calculate rent │             │
+│  │ • Get tenant     │         │ • Track payments │             │
+│  │ • Tenant data    │────────▶│ • Check delinq.  │             │
+│  └──────────────────┘         │ • Payment hist.  │             │
+│                               └──────────────────┘             │
+│                                        ▲                        │
+│                                        │                        │
+│                               ┌────────┴────────┐               │
+│                               │                 │               │
+│                    ┌──────────▼──────────┐ ┌────▼──────────┐   │
+│                    │  RentalSummaries    │ │   Tenant DB   │   │
+│                    ├─────────────────────┤ └───────────────┘   │
+│                    │ • Monthly summaries │                     │
+│                    │ • Yearly summaries  │    ┌──────────┐    │
+│                    │ • Period summaries  │    │ Payments │    │
+│                    │ • Formatting       │    └──────────┘    │
+│                    │ • Exports (JSON)   │                     │
+│                    │ • Exports (CSV)    │                     │
+│                    └────────┬───────────┘                     │
+│                             │                                │
+│              ┌──────────────┼──────────────┐                │
+│              │              │              │                │
+│      ┌───────▼───────┐ ┌────▼─────┐ ┌─────▼──────┐        │
+│      │   Console     │ │   JSON   │ │    CSV    │        │
+│      │   Display     │ │  Export  │ │  Export   │        │
+│      └───────────────┘ └──────────┘ └───────────┘        │
+│              │              │              │                │
+│      ┌───────▼────────────────────────────▼──────┐        │
+│      │        User / Application Output           │        │
+│      ├──────────────────────────────────────────┤        │
+│      │ • Display on screen                      │        │
+│      │ • Save to file                           │        │
+│      │ • Email to users                         │        │
+│      │ • Import to spreadsheet                  │        │
+│      └──────────────────────────────────────────┘        │
+│                                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Data Flow - Summary Generation
+
+```
+User Request
+     │
+     ▼
+┌─────────────────────────┐
+│ get_*_summary()         │
+│ (monthly/yearly/period) │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Get Tenant Data         │
+│ • Rental period         │
+│ • Contact info          │
+│ • Account status        │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Get Payment History     │
+│ • Payment dates         │
+│ • Payment amounts       │
+│ • Payment types         │
+│ • Credit usage          │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Calculate Expected Rent │
+│ • Based on period       │
+│ • Monthly exceptions    │
+│ • Due date tracking     │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Aggregate Payments      │
+│ • By month              │
+│ • By year               │
+│ • By period             │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Calculate Balances      │
+│ • Due amounts           │
+│ • Delinquent status     │
+│ • Payment rates         │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Return Summary Dict     │
+│ (Fully populated)       │
+└─────────────────────────┘
+```
+
+## Summary Types Hierarchy
+
+```
+RentalSummaries
+│
+├─ Monthly Summary
+│  ├─ tenant_id
+│  ├─ month_display (e.g., "January 2025")
+│  ├─ expected_rent
+│  ├─ total_paid
+│  ├─ balance
+│  ├─ payment_count
+│  ├─ payments[] (list of payment details)
+│  ├─ status
+│  ├─ due_date
+│  └─ is_delinquent
+│
+├─ Yearly Summary
+│  ├─ tenant_id
+│  ├─ year
+│  ├─ total_expected_rent
+│  ├─ total_paid
+│  ├─ total_balance
+│  ├─ payment_rate (%)
+│  ├─ months_paid (count)
+│  ├─ months_partial (count)
+│  ├─ months_delinquent (count)
+│  └─ monthly_details[] (list of monthly summaries)
+│
+└─ Rental Period Summary
+   ├─ tenant_id
+   ├─ rental_start_date
+   ├─ rental_end_date
+   ├─ rental_period_days
+   ├─ account_status
+   ├─ rent_amount
+   ├─ deposit_amount
+   ├─ contact_info
+   ├─ total_expected_rent
+   ├─ total_paid
+   ├─ total_balance
+   ├─ overpayment_credit
+   ├─ service_credit
+   ├─ delinquency_balance
+   ├─ delinquent_months (count)
+   ├─ payment_rate (%)
+   └─ yearly_summaries[] (list of yearly summaries)
+      └─ monthly_summaries[] (list of monthly summaries)
+```
+
+## Export Flow
+
+```
+Summary Dictionary
+     │
+     ├──────────────┬──────────────┬──────────────┐
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+ Console       JSON File      CSV File      Programmatic
+ Display      (export_*      (export_to    (get_*_summary
+ (print_*)    _summary_      csv())        returns dict)
+                json())
+
+     ▼              ▼              ▼              ▼
+   ┌─────────────────────────────────────────────┐
+   │         User / Application Uses             │
+   ├─────────────────────────────────────────────┤
+   │ • Screen display                            │
+   │ • File storage                              │
+   │ • Spreadsheet import                        │
+   │ • Data analysis                             │
+   │ • Report generation                         │
+   │ • Archive/backup                            │
+   └─────────────────────────────────────────────┘
+```
+
+## Integration Points
+
+```
+┌──────────────────────────────────────────────────────┐
+│            Your Application                          │
+├──────────────────────────────────────────────────────┤
+│                                                      │
+│  ┌──────────────────────────────────────────────┐   │
+│  │         main_window.py                       │   │
+│  ├──────────────────────────────────────────────┤   │
+│  │ Menu:                                        │   │
+│  │  • Reports > Monthly Summary                │   │
+│  │  • Reports > Yearly Summary                 │   │
+│  │  • Reports > Rental Period Summary          │   │
+│  │  • Reports > Export as JSON...              │   │
+│  │  • Reports > Export as CSV...               │   │
+│  │                                             │   │
+│  │ Toolbar:                                    │   │
+│  │  • [Monthly] [Yearly] [Period]              │   │
+│  │  • [Export JSON] [Export CSV]               │   │
+│  └────────────────┬──────────────────────────┘   │
+│                   │                               │
+│  ┌────────────────▼───────────────────────────┐   │
+│  │      RentalSummariesWidget                 │   │
+│  ├──────────────────────────────────────────┤   │
+│  │ • initialize_from_rent_tracker()          │   │
+│  │ • show_monthly_summary()                  │   │
+│  │ • show_yearly_summary()                   │   │
+│  │ • show_rental_period_summary()            │   │
+│  │ • export_as_json()                        │   │
+│  │ • export_as_csv()                         │   │
+│  │ • print_summary()                         │   │
+│  └────────────────┬──────────────────────────┘   │
+│                   │                               │
+│  ┌────────────────▼───────────────────────────┐   │
+│  │      RentalSummaries (Core)                │   │
+│  ├──────────────────────────────────────────┤   │
+│  │ • get_monthly_summary()                   │   │
+│  │ • get_yearly_summary()                    │   │
+│  │ • get_rental_period_summary()             │   │
+│  │ • format_*_display()                      │   │
+│  │ • export_*_summary_json()                 │   │
+│  │ • export_to_csv()                         │   │
+│  │ • print_*_summary()                       │   │
+│  └──────────────────────────────────────────┘   │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+## Batch Processing Flow
+
+```
+All Tenants
+     │
+     ▼
+┌─────────────────────┐
+│ For each tenant:    │
+├─────────────────────┤
+│  1. Get tenant data │
+│  2. Validate data   │
+│  3. Generate rpt    │
+│  4. Export to JSON  │
+│  5. Export to CSV   │
+│  6. Log results     │
+└─────────────────────┘
+     │
+     ├─────────┬─────────┬─────────┐
+     ▼         ▼         ▼         ▼
+  Tenant1   Tenant2   Tenant3   Tenant4
+  Reports   Reports   Reports   Reports
+     │         │         │         │
+     └─────────┴─────────┴─────────┘
+           │
+           ▼
+    ┌──────────────┐
+    │ Export Dir   │
+    ├──────────────┤
+    │ Period_1.json│
+    │ Period_1.csv │
+    │ Period_2.json│
+    │ Period_2.csv │
+    │ Period_3.json│
+    │ Period_3.csv │
+    │ Period_4.json│
+    │ Period_4.csv │
+    └──────────────┘
+```
+
+## Class Relationships
+
+```
+┌─────────────────────────────────────┐
+│         RentalSummaries             │
+├─────────────────────────────────────┤
+│ Properties:                         │
+│  • rent_tracker: RentTracker        │
+│                                     │
+│ Methods:                            │
+│  + get_monthly_summary()            │
+│  + get_yearly_summary()             │
+│  + get_rental_period_summary()      │
+│  + format_monthly_display()         │
+│  + format_yearly_display()          │
+│  + format_rental_period_display()   │
+│  + export_monthly_summary_json()    │
+│  + export_yearly_summary_json()     │
+│  + export_rental_period_summary_json│
+│  + export_to_csv()                  │
+│  + print_monthly_summary()          │
+│  + print_yearly_summary()           │
+│  + print_rental_period_summary()    │
+└────────┬──────────────────────────┘
+         │ uses
+         ▼
+┌─────────────────────────────────────┐
+│         RentTracker                 │
+├─────────────────────────────────────┤
+│ Properties:                         │
+│  • tenant_manager: TenantManager    │
+│                                     │
+│ Methods:                            │
+│  + get_effective_rent()             │
+│  + check_and_update_delinquency()   │
+│  + get_tenant_delinquency()         │
+└────────┬──────────────────────────┘
+         │ uses
+         ▼
+┌─────────────────────────────────────┐
+│       TenantManager                 │
+├─────────────────────────────────────┤
+│ Methods:                            │
+│  + list_tenants()                   │
+│  + get_tenant(tenant_id)            │
+│  + add_tenant()                     │
+└─────────────────────────────────────┘
+```
+
+## Processing Stages
+
+```
+Request Summary
+     │
+     ▼
+┌──────────────────────┐
+│ Stage 1: Collect     │
+│ • Tenant data        │
+│ • Payment history    │
+│ • Due dates          │
+└──────────────────────┘
+     │
+     ▼
+┌──────────────────────┐
+│ Stage 2: Calculate   │
+│ • Expected amounts   │
+│ • Paid amounts       │
+│ • Balance amounts    │
+│ • Payment rates      │
+└──────────────────────┘
+     │
+     ▼
+┌──────────────────────┐
+│ Stage 3: Aggregate   │
+│ • By month           │
+│ • By year            │
+│ • By period          │
+└──────────────────────┘
+     │
+     ▼
+┌──────────────────────┐
+│ Stage 4: Organize    │
+│ • Create dict        │
+│ • Validate data      │
+│ • Add metadata       │
+└──────────────────────┘
+     │
+     ▼
+┌──────────────────────┐
+│ Stage 5: Format      │
+│ • Display format     │
+│ • JSON format        │
+│ • CSV format         │
+└──────────────────────┘
+     │
+     ▼
+Return Summary Data
+(Multiple Format Options)
+```
+
+## Performance Characteristics
+
+```
+Operation             Time    Notes
+─────────────────────────────────────────────────
+Monthly Summary       100ms   Single month
+Yearly Summary        500ms   12 months aggregated
+Rental Period         1-2s    All years aggregated
+JSON Export           200ms   Single record
+CSV Export            300ms   Table generation
+Print Operation       50ms    Formatting only
+
+Scaling:
+• 10 tenants:  ~1-2 seconds total
+• 50 tenants:  ~5-10 seconds total
+• 100 tenants: ~15-20 seconds total
+```
+
+## Error Handling Flow
+
+```
+Request for Summary
+     │
+     ▼
+┌─────────────────┐
+│ Validate Input  │
+├─────────────────┤
+│ Valid?          │
+└────┬────────┬───┘
+     │        │
+  YES│        │NO
+     │        ▼
+     │    ┌──────────────┐
+     │    │ Log Warning  │
+     │    │ Return None  │
+     │    └──────────────┘
+     │
+     ▼
+┌─────────────────┐
+│ Process Data    │
+├─────────────────┤
+│ Success?        │
+└────┬────────┬───┘
+     │        │
+  YES│        │NO
+     │        ▼
+     │    ┌──────────────┐
+     │    │ Log Error    │
+     │    │ Return None  │
+     │    └──────────────┘
+     │
+     ▼
+Return Summary
+```
+
+---
+
+This architecture is:
+- **Modular** - Each component is independent
+- **Scalable** - Handles many tenants efficiently
+- **Maintainable** - Clear separation of concerns
+- **Testable** - Each layer can be tested independently
+- **Extensible** - Easy to add new features

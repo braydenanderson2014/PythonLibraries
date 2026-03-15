@@ -1,0 +1,189 @@
+[
+  {
+    "account_id": "acct_20250914_181615_1118",
+    "bank_name": "Tab Bank",
+    "account_type": "Savings",
+    "account_name": "HighYieldSavings",
+    "account_number": "1234",
+    "user_id": "braydenanderson2014",
+    "initial_balance": 1000.0,
+    "active": true,
+    "created_date": "2025-09-14T18:16:15.885242"
+  },
+  {
+    "account_id": "acct_20250914_182156_7894",
+    "bank_name": "Tab Bank",
+    "account_type": "Checking",
+    "account_name": "High Yield Savings",
+    "account_number": "3899",
+    "user_id": "admin",
+    "initial_balance": 539.47,
+    "active": true,
+    "created_date": "2025-09-14T18:21:56.402916"
+  },
+  {
+    "account_id": "acct_20250914_232107_1510",
+    "bank_name": "Mountain America",
+    "account_type": "Other",
+    "account_name": "Car Loan",
+    "account_number": "7575",
+    "user_id": "admin",
+    "initial_balance": -21000.0,
+    "active": false,
+    "created_date": "2025-09-14T23:21:07.444878"
+  },
+  {
+    "account_id": "acct_20250915_195533_6275",
+    "bank_name": "Granite Checking Account",
+    "account_type": "Checking",
+    "account_name": "Main Checking",
+    "account_number": "7755",
+    "user_id": "admin",
+    "initial_balance": 20000.0,
+    "active": true,
+    "created_date": "2025-09-15T19:55:33.378038"
+  },
+  {
+    "account_id": "acct_20250917_224405_6477",
+    "bank_name": "Loan Services",
+    "account_type": "Loan",
+    "account_name": "Test Auto Car Loan Account",
+    "account_number": "",
+    "user_id": "test_user_auto_loan",
+    "initial_balance": -30000.0,
+    "active": true,
+    "created_date": "2025-09-17T22:44:05.275397"
+  },
+  {
+    "account_id": "acct_20250917_224405_1999",
+    "bank_name": "Manual Bank",
+    "account_type": "Loan",
+    "account_name": "Manual Loan Account",
+    "account_number": "",
+    "user_id": "test_user_manual_loan",
+    "initial_balance": -25000.0,
+    "active": true,
+    "created_date": "2025-09-17T22:44:05.363232"
+  },
+  {
+    "account_id": "acct_20250917_224405_1012",
+    "bank_name": "Loan Services",
+    "account_type": "Loan",
+    "account_name": "Test Balance Loan Account",
+    "account_number": "",
+    "user_id": "test_user_balance",
+    "initial_balance": -20000.0,
+    "active": true,
+    "created_date": "2025-09-17T22:44:05.439597"
+  },
+  {
+    "account_id": "acct_20250917_225403_1541",
+    "bank_name": "Test Bank",
+    "account_type": "Checking",
+    "account_name": "Test Account",
+    "account_number": "1234",
+    "user_id": "test_user_deletion",
+    "initial_balance": 1000.0,
+    "active": false,
+    "created_date": "2025-09-17T22:54:03.418654"
+  },
+  {
+    "account_id": "acct_20250917_225403_8831",
+    "bank_name": "UI Test Bank",
+    "account_type": "Savings",
+    "account_name": "UI Test Account",
+    "account_number": "",
+    "user_id": "test_consistency",
+    "initial_balance": 500.0,
+    "active": true,
+    "created_date": "2025-09-17T22:54:03.577111"
+  },
+  {
+    "account_id": "acct_20250917_225403_5144",
+    "bank_name": "Persistence Bank",
+    "account_type": "Checking",
+    "account_name": "Persistence Test",
+    "account_number": "",
+    "user_id": "test_persistence",
+    "initial_balance": 2000.0,
+    "active": false,
+    "created_date": "2025-09-17T22:54:03.630901"
+  },
+  {
+    "account_id": "acct_20250917_225839_5560",
+    "bank_name": "Loan Services",
+    "account_type": "Loan",
+    "account_name": "Mountain America Car Loan Account",
+    "account_number": "5555",
+    "user_id": "admin",
+    "initial_balance": -21000.0,
+    "active": true,
+    "created_date": "2025-09-17T22:58:39.415504"
+  },
+  {
+    "account_id": "acct_20251214_142242_4048",
+    "bank_name": "Granite Credit Union",
+    "account_type": "Checking",
+    "account_name": "Main Checking",
+    "account_number": "1111",
+    "user_id": "braydenanderson2014",
+    "initial_balance": 10000.0,
+    "active": true,
+    "created_date": "2025-12-14T14:22:42.113900"
+  },
+  {
+    "account_id": "acct_20251214_142418_3014",
+    "bank_name": "Loan Services",
+    "account_type": "Loan",
+    "account_name": "Car Loan Account",
+    "account_number": "",
+    "user_id": "braydenanderson2014",
+    "initial_balance": -21000.0,
+    "active": true,
+    "created_date": "2025-12-14T14:24:18.043965"
+  },
+  {
+    "account_id": "acct_20251215_202941_9698",
+    "bank_name": "Test Bank",
+    "account_type": "Checking",
+    "account_name": "Test Checking",
+    "account_number": "1234",
+    "user_id": "test_user_123",
+    "initial_balance": 1000.0,
+    "active": true,
+    "created_date": "2025-12-15T20:29:41.156336"
+  },
+  {
+    "account_id": "acct_20251215_202941_1133",
+    "bank_name": "Local Bank",
+    "account_type": "Checking",
+    "account_name": "Main Checking",
+    "account_number": "9876",
+    "user_id": "integration_test_user",
+    "initial_balance": 5000.0,
+    "active": true,
+    "created_date": "2025-12-15T20:29:41.174039"
+  },
+  {
+    "account_id": "acct_20251215_202941_9311",
+    "bank_name": "Local Bank",
+    "account_type": "Savings",
+    "account_name": "Emergency Fund",
+    "account_number": "5432",
+    "user_id": "integration_test_user",
+    "initial_balance": 10000.0,
+    "active": true,
+    "created_date": "2025-12-15T20:29:41.174404"
+  },
+  {
+    "account_id": "acct_20251229_232706_6409",
+    "bank_name": "temp",
+    "account_type": "Checking",
+    "account_name": "Checking test",
+    "account_number": "5555",
+    "user_id": "admin",
+    "initial_balance": 15.0,
+    "active": false,
+    "created_date": "2025-12-29T23:27:06.560350"
+  }
+]

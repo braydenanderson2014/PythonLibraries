@@ -1,0 +1,1030 @@
+name: Issue Auto-Manager
+on:
+  issues:
+    types: [opened, labeled]  # Added 'labeled' to detect manual label changes
+  issue_comment:
+    types: [created]  # Trigger on new comments for manual commands
+  schedule:
+    # Run every 6 hours to check for stale issues (reduced frequency)
+    - cron: '0 */6 * * *'
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  process-issues:
+    runs-on: ubuntu-latest
+    name: Auto Process Issues
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        npm install @octokit/rest
+        npm install natural
+        npm install similarity
+        
+    - name: Process Issues
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { Octokit } = require('@octokit/rest');
+          const natural = require('natural');
+          const similarity = require('similarity');
+          
+          const octokit = github.rest;
+          // context is already available in github-script action
+          
+          // Determine trigger type and target issue
+          let targetIssue = null;
+          let triggerType = 'unknown';
+          let manualTrigger = false;
+          
+          console.log(`🔍 Event detected: ${context.eventName}`);
+          console.log(`📋 Payload action: ${context.payload.action}`);
+          
+          if (context.eventName === 'issue_comment') {
+            // Comment-based trigger
+            const comment = context.payload.comment;
+            const commentBody = comment.body.toLowerCase();
+            
+            console.log(`💬 Comment from ${comment.user.login}: "${comment.body}"`);
+            
+            // Check for manual trigger commands
+            if (commentBody.includes('@dependabot') || commentBody.includes('@github-actions')) {
+              if (commentBody.includes('test duplicate') || 
+                  commentBody.includes('check duplicate') ||
+                  commentBody.includes('scan duplicate')) {
+                triggerType = 'comment_trigger';
+                manualTrigger = true;
+                targetIssue = context.payload.issue;
+                console.log(`🔧 Manual duplicate check triggered by comment from ${comment.user.login}`);
+              }
+            }
+          } else if (context.eventName === 'issues') {
+            targetIssue = context.payload.issue;
+            
+            if (context.payload.action === 'labeled') {
+              // Label-based trigger
+              const label = context.payload.label;
+              console.log(`🏷️ Label "${label.name}" added to issue #${targetIssue.number}`);
+              if (label.name === 'potential-duplicate') {
+                triggerType = 'label_trigger';
+                manualTrigger = true;
+                console.log(`🏷️ Manual duplicate check triggered by adding 'potential-duplicate' label`);
+              }
+            } else if (context.payload.action === 'opened') {
+              // Regular new issue
+              triggerType = 'new_issue';
+              console.log(`🆕 New issue opened: #${targetIssue.number}`);
+            }
+          }
+          
+          console.log(`🎯 Trigger analysis: type=${triggerType}, manual=${manualTrigger}, hasTargetIssue=${!!targetIssue}`);
+          
+          // Skip processing if no valid trigger
+          if (!targetIssue) {
+            console.log('❌ No valid trigger detected, skipping processing');
+            return;
+          }
+          
+          // Configuration
+          const CONFIG = {
+            SIMILARITY_THRESHOLD: 0.85,
+            AUTO_RESPONSE_ENABLED: true,
+            DUPLICATE_CHECK_ENABLED: true,
+            STALE_DAYS: 30,
+            LABELS: {
+              BUG: 'bug',
+              FEATURE: 'enhancement',
+              DUPLICATE: 'duplicate',
+              INVALID: 'invalid',
+              AUTO_PROCESSED: 'auto-processed',
+              NEEDS_INFO: 'needs-more-info',
+              STALE: 'stale',
+              AUTO_RESPONSE: 'auto-response',
+              AUTO_POTENTIAL_DUPLICATE: 'auto-potential-duplicate',  // System detected
+              POTENTIAL_DUPLICATE: 'potential-duplicate',            // Manual assignment
+              MANUAL_REVIEW: 'needs-review'                         // Requires human review
+            },
+            RESPONSES: {
+              BUG_WELCOME: `🐛 **Thank you for reporting this bug!**
+              
+              Your issue has been automatically processed and labeled. A maintainer will review it soon.
+              
+              **What happens next?**
+              - Our team will investigate the issue
+              - We may ask for additional information if needed
+              - Updates will be posted here as we work on a fix
+              
+              **In the meantime:**
+              - Check if there are any workarounds in our documentation
+              - Subscribe to this issue for updates
+              
+              <!-- AUTO-RESPONSE-ID: bug-welcome -->
+              *This is an automated response. A human maintainer will follow up soon.*`,
+              
+              FEATURE_WELCOME: `✨ **Thank you for this feature request!**
+              
+              Your suggestion has been automatically processed and will be reviewed by our team.
+              
+              **What happens next?**
+              - We'll evaluate the request against our roadmap
+              - Community feedback helps us prioritize features
+              - Implementation timeline will be shared if approved
+              
+              **Help us prioritize:**
+              - 👍 React with thumbs up if you want this feature
+              - Add use cases or examples in comments
+              
+              <!-- AUTO-RESPONSE-ID: feature-welcome -->
+              *This is an automated response. A human maintainer will follow up soon.*`,
+              
+              DUPLICATE_FOUND: `🔄 **Duplicate Issue Detected**
+              
+              This issue appears to be very similar to an existing issue. Please check:
+              
+              **Similar Issues:**
+              {duplicateLinks}
+              
+              If this is indeed a duplicate, it will be closed automatically. If you believe this is a unique issue, please:
+              - Add more specific details about your case
+              - Explain how it differs from the linked issues
+              
+              <!-- AUTO-RESPONSE-ID: duplicate-found -->
+              *This is an automated analysis. Human review will follow.*`,
+              
+              NEEDS_MORE_INFO: `❓ **More Information Needed**
+              
+              This issue needs additional details to be properly processed:
+              
+              **Missing Information:**
+              {missingInfo}
+              
+              **Please provide:**
+              - Clear steps to reproduce (for bugs)
+              - Expected vs actual behavior
+              - System/environment details
+              - Screenshots or logs if relevant
+              
+              This issue will be marked as stale if no response is received within 7 days.`,
+              
+              STALE_WARNING: `⏰ **Stale Issue Notice**
+              
+              This issue has been inactive for {days} days and will be automatically closed in 7 days if there's no activity.
+              
+              **To keep this issue open:**
+              - Add a comment with updates
+              - Provide requested information
+              - Confirm the issue is still relevant
+              
+              If you believe this issue is still valid, please let us know!`,
+              
+              AUTO_CLOSED: `🤖 **Automatically Closed**
+              
+              This issue has been automatically closed due to:
+              {reason}
+              
+              **To reopen this issue:**
+              - Address the closure reason
+              - Add new relevant information
+              - Tag a maintainer for review
+              
+              *This action was performed automatically based on our issue management policies.*`
+            }
+          };
+          
+          // Main processing function
+          async function processIssue(issueNumber = null) {
+            try {
+              // Use the targetIssue from trigger detection, or fallback to parameter/payload
+              let issue = targetIssue;
+              if (!issue && issueNumber) {
+                const { data } = await octokit.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber
+                });
+                issue = data;
+              } else if (!issue && context.payload.issue) {
+                issue = context.payload.issue;
+              }
+              
+              if (!issue) {
+                console.log('No issue to process');
+                return;
+              }
+              
+              console.log(`Processing issue #${issue.number}: ${issue.title}`);
+              console.log(`Trigger type: ${triggerType}, Manual: ${manualTrigger}`);
+              console.log(`Issue creator: ${issue.user.login} (type: ${issue.user.type})`);
+              
+              // Check if we've already processed this issue recently (prevents spam)
+              // This is more intelligent than blocking all bot issues
+              const recentlyProcessed = await isRecentlyProcessed(issue, triggerType);
+              
+              if (!manualTrigger && recentlyProcessed.skip) {
+                console.log(`⏰ ${recentlyProcessed.reason}`);
+                return;
+              } else if (manualTrigger && recentlyProcessed.skip) {
+                console.log('🔧 Manual trigger - overriding recent processing check');
+              } else if (recentlyProcessed.canProcess) {
+                console.log(`✅ Processing allowed: ${recentlyProcessed.reason}`);
+              }
+              
+              // Analyze issue content
+              const analysis = analyzeIssue(issue);
+              console.log('Analysis:', analysis);
+              
+              // Check for duplicates
+              if (CONFIG.DUPLICATE_CHECK_ENABLED) {
+                await checkForDuplicates(issue, analysis);
+              }
+              
+              // Auto-label based on analysis
+              await autoLabel(issue, analysis);
+              
+              // Send appropriate response
+              if (CONFIG.AUTO_RESPONSE_ENABLED) {
+                await sendAutoResponse(issue, analysis);
+              }
+              
+              // Mark as processed
+              await markAsProcessed(issue);
+              
+            } catch (error) {
+              console.error('Error processing issue:', error);
+            }
+          }
+          
+          // Analyze issue content and classify
+          function analyzeIssue(issue) {
+            const title = issue.title.toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+            const content = `${title} ${body}`;
+            
+            // Extract key features
+            const analysis = {
+              type: 'unknown',
+              confidence: 0,
+              keywords: [],
+              missingInfo: [],
+              hasSteps: false,
+              hasExpected: false,
+              hasActual: false,
+              hasLogs: false,
+              hasSystemInfo: false
+            };
+            
+            // Bug indicators
+            const bugKeywords = [
+              'error', 'bug', 'crash', 'fail', 'broken', 'issue', 'problem',
+              'exception', 'traceback', 'stacktrace', 'not work', 'doesn\'t work'
+            ];
+            
+            // Feature request indicators  
+            const featureKeywords = [
+              'feature', 'request', 'suggestion', 'enhance', 'improve', 'add',
+              'support', 'would like', 'could you', 'please add', 'new'
+            ];
+            
+            // Content analysis
+            const bugScore = bugKeywords.reduce((score, keyword) => 
+              content.includes(keyword) ? score + 1 : score, 0);
+            const featureScore = featureKeywords.reduce((score, keyword) => 
+              content.includes(keyword) ? score + 1 : score, 0);
+              
+            // Classify type
+            if (bugScore > featureScore) {
+              analysis.type = 'bug';
+              analysis.confidence = Math.min(bugScore / bugKeywords.length, 1);
+            } else if (featureScore > bugScore) {
+              analysis.type = 'feature';
+              analysis.confidence = Math.min(featureScore / featureKeywords.length, 1);
+            }
+            
+            // Check for completeness (bugs)
+            if (analysis.type === 'bug') {
+              analysis.hasSteps = /steps to reproduce|reproduce|how to|follow these steps/i.test(content);
+              analysis.hasExpected = /expected|should|supposed to/i.test(content);
+              analysis.hasActual = /actual|instead|but|however/i.test(content);
+              analysis.hasLogs = /log|error|traceback|stacktrace|console/i.test(content);
+              analysis.hasSystemInfo = /version|os|operating system|platform|browser/i.test(content);
+              
+              // Determine missing information
+              if (!analysis.hasSteps) analysis.missingInfo.push('Steps to reproduce');
+              if (!analysis.hasExpected) analysis.missingInfo.push('Expected behavior');
+              if (!analysis.hasActual) analysis.missingInfo.push('Actual behavior');
+              if (!analysis.hasSystemInfo) analysis.missingInfo.push('System information');
+            }
+            
+            return analysis;
+          }
+          
+          // Check for duplicate issues
+          async function checkForDuplicates(issue, analysis) {
+            try {
+              // Get all open issues
+              const { data: allIssues } = await octokit.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100
+              });
+              
+              const duplicates = [];
+              
+              for (const existingIssue of allIssues) {
+                if (existingIssue.number === issue.number) continue;
+                
+                // Calculate similarity
+                const titleSim = similarity(issue.title.toLowerCase(), existingIssue.title.toLowerCase());
+                const bodySim = similarity(
+                  (issue.body || '').toLowerCase(),
+                  (existingIssue.body || '').toLowerCase()
+                );
+                
+                const avgSimilarity = (titleSim + bodySim) / 2;
+                
+                if (avgSimilarity >= CONFIG.SIMILARITY_THRESHOLD) {
+                  duplicates.push({
+                    issue: existingIssue,
+                    similarity: avgSimilarity
+                  });
+                }
+              }
+              
+              // Handle duplicates
+              if (duplicates.length > 0) {
+                await handleDuplicates(issue, duplicates);
+              }
+              
+            } catch (error) {
+              console.error('Error checking duplicates:', error);
+            }
+          }
+          
+          // Handle duplicate issues with advanced options
+          async function handleDuplicates(issue, duplicates) {
+            // Sort by similarity and date (prefer older issues as parent)
+            duplicates.sort((a, b) => {
+              // Primary sort: similarity (higher first)
+              if (Math.abs(a.similarity - b.similarity) > 0.05) {
+                return b.similarity - a.similarity;
+              }
+              // Secondary sort: age (older first for parent selection)
+              return new Date(a.issue.created_at) - new Date(b.issue.created_at);
+            });
+            
+            const topDuplicate = duplicates[0];
+            const isVeryHighSimilarity = topDuplicate.similarity >= 0.95;
+            const isHighSimilarity = topDuplicate.similarity >= CONFIG.SIMILARITY_THRESHOLD;
+            
+            // Create links to similar issues
+            const duplicateLinks = duplicates
+              .slice(0, 3)
+              .map(dup => "- #" + dup.issue.number + ": " + dup.issue.title + " (" + Math.round(dup.similarity * 100) + "% similar)")
+              .join('\n');
+            
+            // Handle based on trigger type and similarity
+            if (manualTrigger) {
+              // Manual trigger - more aggressive processing
+              console.log(`🔧 Manual duplicate check - processing with enhanced logic`);
+              
+              if (isVeryHighSimilarity) {
+                // Very high similarity - auto-close and merge info
+                await autoCloseDuplicateWithMerge(issue, topDuplicate.issue, duplicateLinks, true);
+              } else if (isHighSimilarity) {
+                // High similarity - check for unique information
+                const uniqueInfo = extractUniqueInformation(issue, topDuplicate.issue);
+                if (uniqueInfo) {
+                  // Has unique info - merge and close
+                  await autoCloseDuplicateWithMerge(issue, topDuplicate.issue, duplicateLinks, true);
+                } else {
+                  // No unique info - close as pure duplicate
+                  await closePureDuplicate(issue, topDuplicate.issue, duplicateLinks);
+                }
+              } else {
+                // Lower similarity - provide analysis but don't close
+                await provideDuplicateAnalysis(issue, duplicates, duplicateLinks);
+              }
+            } else {
+              // Automatic processing - conservative approach
+              if (isVeryHighSimilarity) {
+                // Very high similarity - auto-close and merge info
+                await autoCloseDuplicateWithMerge(issue, topDuplicate.issue, duplicateLinks, false);
+              } else if (isHighSimilarity) {
+                // High similarity - mark for review with auto-potential-duplicate label
+                await markAutoPotentialDuplicate(issue, duplicates, duplicateLinks);
+              }
+            }
+            
+            console.log(`Processed ${duplicates.length} potential duplicates for issue #${issue.number}`);
+          }
+          
+          // Auto-close very similar duplicates and merge information
+          async function autoCloseDuplicateWithMerge(newIssue, parentIssue, duplicateLinks) {
+            // Extract unique information from new issue
+            const uniqueInfo = extractUniqueInformation(newIssue, parentIssue);
+            
+            // Add information to parent issue if it contains new data
+            if (uniqueInfo) {
+              const mergeComment = "📋 **Information merged from duplicate issue #" + newIssue.number + "**\n\n" + 
+                                  uniqueInfo + "\n\n---\n*Merged automatically from #" + newIssue.number + 
+                                  ": " + newIssue.title + "*\n<!-- AUTO-RESPONSE-ID: duplicate-merge -->";
+              
+              await octokit.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parentIssue.number,
+                body: mergeComment
+              });
+            }
+            
+            // Close the duplicate issue
+            await octokit.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: newIssue.number,
+              state: 'closed'
+            });
+            
+            // Add labels
+            await octokit.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: newIssue.number,
+              labels: [CONFIG.LABELS.DUPLICATE]
+            });
+            
+            // Comment on closed duplicate
+            const closeComment = "🔄 **Automatically closed as duplicate**\n\n" +
+                               "This issue appears to be a duplicate of #" + parentIssue.number + 
+                               " (95%+ similar).\n\n**Parent Issue**: #" + parentIssue.number + 
+                               " - " + parentIssue.title + "\n\n" +
+                               (uniqueInfo ? "**Your information has been merged** into the parent issue to help with the investigation." : 
+                                "**No new information detected** - all details appear to be covered in the parent issue.") +
+                               "\n\n**If you believe this is not a duplicate:**\n" +
+                               "1. Reopen this issue\n2. Explain how your case differs from #" + parentIssue.number + 
+                               "\n3. Provide additional details that distinguish your issue\n\n" +
+                               "<!-- AUTO-RESPONSE-ID: auto-closed-duplicate -->\n" +
+                               "*This action was performed automatically based on high similarity detection (95%+ match).*";
+            
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: newIssue.number,
+              body: closeComment
+            });
+            
+            console.log("Auto-closed issue #" + newIssue.number + " as duplicate of #" + parentIssue.number);
+          }
+          
+          // Mark potential duplicate for review
+          async function markPotentialDuplicate(issue, duplicates, duplicateLinks) {
+            // Add duplicate label
+            await octokit.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: [CONFIG.LABELS.DUPLICATE, 'needs-review']
+            });
+            
+            // Enhanced duplicate detection comment
+            const topSimilarity = Math.round(duplicates[0].similarity * 100);
+            const duplicateComment = "🔄 **Potential Duplicate Detected** (" + topSimilarity + "% similarity)\n\n" +
+                                   "This issue appears similar to existing issues. Please review:\n\n" +
+                                   "**Similar Issues:**\n" + duplicateLinks + "\n\n" +
+                                   "**Next Steps:**\n- If this is a duplicate, it may be closed automatically\n" +
+                                   "- If this is unique, please add details explaining how it differs\n" +
+                                   "- Maintainers will review and merge information if needed\n\n" +
+                                   "**For the reporter:**\n- Check the similar issues above first\n" +
+                                   "- Add specific details that distinguish your case\n" +
+                                   "- Provide additional context if your situation is different\n\n" +
+                                   "<!-- AUTO-RESPONSE-ID: potential-duplicate -->\n" +
+                                   "*This is automated duplicate detection. Human review will follow.*";
+            
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: duplicateComment
+            });
+          }
+          
+          // Extract unique information from new issue compared to parent
+          function extractUniqueInformation(newIssue, parentIssue) {
+            const newBody = (newIssue.body || '').toLowerCase();
+            const parentBody = (parentIssue.body || '').toLowerCase();
+            
+            if (!newBody || newBody.length < 50) return null;
+            
+            // Simple uniqueness check - if new issue has significantly more content
+            if (newBody.length > parentBody.length * 1.5) {
+              return "**Additional details from #" + newIssue.number + ":**\n\n" + newIssue.body;
+            }
+            
+            // Look for unique sections (basic implementation)
+            const newLines = newBody.split('\n').filter(line => line.trim().length > 10);
+            const parentLines = parentBody.split('\n').filter(line => line.trim().length > 10);
+            
+            const uniqueLines = newLines.filter(newLine => 
+              !parentLines.some(parentLine => 
+                calculateTextSimilarity(newLine.trim(), parentLine.trim()) > 0.7
+              )
+            );
+            
+            if (uniqueLines.length > 2) {
+              return "**Additional information from #" + newIssue.number + ":**\n\n" + uniqueLines.join('\n');
+            }
+            
+            return null;
+          }
+          
+          // Simple text similarity function for fallback comparison
+          function calculateTextSimilarity(s1, s2) {
+            const longer = s1.length > s2.length ? s1 : s2;
+            const shorter = s1.length > s2.length ? s2 : s1;
+            if (longer.length === 0) return 1.0;
+            return (longer.length - editDistance(longer, shorter)) / longer.length;
+          }
+          
+          // Calculate edit distance between two strings
+          function editDistance(s1, s2) {
+            s1 = s1.toLowerCase();
+            s2 = s2.toLowerCase();
+            const costs = [];
+            for (let i = 0; i <= s2.length; i++) {
+              let lastValue = i;
+              for (let j = 0; j <= s1.length; j++) {
+                if (i === 0) {
+                  costs[j] = j;
+                } else if (j > 0) {
+                  let newValue = costs[j - 1];
+                  if (s1.charAt(j - 1) !== s2.charAt(i - 1)) {
+                    newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                  }
+                  costs[j - 1] = lastValue;
+                  lastValue = newValue;
+                }
+              }
+              if (i > 0) costs[s1.length] = lastValue;
+            }
+            return costs[s1.length];
+          }
+          
+          // Mark issue with auto-potential-duplicate label (system detected)
+          async function markAutoPotentialDuplicate(issue, duplicates, duplicateLinks) {
+            // Add auto-potential-duplicate label
+            await octokit.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: [CONFIG.LABELS.AUTO_POTENTIAL_DUPLICATE, CONFIG.LABELS.MANUAL_REVIEW]
+            });
+            
+            const topSimilarity = Math.round(duplicates[0].similarity * 100);
+            const autoComment = "🤖 **System Detected Potential Duplicate** (" + topSimilarity + "% similarity)\n\n" +
+              "**Similar Issues Found:**\n" + duplicateLinks + "\n\n" +
+              "**Automated Analysis:**\n" +
+              "- This issue appears similar to existing issues above\n" +
+              "- Tagged with `auto-potential-duplicate` for maintainer review\n" +
+              "- If you believe this is unique, please explain how it differs\n\n" +
+              "**For Maintainers:**\n" +
+              "- Add `potential-duplicate` label and comment `@dependabot test duplicate` to manually re-scan\n" +
+              "- Or add `potential-duplicate` label to trigger manual duplicate processing\n" +
+              "- Remove `auto-potential-duplicate` if this is confirmed unique\n\n" +
+              "<!-- AUTO-RESPONSE-ID: auto-potential-duplicate -->\n" +
+              "*This is automated duplicate detection. Manual review recommended.*";
+            
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: autoComment
+            });
+          }
+          
+          // Close pure duplicate (no unique information)
+          async function closePureDuplicate(issue, parentIssue, duplicateLinks) {
+            // Close the issue
+            await octokit.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed',
+              labels: [CONFIG.LABELS.DUPLICATE]
+            });
+            
+            const closeComment = "✅ **Closed as Pure Duplicate**\n\n" +
+              "This issue is a duplicate of #" + parentIssue.number + " with no additional unique information.\n\n" +
+              "**Related Issues:**\n" + duplicateLinks + "\n\n" +
+              "**If you believe this was closed in error:**\n" +
+              "- Comment with additional details that distinguish your issue\n" +
+              "- Ping @maintainers for review\n" +
+              "- This issue can be reopened if it contains unique information\n\n" +
+              "**Reference:** #" + parentIssue.number + "\n\n" +
+              "<!-- AUTO-RESPONSE-ID: pure-duplicate-close -->\n" +
+              "*Closed automatically after manual duplicate analysis.*";
+            
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: closeComment
+            });
+          }
+          
+          // Provide duplicate analysis without closing
+          async function provideDuplicateAnalysis(issue, duplicates, duplicateLinks) {
+            const topSimilarity = Math.round(duplicates[0].similarity * 100);
+            const analysisComment = "📊 **Manual Duplicate Analysis Complete**\n\n" +
+              "**Similarity Analysis:**\n" +
+              "- Top match: " + topSimilarity + "% similarity (below auto-close threshold)\n" +
+              "- Found " + duplicates.length + " potentially related issues\n\n" +
+              "**Related Issues:**\n" + duplicateLinks + "\n\n" +
+              "**Assessment:**\n" +
+              "- Not similar enough for automatic closure\n" +
+              "- May contain unique aspects worth keeping open\n" +
+              "- Consider reviewing related issues above for context\n\n" +
+              "**Next Steps:**\n" +
+              "- This issue will remain open\n" +
+              "- Please review related issues to avoid duplication of effort\n" +
+              "- Maintainers may still choose to close if appropriate\n\n" +
+              "<!-- AUTO-RESPONSE-ID: manual-duplicate-analysis -->\n" +
+              "*Manual duplicate scan completed.*";
+            
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: analysisComment
+            });
+          }
+          
+          // Auto-label issues
+          async function autoLabel(issue, analysis) {
+            const labelsToAdd = [];
+            
+            // Type-based labels
+            if (analysis.type === 'bug' && analysis.confidence > 0.3) {
+              labelsToAdd.push(CONFIG.LABELS.BUG);
+            } else if (analysis.type === 'feature' && analysis.confidence > 0.3) {
+              labelsToAdd.push(CONFIG.LABELS.FEATURE);
+            }
+            
+            // Quality labels
+            if (analysis.type === 'bug' && analysis.missingInfo.length > 0) {
+              labelsToAdd.push(CONFIG.LABELS.NEEDS_INFO);
+            }
+            
+            // Processing label
+            labelsToAdd.push(CONFIG.LABELS.AUTO_PROCESSED);
+            
+            if (labelsToAdd.length > 0) {
+              await octokit.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: labelsToAdd
+              });
+              
+              console.log(`Added labels to #${issue.number}:`, labelsToAdd);
+            }
+          }
+          
+          // Send auto-response
+          async function sendAutoResponse(issue, analysis) {
+            let responseBody = '';
+            
+            // Choose response based on analysis
+            if (analysis.type === 'bug') {
+              responseBody = CONFIG.RESPONSES.BUG_WELCOME;
+              
+              // Add missing info request if needed
+              if (analysis.missingInfo.length > 0) {
+                const missingInfo = analysis.missingInfo.map(info => `- ${info}`).join('\n');
+                responseBody += '\n\n' + CONFIG.RESPONSES.NEEDS_MORE_INFO
+                  .replace('{missingInfo}', missingInfo);
+              }
+            } else if (analysis.type === 'feature') {
+              responseBody = CONFIG.RESPONSES.FEATURE_WELCOME;
+            } else {
+              // Generic response for unclear issues
+              responseBody = `👋 **Thank you for opening this issue!**
+              
+              Your issue has been received and will be reviewed by our team.
+              
+              To help us assist you better, please ensure your issue includes:
+              - Clear description of the problem or request
+              - Steps to reproduce (for bugs)
+              - Expected behavior
+              - System information
+              
+              *This is an automated response. A human maintainer will follow up soon.*`;
+            }
+            
+            // Create comment
+            await octokit.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: responseBody
+            });
+            
+            // Add auto-response label
+            await octokit.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: [CONFIG.LABELS.AUTO_RESPONSE]
+            });
+            
+            console.log(`Sent auto-response to issue #${issue.number}`);
+          }
+          
+          // Check if issue was recently processed
+          async function isRecentlyProcessed(issue, triggerType = 'unknown') {
+            try {
+              console.log(`🔍 Checking processing history for issue #${issue.number}`);
+              
+              // Get all comments on this issue
+              const { data: comments } = await octokit.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number
+              });
+              
+              // Define time thresholds
+              const now = new Date();
+              const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+              const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+              const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              
+              // Find our bot comments
+              const ourComments = comments.filter(comment => 
+                comment.body.includes('<!-- AUTO-RESPONSE-ID:') ||
+                comment.body.includes('This is an automated response') ||
+                comment.body.includes('🤖') ||
+                comment.body.includes('automated duplicate detection')
+              );
+              
+              console.log(`📊 Found ${ourComments.length} automated comments on issue #${issue.number}`);
+              
+              if (ourComments.length === 0) {
+                return {
+                  skip: false,
+                  canProcess: true,
+                  reason: "No previous automated processing detected"
+                };
+              }
+              
+              // Get the most recent automated comment
+              const mostRecentComment = ourComments[ourComments.length - 1];
+              const commentDate = new Date(mostRecentComment.created_at);
+              const timeSinceLastComment = now.getTime() - commentDate.getTime();
+              const hoursSinceLastComment = timeSinceLastComment / (1000 * 60 * 60);
+              
+              console.log(`⏰ Last automated comment was ${hoursSinceLastComment.toFixed(1)} hours ago`);
+              
+              // Check for specific types of recent processing
+              const recentComments = ourComments.filter(comment => 
+                new Date(comment.created_at) > sixHoursAgo
+              );
+              
+              // If we recently processed (within 6 hours), check conditions
+              if (recentComments.length > 0) {
+                console.log(`🕕 Found ${recentComments.length} recent automated comments (within 6 hours)`);
+                
+                // Check if conditions have changed since last processing
+                const lastProcessingTime = new Date(mostRecentComment.created_at);
+                
+                // Get issue events since last processing to see what changed
+                const { data: events } = await octokit.issues.listEvents({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number
+                });
+                
+                const eventsSinceProcessing = events.filter(event => 
+                  new Date(event.created_at) > lastProcessingTime
+                );
+                
+                console.log(`📝 Found ${eventsSinceProcessing.length} events since last processing`);
+                
+                // Check for significant changes that warrant reprocessing
+                const significantEvents = eventsSinceProcessing.filter(event => 
+                  ['labeled', 'unlabeled', 'edited', 'reopened'].includes(event.event)
+                );
+                
+                if (significantEvents.length > 0) {
+                  console.log(`🔄 Found ${significantEvents.length} significant changes since last processing`);
+                  return {
+                    skip: false,
+                    canProcess: true,
+                    reason: `Significant changes detected since last processing (${significantEvents.map(e => e.event).join(', ')})`
+                  };
+                }
+                
+                // Check for different trigger types
+                if (triggerType === 'new_issue') {
+                  // For new issues, we shouldn't have recent comments unless it's a very active issue
+                  return {
+                    skip: true,
+                    reason: `New issue trigger but recent automated comments found (possible duplicate processing)`
+                  };
+                } else if (triggerType === 'label_trigger' || triggerType === 'comment_trigger') {
+                  // Manual triggers should generally be allowed, but check for spam
+                  const veryRecentComments = ourComments.filter(comment => 
+                    new Date(comment.created_at) > oneHourAgo
+                  );
+                  
+                  if (veryRecentComments.length > 2) {
+                    return {
+                      skip: true,
+                      reason: `Too many automated comments in last hour (${veryRecentComments.length}), preventing spam`
+                    };
+                  }
+                  
+                  return {
+                    skip: false,
+                    canProcess: true,
+                    reason: `Manual trigger allowed despite recent processing (${hoursSinceLastComment.toFixed(1)} hours ago)`
+                  };
+                }
+                
+                // Default: recently processed, skip to prevent spam
+                return {
+                  skip: true,
+                  reason: `Recently processed ${hoursSinceLastComment.toFixed(1)} hours ago, skipping to prevent spam`
+                };
+              }
+              
+              // If last processing was more than 6 hours ago, allow reprocessing
+              if (commentDate < sixHoursAgo) {
+                return {
+                  skip: false,
+                  canProcess: true,
+                  reason: `Last processing was ${hoursSinceLastComment.toFixed(1)} hours ago, allowing reprocessing`
+                };
+              }
+              
+              // Default fallback - allow processing
+              return {
+                skip: false,
+                canProcess: true,
+                reason: "No recent processing conflicts detected"
+              };
+              
+            } catch (error) {
+              console.error('Error checking processing history:', error);
+              // If we can't determine, allow processing but log the error
+              return {
+                skip: false,
+                canProcess: true,
+                reason: "Error checking history, allowing processing to be safe"
+              };
+            }
+          }
+          
+          // Check if we're about to create a duplicate comment
+          async function wouldCreateDuplicateComment(issue, commentBody, responseId) {
+            try {
+              const { data: comments } = await octokit.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number
+              });
+              
+              // Look for existing comments with the same response ID
+              const existingWithSameId = comments.filter(comment => 
+                comment.body.includes(`<!-- AUTO-RESPONSE-ID: ${responseId} -->`)
+              );
+              
+              if (existingWithSameId.length > 0) {
+                const lastSimilarComment = existingWithSameId[existingWithSameId.length - 1];
+                const timeSinceLastSimilar = new Date() - new Date(lastSimilarComment.created_at);
+                const hoursSinceLastSimilar = timeSinceLastSimilar / (1000 * 60 * 60);
+                
+                console.log(`⚠️ Found existing comment with response ID '${responseId}' from ${hoursSinceLastSimilar.toFixed(1)} hours ago`);
+                
+                // If same response type was posted recently (within 1 hour), skip
+                if (hoursSinceLastSimilar < 1) {
+                  return {
+                    isDuplicate: true,
+                    reason: `Identical response type posted ${hoursSinceLastSimilar.toFixed(1)} hours ago`
+                  };
+                }
+                
+                // If same response type but older, allow if content is significantly different
+                const contentSimilarity = calculateTextSimilarity(commentBody, lastSimilarComment.body);
+                if (contentSimilarity > 0.8) {
+                  return {
+                    isDuplicate: true,
+                    reason: `Very similar comment (${Math.round(contentSimilarity * 100)}% similar) posted ${hoursSinceLastSimilar.toFixed(1)} hours ago`
+                  };
+                }
+              }
+              
+              return { isDuplicate: false };
+              
+            } catch (error) {
+              console.error('Error checking for duplicate comments:', error);
+              return { isDuplicate: false };
+            }
+          }
+          
+          // Smart comment creation that prevents duplicates
+          async function createSmartComment(issue, commentBody, responseId, forceCreate = false) {
+            try {
+              // Check for duplicates unless force create is enabled
+              if (!forceCreate) {
+                const duplicateCheck = await wouldCreateDuplicateComment(issue, commentBody, responseId);
+                if (duplicateCheck.isDuplicate) {
+                  console.log(`🚫 Skipping comment creation: ${duplicateCheck.reason}`);
+                  return { skipped: true, reason: duplicateCheck.reason };
+                }
+              }
+              
+              // Create the comment
+              const result = await octokit.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: commentBody
+              });
+              
+              console.log(`💬 Created comment with response ID '${responseId}' on issue #${issue.number}`);
+              return { created: true, comment: result.data };
+              
+            } catch (error) {
+              console.error('Error creating smart comment:', error);
+              throw error;
+            }
+          }
+          
+          // Mark issue as processed
+          async function markAsProcessed(issue) {
+            // The label is already added in autoLabel function
+            console.log(`Marked issue #${issue.number} as processed`);
+          }
+          
+          // Process stale issues
+          async function processStaleIssues() {
+            try {
+              const { data: issues } = await octokit.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: CONFIG.LABELS.NEEDS_INFO,
+                per_page: 100
+              });
+              
+              const now = new Date();
+              
+              for (const issue of issues) {
+                const updatedDate = new Date(issue.updated_at);
+                const daysSinceUpdate = Math.floor((now - updatedDate) / (1000 * 60 * 60 * 24));
+                
+                if (daysSinceUpdate >= CONFIG.STALE_DAYS) {
+                  // Mark as stale
+                  await octokit.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    labels: [CONFIG.LABELS.STALE]
+                  });
+                  
+                  await octokit.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: CONFIG.RESPONSES.STALE_WARNING.replace('{days}', daysSinceUpdate)
+                  });
+                  
+                  console.log(`Marked issue #${issue.number} as stale`);
+                }
+              }
+            } catch (error) {
+              console.error('Error processing stale issues:', error);
+            }
+          }
+          
+          // Main execution
+          if (context.eventName === 'schedule') {
+            console.log('Running scheduled stale issue processing');
+            await processStaleIssues();
+          } else {
+            console.log('Processing triggered issue');
+            await processIssue();
+          }
+          
+          console.log('Issue auto-manager completed');

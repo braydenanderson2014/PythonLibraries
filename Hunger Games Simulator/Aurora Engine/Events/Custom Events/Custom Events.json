@@ -1,0 +1,69 @@
+{
+    "custom_events": [
+        {
+            "id": "sponsor_gift",
+            "name": "Sponsor Gift",
+            "description": "A tribute receives a gift from their sponsor",
+            "intensity": "low",
+            "effects": ["resource_gain", "morale_boost", "visibility_increase"],
+            "duration_minutes": 2,
+            "narrative_templates": [
+                "A parachute drifts down from the sky, carrying a gift from {tribute}'s sponsor back in the Capitol.",
+                "{tribute} receives a much-needed gift from their sponsor, a reminder that someone still cares about their survival.",
+                "The distinctive whistle of a sponsor gift parachute catches {tribute}'s attention, bringing hope in this dark time."
+            ]
+        },
+        {
+            "id": "gamemaker_announcement",
+            "name": "Gamemaker Announcement",
+            "description": "The Gamemakers announce a rule change or event",
+            "intensity": "medium",
+            "effects": ["rule_change", "strategy_shift", "tension_increase"],
+            "duration_minutes": 3,
+            "narrative_templates": [
+                "The voice of Claudius Templesmith booms through the arena, announcing an important change to the rules.",
+                "The Gamemakers interrupt the Games with an announcement that could change everything for the remaining tributes.",
+                "A holographic projection appears in the sky, displaying a message from the Gamemakers that alters the course of the Games."
+            ]
+        },
+        {
+            "id": "feast_announcement",
+            "name": "Feast Announcement",
+            "description": "The Gamemakers announce a feast at the Cornucopia",
+            "intensity": "high",
+            "effects": ["forced_gathering", "high_risk", "resource_opportunity"],
+            "duration_minutes": 5,
+            "narrative_templates": [
+                "The Gamemakers announce a feast at the Cornucopia, promising supplies that could mean the difference between life and death.",
+                "A deadly temptation is offered as the Gamemakers declare that essential supplies will be available at the Cornucopia.",
+                "The arena falls silent as the announcement of a feast echoes through the speakers, guaranteeing bloodshed."
+            ]
+        },
+        {
+            "id": "mutant_attack",
+            "name": "Mutant Attack",
+            "description": "Genetically engineered creatures attack",
+            "intensity": "high",
+            "effects": ["severe_injury", "forced_evasion", "psychological_trauma"],
+            "duration_minutes": 10,
+            "narrative_templates": [
+                "Horrific mutations engineered by the Capitol emerge from the wilderness, their twisted forms hunting the tributes.",
+                "{tribute} encounters one of the Gamemakers' most terrible creations, a being that should not exist in nature.",
+                "The arena reveals its true horror as genetically engineered monstrosities attack the remaining tributes."
+            ]
+        },
+        {
+            "id": "alliance_formation",
+            "name": "Alliance Formation",
+            "description": "Tributes form a temporary alliance",
+            "intensity": "low",
+            "effects": ["safety_increase", "resource_sharing", "betrayal_risk"],
+            "duration_minutes": 5,
+            "narrative_templates": [
+                "{tribute1} and {tribute2} form a tentative alliance, combining their strengths for mutual survival.",
+                "In this deadly game, {tribute1} and {tribute2} decide that cooperation might be their best chance.",
+                "Two tributes who might have been enemies elsewhere find common ground in their shared struggle for survival."
+            ]
+        }
+    ]
+}

@@ -1,0 +1,39 @@
+# editor/pdf_renderer.py
+import fitz
+from PIL import Image, ImageTk
+import io
+
+class PDFRenderer:
+    def __init__(self, document_model):
+        """
+        document_model: instance of DocumentModel
+        """
+        self.doc_model = document_model
+        # We'll cache PhotoImage objects in document_model._render_cache
+
+    def get_page_image(self, page_number: int, zoom: float = 1.0):
+        """
+        Returns a Tkinter PhotoImage of the rendered page.  
+        Caches by (page_number, zoom) in document_model._render_cache.
+        """
+        cache = self.doc_model._render_cache.setdefault(page_number, {})
+        if zoom in cache:
+            return cache[zoom]
+
+        page = self.doc_model.get_page(page_number)
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        mode = "RGB"
+        img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+        tk_img = ImageTk.PhotoImage(img)
+        cache[zoom] = tk_img
+        return tk_img
+
+    def get_page_text_blocks(self, page_number: int):
+        """
+        Return the raw text “blocks” from PyMuPDF, so the TextOverlay can place
+        editable widgets in the right spots.
+        Format: page.get_text("dict")["blocks"] → list of blocks; each block has spans.
+        """
+        page = self.doc_model.get_page(page_number)
+        return page.get_text("dict")["blocks"]

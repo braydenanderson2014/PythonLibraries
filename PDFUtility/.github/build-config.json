@@ -1,0 +1,84 @@
+{
+  "name": "PDF-Utility",
+  "version": "auto",
+  "append_version": true,
+  "append_date": true,
+  "windowed": false,
+  "main_file": "auto",
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": {
+    "windows": [
+      "x64",
+      "arm64"
+    ],
+    "linux": [
+      "x64",
+      "arm64"
+    ],
+    "macos": [
+      "x64",
+      "arm64"
+    ]
+  },
+  "excluded_architectures": {
+    "windows": [
+      "x86"
+    ],
+    "linux": [],
+    "macos": []
+  },
+  "dependency_fallbacks": {
+    "PyQt6": [
+      {"package": "PyQt6>=6.5.0", "reason": "Latest stable version"},
+      {"package": "PyQt6>=6.4.0", "reason": "Fallback to older stable"},
+      {"package": "PyQt6>=6.3.0", "reason": "Further fallback"},
+      {"package": "PyQt5>=5.15.0", "reason": "Legacy compatibility fallback"}
+    ],
+    "numpy": [
+      {"package": "numpy>=1.24.0", "reason": "Latest version"},
+      {"package": "numpy>=1.21.0", "reason": "Fallback for older systems"}
+    ],
+    "Pillow": [
+      {"package": "Pillow>=10.0.0", "reason": "Latest version"},
+      {"package": "Pillow>=9.0.0", "reason": "Fallback version"}
+    ]
+  },
+  "python_version": "3.13.7",
+  "build_type": "onefile",
+  "additional_flags": [],
+  "_comment": "Build configuration for multi-platform PyInstaller builds",
+  "_description": "Customize these settings for your specific project needs",
+  "resource_scanning": {
+    "scan_icons": true,
+    "scan_config": true,
+    "scan_data": true,
+    "scan_templates": true
+  },
+  "advanced": {
+    "exclude_modules": [],
+    "hidden_imports": [],
+    "add_data": [],
+    "icon_file": null,
+    "splash_image": null
+  },
+  "platform_specific": {
+    "windows": {
+      "version_info": {
+        "company": "Your Company",
+        "description": "Your Application Description",
+        "copyright": "© 2025 Your Company"
+      }
+    },
+    "linux": {
+      "desktop_file": true
+    },
+    "macos": {
+      "bundle_identifier": "com.yourcompany.yourapp",
+      "codesign": false
+    }
+  }
+}

@@ -1,0 +1,539 @@
+name: Multi-Platform PyInstaller Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_config:
+        description: 'Custom build configuration (JSON)'
+        required: false
+        default: '{}'
+      platforms:
+        description: 'Platforms to build (comma-separated: windows,linux,macos)'
+        required: false
+        default: 'windows,linux,macos'
+
+env:
+  BUILD_CLI_VERSION: '2.0.0-core'
+
+jobs:
+  # Read configuration from repository
+  config:
+    name: Read Build Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      config: ${{ steps.read-config.outputs.config }}
+      platforms: ${{ steps.read-config.outputs.platforms }}
+      architectures: ${{ steps.read-config.outputs.architectures }}
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read build configuration
+        id: read-config
+        run: |
+          # Default configuration
+          DEFAULT_CONFIG='{
+            "name": "${{ github.event.repository.name }}",
+            "version": "auto",
+            "append_version": true,
+            "append_date": false,
+            "windowed": false,
+            "main_file": "auto",
+            "platforms": ["windows", "linux", "macos"],
+            "architectures": {
+              "windows": ["x64", "x86"],
+              "linux": ["x64", "arm64"],
+              "macos": ["x64", "arm64"]
+            },
+            "python_version": "3.13.3",
+            "build_type": "onefile",
+            "additional_flags": []
+          }'
+
+          # Check for repository-specific configuration
+          if [[ -f ".github/build-config.json" ]]; then
+            echo "📋 Found repository build configuration"
+            REPO_CONFIG=$(cat .github/build-config.json)
+            # Merge with defaults (repo config takes precedence)
+            CONFIG=$(echo "$DEFAULT_CONFIG" "$REPO_CONFIG" | jq -s '.[0] * .[1]')
+          else
+            echo "📋 Using default build configuration"
+            CONFIG="$DEFAULT_CONFIG"
+          fi
+
+          # Override with workflow input if provided
+          if [[ "${{ github.event.inputs.build_config }}" != "" && "${{ github.event.inputs.build_config }}" != "{}" ]]; then
+            echo "🔧 Applying workflow input overrides"
+            WORKFLOW_CONFIG='${{ github.event.inputs.build_config }}'
+            CONFIG=$(echo "$CONFIG" "$WORKFLOW_CONFIG" | jq -s '.[0] * .[1]')
+          fi
+
+          # Override platforms from input if provided
+          if [[ "${{ github.event.inputs.platforms }}" != "" ]]; then
+            PLATFORMS_ARRAY=$(echo "${{ github.event.inputs.platforms }}" | jq -R 'split(",") | map(select(length > 0) | ascii_downcase)')
+            CONFIG=$(echo "$CONFIG" | jq --argjson platforms "$PLATFORMS_ARRAY" '.platforms = $platforms')
+          fi
+
+          echo "config=$CONFIG" >> $GITHUB_OUTPUT
+          echo "platforms=$(echo "$CONFIG" | jq -c '.platforms')" >> $GITHUB_OUTPUT
+          echo "architectures=$(echo "$CONFIG" | jq -c '.architectures')" >> $GITHUB_OUTPUT
+
+          echo "📊 Final Build Configuration:"
+          echo "$CONFIG" | jq .
+
+      - name: Generate build matrix
+        id: generate-matrix
+        run: |
+          CONFIG='${{ steps.read-config.outputs.config }}'
+          
+          # Generate matrix combinations
+          MATRIX=$(echo "$CONFIG" | jq -c '
+            .platforms as $platforms |
+            .architectures as $archs |
+            [
+              $platforms[] as $platform |
+              ($archs[$platform] // ["x64"]) as $platform_archs |
+              $platform_archs[] as $arch |
+              {
+                platform: $platform,
+                arch: $arch,
+                os: (
+                  if $platform == "windows" then "windows-latest"
+                  elif $platform == "linux" then "ubuntu-latest"  
+                  elif $platform == "macos" then (
+                    if $arch == "arm64" then "macos-14"  # M1+ runners
+                    else "macos-13"  # Intel runners
+                  )
+                  else "ubuntu-latest"
+                  end
+                ),
+                runner_arch: (
+                  if $platform == "macos" and $arch == "arm64" then "arm64"
+                  else "x64"
+                  end
+                )
+              }
+            ]
+          ')
+          
+          echo "matrix=$(echo "$MATRIX" | jq -c '{include: .}')" >> $GITHUB_OUTPUT
+          
+          echo "🏗️ Build Matrix:"
+          echo "$MATRIX" | jq .
+
+  # Build for each platform/architecture combination
+  build:
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: config
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.config.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ fromJson(needs.config.outputs.config).python_version }}
+          architecture: ${{ matrix.arch == 'x86' && 'x86' || 'x64' }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/share/virtualenvs
+          key: ${{ runner.os }}-${{ matrix.arch }}-pip-${{ hashFiles('**/requirements*.txt', '**/Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-pip-
+
+      - name: Install build CLI dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests
+
+      - name: Download/Setup Build CLI
+        shell: bash
+        run: |
+          # If build CLI is in the repo, use it
+          if [[ -f "build_cli.py" ]]; then
+            echo "📋 Using build CLI from repository root"
+            BUILD_CLI="python build_cli.py"
+          elif [[ -f "BuildSystems/build_cli.py" ]]; then
+            echo "📋 Using build CLI from BuildSystems directory"
+            BUILD_CLI="python BuildSystems/build_cli.py"
+          elif [[ -f "scripts/build_cli.py" ]]; then
+            echo "📋 Using build CLI from scripts directory"
+            BUILD_CLI="python scripts/build_cli.py"
+          elif [[ -f "tools/build_cli.py" ]]; then
+            echo "📋 Using build CLI from tools directory"
+            BUILD_CLI="python tools/build_cli.py"
+          else
+            echo "📥 Downloading build CLI"
+            curl -L -o build_cli.py "https://raw.githubusercontent.com/yourusername/build-script/main/build_cli.py"
+            BUILD_CLI="python build_cli.py"
+          fi
+          echo "BUILD_CLI=$BUILD_CLI" >> $GITHUB_ENV
+          echo "🔧 Build CLI command: $BUILD_CLI"
+
+      - name: Install project dependencies
+        shell: bash
+        run: |
+          # Install from various possible dependency files
+          if [[ -f "requirements.txt" ]]; then
+            echo "📦 Installing from requirements.txt"
+            pip install -r requirements.txt
+          elif [[ -f "Pipfile" ]]; then
+            echo "📦 Installing from Pipfile"
+            pip install pipenv
+            pipenv install --system
+          elif [[ -f "pyproject.toml" ]]; then
+            echo "📦 Installing from pyproject.toml"
+            pip install .
+          else
+            echo "📦 No dependency file found, continuing without installation"
+          fi
+
+      - name: Configure build parameters
+        shell: bash
+        run: |
+          CONFIG='${{ needs.config.outputs.config }}'
+          
+          # Extract configuration values
+          APP_NAME=$(echo "$CONFIG" | jq -r '.name')
+          VERSION=$(echo "$CONFIG" | jq -r '.version')
+          APPEND_VERSION=$(echo "$CONFIG" | jq -r '.append_version')
+          APPEND_DATE=$(echo "$CONFIG" | jq -r '.append_date')
+          WINDOWED=$(echo "$CONFIG" | jq -r '.windowed')
+          MAIN_FILE=$(echo "$CONFIG" | jq -r '.main_file')
+          BUILD_TYPE=$(echo "$CONFIG" | jq -r '.build_type')
+          ADDITIONAL_FLAGS=$(echo "$CONFIG" | jq -r '.additional_flags | join(" ")')
+          
+          # Auto-detect version if needed
+          if [[ "$VERSION" == "auto" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              VERSION=${GITHUB_REF#refs/tags/}
+              VERSION=${VERSION#v}  # Remove 'v' prefix if present
+            else
+              VERSION=$(date +%Y.%m.%d)
+            fi
+          fi
+          
+          # Store in environment for next step
+          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "APPEND_VERSION=$APPEND_VERSION" >> $GITHUB_ENV
+          echo "APPEND_DATE=$APPEND_DATE" >> $GITHUB_ENV
+          echo "WINDOWED=$WINDOWED" >> $GITHUB_ENV
+          echo "MAIN_FILE=$MAIN_FILE" >> $GITHUB_ENV
+          echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
+          echo "ADDITIONAL_FLAGS=$ADDITIONAL_FLAGS" >> $GITHUB_ENV
+          echo "PLATFORM=${{ matrix.platform }}" >> $GITHUB_ENV
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          
+          echo "🔧 Build Configuration:"
+          echo "  App Name: $APP_NAME"
+          echo "  Version: $VERSION" 
+          echo "  Platform: ${{ matrix.platform }}"
+          echo "  Architecture: ${{ matrix.arch }}"
+          echo "  Windowed: $WINDOWED"
+          echo "  Build Type: $BUILD_TYPE"
+
+      - name: Auto-detect main file
+        shell: bash
+        run: |
+          if [[ "$MAIN_FILE" == "auto" ]]; then
+            echo "🔍 Auto-detecting main file..."
+            $BUILD_CLI --scan python
+            
+            # Try common main file names
+            for main_candidate in "main.py" "app.py" "__main__.py" "run.py" "$APP_NAME.py"; do
+              if [[ -f "$main_candidate" ]]; then
+                echo "✅ Found main file: $main_candidate"
+                echo "MAIN_FILE=$main_candidate" >> $GITHUB_ENV
+                break
+              fi
+            done
+            
+            # If still not found, use CLI auto-detection
+            if [[ "$MAIN_FILE" == "auto" ]]; then
+              echo "🤖 Using CLI auto-detection for main file"
+              $BUILD_CLI --main --auto
+            else
+              $BUILD_CLI --main "$MAIN_FILE"
+            fi
+          else
+            echo "📋 Using specified main file: $MAIN_FILE"
+            $BUILD_CLI --main "$MAIN_FILE"
+          fi
+
+      - name: Configure build settings
+        shell: bash
+        run: |
+          echo "⚙️ Configuring build settings..."
+          
+          # Set application name
+          $BUILD_CLI --name "$APP_NAME"
+          
+          # Set version if provided
+          if [[ "$VERSION" != "auto" && "$VERSION" != "null" ]]; then
+            $BUILD_CLI --set-version "$VERSION"
+          fi
+          
+          # Configure version/date appending
+          if [[ "$APPEND_VERSION" == "false" ]]; then
+            $BUILD_CLI --no-version-append true
+          fi
+          
+          if [[ "$APPEND_DATE" == "true" ]]; then
+            $BUILD_CLI --date true
+          else
+            $BUILD_CLI --date false
+          fi
+          
+          # Configure console/windowed mode
+          if [[ "$WINDOWED" == "true" ]]; then
+            $BUILD_CLI --windowed
+          else
+            $BUILD_CLI --no-console false
+          fi
+
+      - name: Set project root and scan resources
+        shell: bash
+        run: |
+          echo "📂 Setting up project structure and scanning for resources..."
+          
+          # Set project root to repository root (if build script is in subdirectory)
+          if [[ -f "build_cli.py" ]]; then
+            # Build script is in root
+            $BUILD_CLI --set-root .
+          elif [[ -f "BuildSystems/build_cli.py" ]] || [[ -f "scripts/build_cli.py" ]] || [[ -f "tools/build_cli.py" ]]; then
+            # Build script is in subdirectory, set root to parent
+            $BUILD_CLI --set-root ..
+          else
+            # Try to find build script and set appropriate root
+            $BUILD_CLI --set-root .
+          fi
+          
+          # Show current project root
+          $BUILD_CLI --show-root
+          
+          # Targeted scanning with enhanced filename filtering
+          echo "🔍 Scanning for icons and splash screens..."
+          if [[ -d "assets" ]]; then
+            $BUILD_CLI --scan-dir ./assets --scan icons --contains icon
+            $BUILD_CLI --scan-dir ./assets --scan splash --contains splash
+            $BUILD_CLI --scan-dir ./assets --scan icons --contains logo
+          fi
+          if [[ -d "resources" ]]; then
+            $BUILD_CLI --scan-dir ./resources --scan icons --contains icon
+            $BUILD_CLI --scan-dir ./resources --scan splash --contains splash
+          fi
+          if [[ -d "images" ]]; then
+            $BUILD_CLI --scan-dir ./images --scan icons --contains icon
+            $BUILD_CLI --scan-dir ./images --scan icons --contains logo
+          fi
+          
+          echo "📋 Scanning for configuration files..."
+          if [[ -d "config" ]]; then
+            $BUILD_CLI --scan-dir ./config --scan config
+          fi
+          if [[ -d "configs" ]]; then
+            $BUILD_CLI --scan-dir ./configs --scan config
+          fi
+          # Look for config files with naming conventions
+          $BUILD_CLI --scan config --contains config
+          $BUILD_CLI --scan config --contains settings
+          
+          echo "📊 Scanning for data files..."
+          if [[ -d "data" ]]; then
+            $BUILD_CLI --scan-dir ./data --scan data
+          fi
+          if [[ -d "assets" ]]; then
+            $BUILD_CLI --scan-dir ./assets --scan data
+          fi
+          
+          echo "🎨 Scanning for templates..."
+          if [[ -d "templates" ]]; then
+            $BUILD_CLI --scan-dir ./templates --scan templates
+          fi
+          if [[ -d "views" ]]; then
+            $BUILD_CLI --scan-dir ./views --scan templates
+          fi
+          
+          echo "📚 Scanning for tutorials and help files (folder-first approach)..."
+          # Priority 1: Scan dedicated tutorial/help folders
+          if [[ -d "tutorials" ]]; then
+            echo "  📁 Scanning tutorials directory..."
+            $BUILD_CLI --scan-dir ./tutorials --scan tutorials
+            # Look for specific types within tutorials folder
+            $BUILD_CLI --scan-dir ./tutorials --scan tutorials --contains tutorial
+            $BUILD_CLI --scan-dir ./tutorials --scan tutorials --contains guide
+            $BUILD_CLI --scan-dir ./tutorials --scan tutorials --contains lesson
+          fi
+          if [[ -d "help" ]]; then
+            echo "  📁 Scanning help directory..."
+            $BUILD_CLI --scan-dir ./help --scan help
+            $BUILD_CLI --scan-dir ./help --scan help --contains help
+            $BUILD_CLI --scan-dir ./help --scan help --contains howto
+          fi
+          if [[ -d "docs" ]]; then
+            echo "  📁 Scanning docs directory..."
+            $BUILD_CLI --scan-dir ./docs --scan help --contains tutorial
+            $BUILD_CLI --scan-dir ./docs --scan help --contains guide  
+            $BUILD_CLI --scan-dir ./docs --scan help --contains manual
+          fi
+          
+          # Priority 2: Look for prefix-named files (TUTORIAL_, HELP_, etc.)
+          echo "  🏷️ Scanning for prefix-named tutorial/help files..."
+          $BUILD_CLI --scan tutorials --contains tutorial_
+          $BUILD_CLI --scan help --contains help_
+          $BUILD_CLI --scan help --contains guide_
+          fi
+          if [[ -d "help" ]]; then
+            $BUILD_CLI --scan-dir ./help --scan help
+          fi
+          
+          # Show what was found
+          echo "📋 Scanning results:"
+          $BUILD_CLI --show-memory
+
+      - name: Build application
+        shell: bash
+        run: |
+          echo "🏗️ Starting build process..."
+          
+          # Determine build type
+          if [[ "$BUILD_TYPE" == "onefile" ]]; then
+            BUILD_COMMAND="--start build --onefile"
+          elif [[ "$BUILD_TYPE" == "onedir" ]]; then
+            BUILD_COMMAND="--start build --onedir"
+          else
+            BUILD_COMMAND="--start build"
+          fi
+          
+          # Add additional flags if provided
+          if [[ "$ADDITIONAL_FLAGS" != "" && "$ADDITIONAL_FLAGS" != "null" ]]; then
+            BUILD_COMMAND="$BUILD_COMMAND $ADDITIONAL_FLAGS"
+          fi
+          
+          echo "🚀 Executing: $BUILD_CLI $BUILD_COMMAND"
+          $BUILD_CLI $BUILD_COMMAND
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          echo "📦 Preparing build artifacts..."
+          
+          # Create artifacts directory
+          mkdir -p artifacts
+          
+          # Find built files
+          if [[ -d "dist" ]]; then
+            echo "✅ Found dist directory"
+            
+            # Determine artifact name with platform and architecture
+            ARTIFACT_NAME="${APP_NAME}-${VERSION:-dev}-$PLATFORM-$ARCH"
+            
+            # Handle different build outputs
+            if [[ "$BUILD_TYPE" == "onefile" ]]; then
+              # Find the executable
+              if [[ "$PLATFORM" == "windows" ]]; then
+                find dist -name "*.exe" -exec cp {} "artifacts/${ARTIFACT_NAME}.exe" \;
+              else
+                find dist -type f -perm +111 -exec cp {} "artifacts/$ARTIFACT_NAME" \;
+              fi
+            else
+              # Archive the directory
+              if [[ "$PLATFORM" == "windows" ]]; then
+                (cd dist && 7z a "../artifacts/${ARTIFACT_NAME}.zip" .)
+              else
+                (cd dist && tar -czf "../artifacts/${ARTIFACT_NAME}.tar.gz" .)
+              fi
+            fi
+            
+            echo "📊 Artifact created: $ARTIFACT_NAME"
+            ls -la artifacts/
+          else
+            echo "❌ No dist directory found"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.APP_NAME }}-${{ env.VERSION || 'dev' }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 30
+
+  # Create release if this is a tag
+  release:
+    name: Create Release
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: release-artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Summary job
+  summary:
+    name: Build Summary
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build Summary
+        run: |
+          CONFIG='${{ needs.config.outputs.config }}'
+          APP_NAME=$(echo "$CONFIG" | jq -r '.name')
+          
+          echo "## 🏗️ Build Summary for $APP_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$CONFIG" | jq . >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Build results
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Build artifacts are available in the Actions tab." >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Release" >> $GITHUB_STEP_SUMMARY
+            echo "🎉 Release created at: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          fi

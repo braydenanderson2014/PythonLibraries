@@ -1,0 +1,15 @@
+{
+  "store_name": "My Cool Store",
+  "location": {
+    "state": "UT",
+    "city": "Salt Lake City",
+    "zip_code": "84123",
+    "address": "1060w 4800s"
+  },
+  "tax_settings": {
+    "include_state_tax": true,
+    "include_local_tax": true,
+    "include_federal_tax": false,
+    "auto_calculate": true
+  }
+}

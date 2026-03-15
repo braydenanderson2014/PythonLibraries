@@ -1,0 +1,25 @@
+{
+  "backup_date": "2026-03-08T12:27:23.278629",
+  "tenant_name": "John Cena",
+  "backup_type": "automatic_deletion_backup",
+  "tenant_data": {
+    "name": "John Cena",
+    "contact_info": {
+      "phone": "9999999999",
+      "email": "999@gmail.com"
+    },
+    "rent_amount": 2500.0,
+    "deposit_amount": 1000.0,
+    "rental_period": [
+      "2025-12-01",
+      "2026-12-01"
+    ],
+    "rent_due_date": "1",
+    "account_status": "active",
+    "delinquency_balance": 10000.0,
+    "overpayment_credit": 0.0,
+    "service_credit": 0.0,
+    "payment_history": [],
+    "notes": ""
+  }
+}

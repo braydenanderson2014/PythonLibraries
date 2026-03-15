@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hunger Games Lobby{% endblock %}</title>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Custom CSS with cache busting -->
+    <link rel="stylesheet" href="/static/css/style.css?v=2.0">
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Hunger Games Simulator</h1>
+            <div id="connection-status" class="status">Connecting...</div>
+        </header>
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer>
+            <p>Real-time multiplayer Hunger Games</p>
+        </footer>
+    </div>
+
+    <!-- Custom JavaScript -->
+    <script src="/static/js/app.js?v=1.1"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

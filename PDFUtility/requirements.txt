@@ -1,0 +1,28 @@
+# PDFUtility - Core Requirements
+# This file contains essential dependencies for the application
+
+# Core PDF processing
+PyPDF2>=3.0
+PyMuPDF>=1.26.0  # Alternative PDF library with good cross-platform support
+Pillow>=9.0      # Image processing
+
+# OCR support (cross-platform: Windows, Linux, Mac)
+pytesseract>=0.3.10  # Python wrapper for Tesseract OCR
+pdf2image>=1.16.0    # Convert PDF to images for OCR processing
+# Note: System tesseract-ocr binary must be installed separately:
+#   Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki
+#   Linux: sudo apt-get install tesseract-ocr
+#   Mac: brew install tesseract
+
+# File system monitoring and utilities
+watchdog>=3.0    # File system event monitoring
+psutil>=5.9.0    # System and process utilities
+
+# GUI Framework - PyQt6 preferred, PyQt5 fallback
+# Note: The build system will handle PyQt installation with fallback logic
+# PyQt6>=6.0  # Commented out - handled by build system
+# PyQt5>=5.15.0  # Commented out - handled by build system
+
+# Additional processing libraries (optional)
+requests>=2.25   # HTTP requests
+numpy>=1.20      # Numerical processing

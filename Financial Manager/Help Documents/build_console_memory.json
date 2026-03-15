@@ -1,0 +1,33 @@
+{
+  "scan_results": {
+    "icons": [
+      "D:\\PDFUtility\\.\\Build_Script.ico",
+      "D:\\PDFUtility\\.\\PDF_Utility.ico"
+    ],
+    "config": [
+      "D:\\PDFUtility\\.\\settings.json"
+    ],
+    "splash": [
+      "D:\\PDFUtility\\.\\Build_Script_splash.png",
+      "D:\\PDFUtility\\.\\Splash.png"
+    ],
+    "help": [
+      "Help Documents\\.\\HELP_AutoImport.md",
+      "Help Documents\\.\\HELP_EmojiTest.md",
+      "Help Documents\\.\\HELP_FileOperations.md",
+      "Help Documents\\.\\HELP_ImageConverter.md",
+      "Help Documents\\.\\HELP_MainApplication(1).md",
+      "Help Documents\\.\\HELP_MainApplication.md",
+      "Help Documents\\.\\HELP_Merge.md",
+      "Help Documents\\.\\HELP_Search.md",
+      "Help Documents\\.\\HELP_Settings.md",
+      "Help Documents\\.\\HELP_Split.md",
+      "Help Documents\\.\\HELP_TextToSpeech.md",
+      "Help Documents\\.\\HELP_Tutorial.md",
+      "Help Documents\\.\\HELP_WhiteSpace.md"
+    ]
+  },
+  "build_config": {},
+  "last_scan_type": "help",
+  "last_updated": "2025-08-03T17:35:20.003463"
+}

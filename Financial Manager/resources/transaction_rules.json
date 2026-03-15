@@ -1,0 +1,67 @@
+[
+  {
+    "identifier": "rule_2Bb4isktKLwj",
+    "pattern": "amazon",
+    "match_type": "contains",
+    "category": "Shopping",
+    "type": null,
+    "enabled": true,
+    "priority": 0,
+    "notes": "Online shopping",
+    "created_date": "2025-12-05T16:07:12.903461",
+    "last_used": "2025-12-05T16:09:21.643089",
+    "match_count": 11
+  },
+  {
+    "identifier": "rule_aZhh7dtgcHYi",
+    "pattern": "amazon",
+    "match_type": "contains",
+    "category": "Shopping",
+    "type": null,
+    "enabled": true,
+    "priority": 0,
+    "notes": "Online shopping",
+    "created_date": "2025-12-05T16:09:21.640081",
+    "last_used": null,
+    "match_count": 0
+  },
+  {
+    "identifier": "rule_K5iRWHrCY9J7",
+    "pattern": "starbucks|peet's|coffee",
+    "match_type": "regex",
+    "category": "Coffee",
+    "type": null,
+    "enabled": true,
+    "priority": 1,
+    "notes": "Coffee shops",
+    "created_date": "2025-12-05T16:07:12.903834",
+    "last_used": "2025-12-05T16:09:21.643106",
+    "match_count": 11
+  },
+  {
+    "identifier": "rule_8O6IQSevmQJk",
+    "pattern": "shell|chevron|76|arco|conoco|711|7eleven|Exxon|Exxon Mobil|bp|buc-ee's|circle k",
+    "match_type": "regex",
+    "category": "Gas & Fuel",
+    "type": null,
+    "enabled": true,
+    "priority": 2,
+    "notes": "Gas stations",
+    "created_date": "2025-12-05T16:07:49.842950",
+    "last_used": null,
+    "match_count": 0
+  },
+  {
+    "identifier": "rule_Vc4FbtSg9B5f",
+    "pattern": "paycheck",
+    "match_type": "contains",
+    "category": "Salary",
+    "type": "in",
+    "enabled": true,
+    "priority": 3,
+    "notes": "Salary deposits",
+    "created_date": "2025-12-05T16:07:12.904604",
+    "last_used": "2025-12-05T16:09:21.643151",
+    "match_count": 7
+  }
+]

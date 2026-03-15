@@ -1,0 +1,46 @@
+{
+    "event_probabilities": {
+        "morning": {
+            "random_death": 0.5,
+            "alliance_formation": 0.6,
+            "alliance_dissolve": 0.05,
+            "idle_events": 0.9,
+            "additional_idle": 0.7
+        },
+        "afternoon": {
+            "deceit_event": 0.4,
+            "weapon_interaction": 0.3,
+            "fight": 0.9,
+            "additional_fight": 0.6,
+            "idle_events": 0.95,
+            "additional_idle": 0.8
+        },
+        "evening": {
+            "sickness_death": 0.3,
+            "arena_event": 0.6,
+            "sponsor_gift": 0.4,
+            "additional_sponsor": 0.3,
+            "revive": 0.05,
+            "idle_events": 0.8
+        },
+        "cornucopia": {
+            "alliance_form": 0.3,
+            "runner_alliance": 0.3,
+            "alliance_dissolve": 0.05
+        },
+        "combat": {
+            "betrayal": 0.1,
+            "agree_stop": 0.3
+        },
+        "resource_decay": {
+            "starvation_death": 0.3,
+            "dehydration_death": 0.3,
+            "exposure_death": 0.4
+        }
+    },
+    "scaling": {
+        "day_scaling_start": 3,
+        "event_frequency_multiplier": 1.2,
+        "resource_decay_multiplier": 1.05
+    }
+}

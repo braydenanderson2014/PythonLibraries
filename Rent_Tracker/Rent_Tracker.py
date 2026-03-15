@@ -1,0 +1,4128 @@
+# Full polished rent tracker with all features integrated
+# Includes: calendar picker, tenant selector, per-tenant rent, filters, export, PIN login
+
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import hashlib
+import os
+import sys
+import json
+import csv
+import calendar
+import re
+import ctypes
+from datetime import datetime, timedelta
+from typing import List, Dict
+from tkcalendar import Calendar, DateEntry
+import threading
+import time
+import platform
+from plyer import notification
+
+# Try to import platform-specific notification libraries
+try:
+    if platform.system() == "Windows":
+        import win10toast
+        NOTIFICATIONS_AVAILABLE = True
+    else:
+        win10toast = None
+        NOTIFICATIONS_AVAILABLE = False
+except ImportError:
+    win10toast = None
+    NOTIFICATIONS_AVAILABLE = False
+
+PIN_FILE = "password_hash.txt"  # Renamed from pin_hash.txt to reflect new password system
+DATA_FILE = "accounts.json"
+
+MONTHS = ["January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"]
+
+
+class LoginManager:
+    def __init__(self, master, on_success):
+        self.master = master
+        self.on_success = on_success
+        self.master.withdraw()
+        # Close PyInstaller splash screen (if present)
+        try:
+            import pyi_splash
+            pyi_splash.close()
+        except ImportError:
+            # Not running as PyInstaller executable, or splash not enabled
+            pass
+        self.authenticate()
+
+    def hash_password(self, password):
+        """Hash password using SHA-256 with salt for security"""
+        import secrets
+        # Add salt for better security
+        salt = "RentTracker2025"  # Static salt for consistency
+        return hashlib.sha256((password + salt).encode()).hexdigest()
+
+    def set_password_window_icon(self, window):
+        """Set icon for password dialog window"""
+        try:
+            # List of possible icon file locations (prioritized)
+            icon_paths = [
+                "Rent_Tracker.ico",           # Exact name match
+                "rent_tracker.ico",           # Alternative naming
+                "icon.ico",                   # Generic icon name
+                "assets/Rent_Tracker.ico",    # Assets folder - exact name
+                "assets/rent_tracker.ico",    # Assets folder - alternative
+                "assets/icon.ico",            # Generic in assets
+                "icons/Rent_Tracker.ico",     # Icons folder - exact name
+                "icons/rent_tracker.ico",     # Icons folder - alternative
+                "icons/icon.ico"              # Generic in icons
+            ]
+            
+            # Get the directory where the script/executable is located
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable (PyInstaller)
+                if hasattr(sys, '_MEIPASS'):
+                    # PyInstaller temp directory
+                    script_dir = sys._MEIPASS
+                else:
+                    # Fallback to executable directory
+                    script_dir = os.path.dirname(sys.executable)
+            else:
+                # Running as script
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Try each icon path
+            for icon_name in icon_paths:
+                icon_path = os.path.join(script_dir, icon_name)
+                if os.path.exists(icon_path):
+                    try:
+                        window.iconbitmap(icon_path)
+                        print(f"✅ Password window icon loaded: {icon_path}")
+                        return
+                    except Exception as icon_error:
+                        print(f"❌ Failed to load password window icon {icon_path}: {icon_error}")
+                        continue
+            
+            print("⚠️ No icon file found for password window")
+            
+        except Exception as e:
+            print(f"Could not set password window icon: {e}")
+
+    def create_login_dialog(self, title, prompt_text, is_password=True):
+        """Create a custom login dialog with icon and better styling"""
+        try:
+            # Create a temporary root window if master is withdrawn
+            master_was_withdrawn = not self.master.winfo_viewable()
+            temp_root = None
+            
+            if master_was_withdrawn:
+                # Create a temporary invisible root window for the Toplevel
+                temp_root = tk.Tk()
+                temp_root.withdraw()  # Hide the temporary root
+                parent_window = temp_root
+            else:
+                parent_window = self.master
+            
+            # Create dialog window
+            login_window = tk.Toplevel(parent_window)
+            login_window.title(title)
+            login_window.geometry("450x300")
+            login_window.resizable(False, False)
+            
+            # Set icon for login window
+            self.set_password_window_icon(login_window)
+            
+            # Make sure the window appears and stays visible
+            login_window.deiconify()  # Ensure it's shown
+            login_window.lift()
+            login_window.attributes('-topmost', True)
+            login_window.after_idle(lambda: login_window.attributes('-topmost', False))
+            
+            # Make it modal but don't use transient if master is withdrawn
+            login_window.grab_set()
+            if not master_was_withdrawn:
+                login_window.transient(self.master)
+            
+            # Force focus and visibility
+            login_window.focus_force()
+            login_window.tkraise()
+            
+            # Center the window
+            login_window.update_idletasks()
+            x = (login_window.winfo_screenwidth() // 2) - (450 // 2)
+            y = (login_window.winfo_screenheight() // 2) - (300 // 2)
+            login_window.geometry(f"450x300+{x}+{y}")
+            
+            print(f"DEBUG: Created login dialog '{title}' - visible and centered")
+            
+            # Main frame with padding
+            main_frame = ttk.Frame(login_window)
+            main_frame.pack(fill="both", expand=True, padx=30, pady=30)
+            
+            # Header with icon emoji and title
+            header_frame = ttk.Frame(main_frame)
+            header_frame.pack(fill="x", pady=(0, 20))
+            
+            # Title with icon
+            title_label = ttk.Label(header_frame, text="🔒 Rent Tracker", 
+                                   font=("Arial", 18, "bold"), 
+                                   foreground="#2E86AB")
+            title_label.pack()
+            
+            # Subtitle
+            subtitle_label = ttk.Label(header_frame, text="Secure Login", 
+                                      font=("Arial", 12), 
+                                      foreground="gray")
+            subtitle_label.pack(pady=(5, 0))
+            
+            # Prompt text
+            prompt_label = ttk.Label(main_frame, text=prompt_text, 
+                                    font=("Arial", 11), 
+                                    foreground="#333333")
+            prompt_label.pack(pady=(0, 15))
+            
+            # Input frame
+            input_frame = ttk.Frame(main_frame)
+            input_frame.pack(fill="x", pady=(0, 20))
+            
+            # Input field
+            input_var = tk.StringVar()
+            
+            # Add trace to monitor input changes
+            def on_input_change(*args):
+                current_value = input_var.get()
+                print(f"DEBUG: Input changed - StringVar now contains: {'[HIDDEN]' if current_value else 'EMPTY'} (length: {len(current_value)})")
+            
+            input_var.trace("w", on_input_change)
+            
+            show_char = '*' if is_password else None
+            input_entry = ttk.Entry(input_frame, textvariable=input_var, 
+                                   show=show_char, font=("Arial", 12), 
+                                   width=30)
+            input_entry.pack(fill="x", pady=5)
+            
+            # Add additional debugging for entry widget events
+            def on_key_press(event):
+                print(f"DEBUG: Key pressed: {event.keysym}")
+                # Schedule a check of the values after the key is processed
+                login_window.after_idle(lambda: print(f"DEBUG: After key - StringVar: {'[HIDDEN]' if input_var.get() else 'EMPTY'}, Entry: {'[HIDDEN]' if input_entry.get() else 'EMPTY'}"))
+            
+            input_entry.bind("<KeyPress>", on_key_press)
+            
+            # Show/Hide toggle for passwords
+            if is_password:
+                show_var = tk.BooleanVar()
+                def toggle_visibility():
+                    if show_var.get():
+                        input_entry.config(show='')
+                    else:
+                        input_entry.config(show='*')
+                
+                show_checkbox = ttk.Checkbutton(input_frame, text="Show password", 
+                                               variable=show_var, 
+                                               command=toggle_visibility)
+                show_checkbox.pack(anchor="w", pady=(5, 0))
+            
+            # Button frame
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x", pady=(10, 0))
+            
+            # Result variable
+            result = [None]  # Use list to allow modification in nested functions
+            dialog_completed = [False]  # Track if dialog completed successfully
+            
+            def on_ok():
+                print("DEBUG: on_ok() function started")
+                
+                # Force an update to ensure any pending changes are processed
+                try:
+                    login_window.update_idletasks()
+                    print("DEBUG: login_window.update_idletasks() completed")
+                except Exception as update_error:
+                    print(f"DEBUG: Error in update_idletasks: {update_error}")
+                
+                # Try multiple ways to get the input value
+                input_value = input_var.get()
+                print(f"DEBUG: input_var.get() returned: {'[HIDDEN]' if input_value else 'EMPTY'}")
+                
+                # Also try getting directly from the entry widget
+                try:
+                    direct_value = input_entry.get()
+                    print(f"DEBUG: input_entry.get() returned: {'[HIDDEN]' if direct_value else 'EMPTY'}")
+                    print(f"DEBUG: Values match: {input_value == direct_value}")
+                    
+                    # Use the direct value if input_var is empty but direct isn't
+                    if not input_value and direct_value:
+                        print("DEBUG: Using direct value since input_var was empty")
+                        input_value = direct_value
+                except Exception as direct_error:
+                    print(f"DEBUG: Error getting direct value: {direct_error}")
+                
+                print(f"DEBUG: Final input value: {'[HIDDEN]' if input_value else 'EMPTY'}")
+                print(f"DEBUG: Input value length: {len(input_value) if input_value else 0}")
+                print(f"DEBUG: Input value type: {type(input_value)}")
+                print(f"DEBUG: Input value repr: {repr(input_value)}")
+                
+                # Store the result immediately
+                result[0] = input_value
+                dialog_completed[0] = True
+                
+                print(f"DEBUG: Result stored: {'[HIDDEN]' if result[0] else 'EMPTY'}")
+                print(f"DEBUG: Result type: {type(result[0])}")
+                print("DEBUG: About to destroy login window...")
+                
+                try:
+                    login_window.destroy()
+                    print("DEBUG: Login window destroyed successfully")
+                except Exception as destroy_error:
+                    print(f"DEBUG ERROR: Failed to destroy login window: {destroy_error}")
+                if temp_root:
+                    try:
+                        temp_root.destroy()
+                        print("DEBUG: Temp root destroyed successfully")
+                    except Exception as temp_destroy_error:
+                        print(f"DEBUG ERROR: Failed to destroy temp root: {temp_destroy_error}")
+            
+            def on_cancel():
+                print("DEBUG: on_cancel() called - user clicked cancel")
+                result[0] = None
+                dialog_completed[0] = True
+                try:
+                    login_window.destroy()
+                    print("DEBUG: Login window destroyed after cancel")
+                except Exception as destroy_error:
+                    print(f"DEBUG ERROR: Failed to destroy login window after cancel: {destroy_error}")
+                if temp_root:
+                    try:
+                        temp_root.destroy()
+                        print("DEBUG: Temp root destroyed after cancel")
+                    except Exception as temp_destroy_error:
+                        print(f"DEBUG ERROR: Failed to destroy temp root after cancel: {temp_destroy_error}")
+            
+            # Buttons with better styling
+            ok_button = ttk.Button(button_frame, text="🔓 Login", command=on_ok)
+            ok_button.pack(side="right", padx=(10, 0))
+            
+            cancel_button = ttk.Button(button_frame, text="❌ Cancel", command=on_cancel)
+            cancel_button.pack(side="right")
+            
+            # Bind Enter key to OK
+            def on_enter(event):
+                print("DEBUG: Enter key pressed, calling on_ok()")
+                on_ok()
+            login_window.bind('<Return>', on_enter)
+            login_window.bind('<KP_Enter>', on_enter)
+            
+            # Focus on input
+            input_entry.focus()
+            
+            print("DEBUG: Input entry focused, waiting for user interaction...")
+            
+            # Wait for dialog to close with error handling
+            try:
+                print("DEBUG: Starting wait_window()...")
+                login_window.wait_window()
+                print("DEBUG: wait_window() completed")
+            except Exception as wait_error:
+                print(f"DEBUG ERROR: Error waiting for login window: {wait_error}")
+                # If wait_window fails, try to get the result anyway
+                if not dialog_completed[0]:
+                    print("DEBUG: Dialog not completed, setting result to None")
+                    result[0] = None
+            
+            # Final cleanup
+            if temp_root:
+                try:
+                    if temp_root.winfo_exists():
+                        temp_root.destroy()
+                except:
+                    pass  # Ignore cleanup errors
+            
+            print(f"DEBUG: Login dialog completed, result: {'[HIDDEN]' if result[0] else 'None/Empty'}")
+            print(f"DEBUG: Final result type: {type(result[0])}")
+            print(f"DEBUG: Final result repr: {repr(result[0])}")
+            return result[0]
+            
+        except Exception as e:
+            print(f"Failed to create login dialog: {e}")
+            # Instead of falling back to old dialogs, return None to indicate failure
+            # This will trigger the application to close gracefully rather than show old UI
+            messagebox.showerror("Login Error", 
+                               f"Failed to create login dialog: {e}\n\n"
+                               "The application will now exit. Please restart to try again.")
+            return None
+
+    def authenticate(self):
+        # Check for legacy PIN file and offer migration
+        if os.path.exists("pin_hash.txt") and not os.path.exists(PIN_FILE):
+            self.migrate_from_pin()
+        elif os.path.exists(PIN_FILE):
+            self.prompt_existing_password()
+        else:
+            self.set_new_password()
+
+    def migrate_from_pin(self):
+        """Migrate from old 4-digit PIN to new password system"""
+        migrate = messagebox.askyesno(
+            "Security Upgrade", 
+            "Your current 4-digit PIN will be upgraded to a more secure password system.\n\n"
+            "• Passwords can be up to 30 characters\n"
+            "• Support numbers, letters, symbols\n"
+            "• Much more secure than 4-digit PINs\n\n"
+            "Would you like to upgrade now?"
+        )
+        
+        if migrate:
+            # Verify old PIN first
+            while True:  # Loop until successful verification or user cancels
+                pin = self.create_login_dialog("Verify Current PIN", 
+                                             "Enter your current 4-digit PIN to upgrade to password system:", 
+                                             is_password=True)
+                if not pin:
+                    # User cancelled - offer to keep using legacy PIN
+                    keep_legacy = messagebox.askyesno("Migration Cancelled", 
+                                                    "PIN upgrade cancelled.\n\n"
+                                                    "Would you like to continue using your 4-digit PIN?")
+                    if keep_legacy:
+                        self.prompt_existing_pin_legacy()
+                    else:
+                        self.master.destroy()
+                    return
+                
+                try:
+                    with open("pin_hash.txt", "r") as f:
+                        saved_hash = f.read().strip()  # Strip whitespace!
+                    
+                    old_hash = hashlib.sha256(pin.encode()).hexdigest()
+                    
+                    # Debug information (can be removed later)
+                    print(f"DEBUG: Entered PIN: {pin}")
+                    print(f"DEBUG: Generated hash: {old_hash}")
+                    print(f"DEBUG: Saved hash: {saved_hash}")
+                    print(f"DEBUG: Hashes match: {old_hash == saved_hash}")
+                    
+                    if old_hash == saved_hash:
+                        # Old PIN verified, now set new password
+                        print("DEBUG: PIN verified successfully, calling set_new_password...")
+                        # Pass a callback to remove old PIN file only AFTER successful password creation
+                        self.set_new_password(migration_callback=lambda: os.remove("pin_hash.txt"))
+                        return  # Exit after successful verification
+                    else:
+                        # PIN incorrect - show error and try again
+                        retry = messagebox.askyesno("Incorrect PIN", 
+                                                  "The PIN you entered is incorrect.\n\n"
+                                                  "Would you like to try again?")
+                        if not retry:
+                            # User doesn't want to retry - offer to keep legacy PIN
+                            keep_legacy = messagebox.askyesno("Keep Legacy PIN?", 
+                                                            "Would you like to continue using your 4-digit PIN?")
+                            if keep_legacy:
+                                self.prompt_existing_pin_legacy()
+                            else:
+                                self.master.destroy()
+                            return
+                        # Loop continues for retry
+                        
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to read PIN file: {e}")
+                    self.master.destroy()
+                    return
+        else:
+            # Keep using old PIN system temporarily
+            self.prompt_existing_pin_legacy()
+
+    def set_new_password(self, migration_callback=None):
+        """Set a new password with enhanced validation"""
+        print("DEBUG: Entering set_new_password method...")
+        print(f"DEBUG: Migration callback provided: {migration_callback is not None}")
+        
+        try:
+            # Temporarily show the master window so Toplevel works properly
+            master_was_withdrawn = not self.master.winfo_viewable()
+            if master_was_withdrawn:
+                self.master.deiconify()
+                self.master.withdraw()  # Hide it again but keep it "mapped"
+            
+            password_window = tk.Toplevel(self.master)
+            print("DEBUG: Created password window successfully")
+            password_window.title("🔒 Set New Password")
+            password_window.geometry("500x500")  # Made taller: 400 -> 500
+            
+            # Set icon for password window
+            self.set_password_window_icon(password_window)
+            
+            # Make sure the window appears even if master is withdrawn
+            password_window.lift()
+            password_window.attributes('-topmost', True)
+            password_window.after_idle(lambda: password_window.attributes('-topmost', False))
+            
+            password_window.grab_set()
+            password_window.resizable(False, False)
+            print("DEBUG: Configured password window properties")
+            
+            # Force the window to be visible
+            password_window.focus_force()
+            password_window.tkraise()
+            
+            # Center the window
+            password_window.update_idletasks()
+            x = (password_window.winfo_screenwidth() // 2) - (500 // 2)
+            y = (password_window.winfo_screenheight() // 2) - (500 // 2)  # Updated for new height
+            password_window.geometry(f"500x500+{x}+{y}")
+            print("DEBUG: Centered password window")
+        except Exception as e:
+            print(f"DEBUG ERROR: Failed to create password window: {e}")
+            messagebox.showerror("Error", f"Failed to create password dialog: {e}")
+            if migration_callback:
+                self.prompt_existing_pin_legacy()
+            else:
+                self.master.destroy()
+            return        # Header
+        header_frame = ttk.Frame(password_window)
+        header_frame.pack(fill="x", padx=20, pady=20)
+        
+        ttk.Label(header_frame, text="Create New Password", 
+                 font=("Arial", 16, "bold")).pack()
+        ttk.Label(header_frame, text="Secure your rent tracker with a strong password", 
+                 font=("Arial", 10), foreground="gray").pack()
+        
+        # Password requirements
+        req_frame = ttk.LabelFrame(password_window, text="Password Requirements")
+        req_frame.pack(fill="x", padx=20, pady=10)
+        
+        requirements_text = """• Length: 6-30 characters
+• Can include: letters (A-Z, a-z), numbers (0-9), symbols (!@#$%^&*()_+-=[]{}|;:,.<>?)
+• Recommended: Mix of uppercase, lowercase, numbers, and symbols
+• No spaces allowed"""
+        
+        ttk.Label(req_frame, text=requirements_text, font=("Arial", 9)).pack(padx=10, pady=10)
+        
+        # Password input
+        input_frame = ttk.Frame(password_window)
+        input_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(input_frame, text="New Password:", font=("Arial", 10, "bold")).pack(anchor="w")
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(input_frame, textvariable=password_var, show='*', font=("Arial", 12), width=40)
+        password_entry.pack(fill="x", pady=5)
+        
+        ttk.Label(input_frame, text="Confirm Password:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(10, 0))
+        confirm_var = tk.StringVar()
+        confirm_entry = ttk.Entry(input_frame, textvariable=confirm_var, show='*', font=("Arial", 12), width=40)
+        confirm_entry.pack(fill="x", pady=5)
+        
+        # Show/Hide password toggle
+        show_var = tk.BooleanVar()
+        def toggle_password_visibility():
+            if show_var.get():
+                password_entry.config(show='')
+                confirm_entry.config(show='')
+            else:
+                password_entry.config(show='*')
+                confirm_entry.config(show='*')
+        
+        ttk.Checkbutton(input_frame, text="Show passwords", variable=show_var, 
+                       command=toggle_password_visibility).pack(anchor="w", pady=5)
+        
+        # Strength indicator
+        strength_frame = ttk.Frame(input_frame)
+        strength_frame.pack(fill="x", pady=5)
+        
+        strength_label = ttk.Label(strength_frame, text="Password Strength: ", font=("Arial", 9))
+        strength_label.pack(side="left")
+        
+        strength_indicator = ttk.Label(strength_frame, text="", font=("Arial", 9, "bold"))
+        strength_indicator.pack(side="left")
+        
+        def update_strength(*args):
+            password = password_var.get()
+            strength, color = self.calculate_password_strength(password)
+            strength_indicator.config(text=strength, foreground=color)
+        
+        password_var.trace("w", update_strength)
+        
+        # Buttons
+        button_frame = ttk.Frame(password_window)
+        button_frame.pack(pady=20)
+        
+        def save_password():
+            print("DEBUG: save_password() called")
+            password = password_var.get()
+            confirm = confirm_var.get()
+            
+            print(f"DEBUG: Password length: {len(password)}")
+            print(f"DEBUG: Passwords match: {password == confirm}")
+            
+            if not self.validate_password(password):
+                print("DEBUG: Password validation failed")
+                return
+            
+            if password != confirm:
+                messagebox.showerror("Error", "Passwords do not match.")
+                return
+            
+            try:
+                print("DEBUG: Attempting to save password to file...")
+                with open(PIN_FILE, "w") as f:
+                    f.write(self.hash_password(password))
+                print("DEBUG: Password saved successfully")
+                
+                # If this was a migration, remove the old PIN file only AFTER successful password creation
+                if migration_callback:
+                    print("DEBUG: Calling migration callback...")
+                    migration_callback()
+                    print("DEBUG: Migration callback completed")
+                
+                messagebox.showinfo("Password Set", "Password has been set successfully!")
+                print("DEBUG: Destroying password window...")
+                password_window.destroy()
+                print("DEBUG: Calling unlock()...")
+                self.unlock()
+                print("DEBUG: unlock() completed")
+            except Exception as e:
+                print(f"DEBUG ERROR: Failed to save password: {e}")
+                messagebox.showerror("Error", f"Failed to save password: {e}")
+                return
+        
+        def cancel():
+            password_window.destroy()
+            # If this was a migration that got cancelled, fall back to legacy PIN
+            if migration_callback:
+                self.prompt_existing_pin_legacy()
+            else:
+                self.master.destroy()
+        
+        ttk.Button(button_frame, text="💾 Set Password", command=save_password).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="❌ Cancel", command=cancel).pack(side="left", padx=5)
+        
+        # Focus on password entry
+        password_entry.focus()
+
+    def validate_password(self, password):
+        """Validate password meets requirements"""
+        if len(password) < 6:
+            messagebox.showerror("Invalid Password", "Password must be at least 6 characters long.")
+            return False
+        
+        if len(password) > 30:
+            messagebox.showerror("Invalid Password", "Password must be 30 characters or less.")
+            return False
+        
+        if ' ' in password:
+            messagebox.showerror("Invalid Password", "Password cannot contain spaces.")
+            return False
+        
+        # Check for valid characters (letters, numbers, common symbols)
+        import re
+        valid_chars = re.match(r'^[A-Za-z0-9!@#$%^&*()_+\-=\[\]{}|;:,.<>?]+$', password)
+        if not valid_chars:
+            messagebox.showerror("Invalid Password", 
+                               "Password contains invalid characters.\n\n"
+                               "Allowed: letters, numbers, and symbols:\n"
+                               "!@#$%^&*()_+-=[]{}|;:,.<>?")
+            return False
+        
+        return True
+
+    def calculate_password_strength(self, password):
+        """Calculate password strength and return (description, color)"""
+        if len(password) == 0:
+            return "", "black"
+        
+        score = 0
+        
+        # Length scoring
+        if len(password) >= 8:
+            score += 2
+        elif len(password) >= 6:
+            score += 1
+        
+        # Character variety
+        if any(c.islower() for c in password):
+            score += 1
+        if any(c.isupper() for c in password):
+            score += 1
+        if any(c.isdigit() for c in password):
+            score += 1
+        if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+            score += 1
+        
+        # Length bonus
+        if len(password) >= 12:
+            score += 1
+        
+        if score <= 2:
+            return "Weak", "red"
+        elif score <= 4:
+            return "Moderate", "orange"
+        elif score <= 5:
+            return "Strong", "green"
+        else:
+            return "Very Strong", "darkgreen"
+
+    def prompt_existing_password(self):
+        """Prompt for existing password"""
+        failed_attempts = 0
+        max_attempts = 3
+        
+        while True:  # Loop until successful login or user cancels
+            print("DEBUG: Prompting for existing password...")
+            password = self.create_login_dialog("🔒 Enter Password", 
+                                              "Enter your password to access Rent Tracker:", 
+                                              is_password=True)
+            print(f"DEBUG: create_login_dialog returned: {'[HIDDEN]' if password else 'None/Empty'}")
+            print(f"DEBUG: Password type: {type(password)}, length: {len(password) if password is not None else 'N/A'}")
+            print(f"DEBUG: Password is None: {password is None}")
+            print(f"DEBUG: Password == '': {password == '' if password is not None else 'N/A'}")
+            
+            if password is None:
+                # User cancelled or dialog failed
+                print("DEBUG: Password is None - user cancelled or dialog failed")
+                try:
+                    print("DEBUG: Attempting to destroy master window...")
+                    self.master.destroy()
+                    print("DEBUG: Master window destroyed successfully")
+                except Exception as destroy_error:
+                    print(f"DEBUG ERROR: Failed to destroy master window: {destroy_error}")
+                return
+            
+            if password == "":
+                # User entered empty password - show error and retry
+                print("DEBUG: Empty password entered - showing error and retrying")
+                messagebox.showerror("Empty Password", "Please enter a password.")
+                continue  # Continue the loop to try again
+            
+            try:
+                print("DEBUG: Attempting to read password file...")
+                with open(PIN_FILE, "r") as f:
+                    saved_hash = f.read().strip()
+                print("DEBUG: Password file read successfully")
+                
+                input_hash = self.hash_password(password)
+                print(f"DEBUG: Input password hash: {input_hash}")
+                print(f"DEBUG: Stored password hash: {saved_hash}")
+                print(f"DEBUG: Password verification - hashes match: {input_hash == saved_hash}")
+                
+                if input_hash == saved_hash:
+                    # Password correct - unlock the application
+                    print("DEBUG: Password correct - calling unlock()")
+                    self.unlock()
+                    return
+                else:
+                    # Password incorrect
+                    failed_attempts += 1
+                    print(f"DEBUG: Password incorrect - attempt {failed_attempts}/{max_attempts}")
+                    
+                    if failed_attempts >= max_attempts:
+                        # After max attempts, offer password reset
+                        reset_password = messagebox.askyesno("Too Many Failed Attempts", 
+                                                           f"You have entered an incorrect password {max_attempts} times.\n\n"
+                                                           "Would you like to reset your password?\n"
+                                                           "(This will allow you to set a new password)")
+                        if reset_password:
+                            # Delete the current password file and set a new one
+                            try:
+                                os.remove(PIN_FILE)
+                                print("DEBUG: Removed old password file for reset")
+                                messagebox.showinfo("Password Reset", 
+                                                  "Your password has been reset.\n"
+                                                  "You will now create a new password.")
+                                self.set_new_password()
+                                return
+                            except Exception as reset_error:
+                                print(f"DEBUG ERROR: Failed to reset password: {reset_error}")
+                                messagebox.showerror("Reset Failed", 
+                                                   f"Failed to reset password: {reset_error}")
+                                self.master.destroy()
+                                return
+                        else:
+                            # User doesn't want to reset - exit
+                            self.master.destroy()
+                            return
+                    else:
+                        # Show retry dialog
+                        retry = messagebox.askyesno("Incorrect Password", 
+                                                  f"The password you entered is incorrect.\n"
+                                                  f"Attempts: {failed_attempts}/{max_attempts}\n\n"
+                                                  "Would you like to try again?")
+                        if not retry:
+                            print("DEBUG: User chose not to retry - destroying master window")
+                            try:
+                                self.master.destroy()
+                            except Exception as destroy_error:
+                                print(f"DEBUG ERROR: Failed to destroy master window: {destroy_error}")
+                            return
+                        # Loop continues for retry
+                        print("DEBUG: User chose to retry - continuing loop")
+                    
+            except Exception as e:
+                print(f"DEBUG ERROR: Exception in password verification: {e}")
+                messagebox.showerror("Error", f"Failed to read password file: {e}")
+                try:
+                    self.master.destroy()
+                except Exception as destroy_error:
+                    print(f"DEBUG ERROR: Failed to destroy master window: {destroy_error}")
+                return
+
+    def prompt_existing_pin_legacy(self):
+        """Legacy PIN system for backwards compatibility"""
+        while True:  # Loop until successful login or user cancels
+            pin = self.create_login_dialog("Enter PIN", 
+                                         "Enter your 4-digit PIN:", 
+                                         is_password=True)
+            if not pin:
+                # User cancelled
+                self.master.destroy()
+                return
+                
+            try:
+                with open("pin_hash.txt", "r") as f:
+                    saved_hash = f.read().strip()  # Strip whitespace!
+                    
+                if hashlib.sha256(pin.encode()).hexdigest() == saved_hash:
+                    # PIN correct - unlock the application
+                    self.unlock()
+                    return
+                else:
+                    # PIN incorrect - show error and try again
+                    retry = messagebox.askyesno("Incorrect PIN", 
+                                              "The PIN you entered is incorrect.\n\n"
+                                              "Would you like to try again?")
+                    if not retry:
+                        self.master.destroy()
+                        return
+                    # Loop continues for retry
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to read PIN file: {e}")
+                self.master.destroy()
+                return
+
+    def unlock(self):
+        print("DEBUG: unlock() method called")
+        try:
+            print(f"DEBUG: Master window state before operations: {self.master.state()}")
+            print(f"DEBUG: Master window exists: {self.master.winfo_exists()}")
+            
+            # Ensure master window is properly shown
+            self.master.deiconify()
+            self.master.lift()
+            self.master.focus_force()
+            
+            print(f"DEBUG: Master window state after deiconify: {self.master.state()}")
+            print("DEBUG: About to call on_success callback...")
+            
+            # Call the success callback to launch the app
+            self.on_success()
+            
+            print("DEBUG: on_success callback completed successfully")
+        except Exception as e:
+            print(f"DEBUG ERROR: unlock() failed with exception: {e}")
+            import traceback
+            print(f"DEBUG ERROR: Full traceback: {traceback.format_exc()}")
+            
+            # Try to show error to user if possible
+            try:
+                messagebox.showerror("Startup Error", 
+                                   f"Failed to start application: {e}\n\n"
+                                   "The application will now exit.")
+            except:
+                print("DEBUG ERROR: Could not show error dialog")
+            
+            # Try to destroy master window
+            try:
+                self.master.destroy()
+            except:
+                print("DEBUG ERROR: Could not destroy master window")
+                # Force exit if nothing else works
+                import sys
+                sys.exit(1)
+
+
+class TenantSelector(tk.Toplevel):
+    def __init__(self, master, tenant_names, on_select):
+        super().__init__(master)
+        self.title("All Tenants")
+        self.geometry("300x400")
+        
+        # Try to use the same icon as the main window
+        try:
+            self.iconbitmap(master.iconbitmap())
+        except:
+            pass
+            
+        self.on_select = on_select
+        self.listbox = tk.Listbox(self)
+        self.listbox.pack(fill="both", expand=True, padx=10, pady=10)
+        for name in sorted(tenant_names):
+            self.listbox.insert(tk.END, name)
+        ttk.Button(self, text="Go To Tenant", command=self.select).pack(pady=5)
+
+    def select(self):
+        selected = self.listbox.curselection()
+        if selected:
+            tenant_name = self.listbox.get(selected[0])
+            self.on_select(tenant_name)
+            self.destroy()
+
+class RentNotificationDaemon:
+    """Background daemon for rent due date notifications and late fee management"""
+    
+    def __init__(self, app_instance):
+        self.app = app_instance
+        self.running = False
+        self.thread = None
+        self.notification_settings = {
+            'enabled': True,
+            'check_interval': 3600,  # Check every hour (in seconds)
+            'advance_warning_days': [7, 3, 1],  # Warn 7, 3, and 1 days before due date
+            'overdue_reminder_days': [1, 3, 7, 14],  # Remind 1, 3, 7, 14 days after due date
+            'quiet_hours_start': 22,  # 10 PM
+            'quiet_hours_end': 8,     # 8 AM
+        }
+        self.last_notifications = {}  # Track when we last notified about each tenant
+        
+    def start_daemon(self):
+        """Start the notification daemon in a background thread"""
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self._daemon_loop, daemon=True)
+            self.thread.start()
+            print("📢 Rent Notification Daemon started")
+    
+    def stop_daemon(self):
+        """Stop the notification daemon"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1)
+        print("📢 Rent Notification Daemon stopped")
+    
+    def _daemon_loop(self):
+        """Main daemon loop - runs in background thread"""
+        while self.running:
+            try:
+                if self.notification_settings['enabled']:
+                    self._check_all_tenants()
+                time.sleep(self.notification_settings['check_interval'])
+            except Exception as e:
+                print(f"❌ Notification daemon error: {e}")
+                time.sleep(60)  # Wait a minute before retrying
+    
+    def _check_all_tenants(self):
+        """Check all tenants for due dates and send notifications if needed"""
+        current_date = datetime.now()
+        
+        # Skip during quiet hours
+        if self._is_quiet_time(current_date):
+            return
+            
+        for tenant_name, tenant_data in self.app.accounts.items():
+            self._check_tenant_notifications(tenant_name, tenant_data, current_date)
+    
+    def _is_quiet_time(self, current_time):
+        """Check if current time is during quiet hours"""
+        hour = current_time.hour
+        start = self.notification_settings['quiet_hours_start']
+        end = self.notification_settings['quiet_hours_end']
+        
+        if start > end:  # Quiet hours cross midnight
+            return hour >= start or hour < end
+        else:
+            return start <= hour < end
+    
+    def _check_tenant_notifications(self, tenant_name, tenant_data, current_date):
+        """Check if tenant needs notifications and send them"""
+        due_day = tenant_data.get('due_day', 1)  # Default to 1st of month
+        disabled_dates = tenant_data.get('disabled_notification_dates', [])
+        
+        # Calculate due date for current month
+        current_month = current_date.month
+        current_year = current_date.year
+        
+        try:
+            due_date = datetime(current_year, current_month, due_day)
+        except ValueError:
+            # Handle months with fewer days (e.g., February 30th)
+            import calendar
+            last_day = calendar.monthrange(current_year, current_month)[1]
+            due_day = min(due_day, last_day)
+            due_date = datetime(current_year, current_month, due_day)
+        
+        # Skip if notifications disabled for this date
+        date_key = due_date.strftime("%Y-%m-%d")
+        if date_key in disabled_dates:
+            return
+        
+        # Calculate days until/since due date
+        days_diff = (due_date.date() - current_date.date()).days
+        
+        # Generate notification key for tracking
+        notification_key = f"{tenant_name}_{current_year}_{current_month}_{days_diff}"
+        
+        # Check if we've already notified for this scenario
+        if notification_key in self.last_notifications:
+            last_notified = self.last_notifications[notification_key]
+            if (current_date - last_notified).total_seconds() < 24 * 3600:  # Don't spam - once per day max
+                return
+        
+        # Check for advance warnings
+        if days_diff > 0 and days_diff in self.notification_settings['advance_warning_days']:
+            self._send_advance_warning(tenant_name, due_date, days_diff)
+            self.last_notifications[notification_key] = current_date
+        
+        # Check for due date notifications
+        elif days_diff == 0:
+            self._send_due_today_notification(tenant_name, due_date)
+            self.last_notifications[notification_key] = current_date
+        
+        # Check for overdue notifications
+        elif days_diff < 0 and abs(days_diff) in self.notification_settings['overdue_reminder_days']:
+            self._send_overdue_notification(tenant_name, due_date, abs(days_diff))
+            self.last_notifications[notification_key] = current_date
+            
+            # Apply late fee if configured
+            self._apply_late_fee_if_needed(tenant_name, tenant_data, due_date, abs(days_diff))
+    
+    def _send_advance_warning(self, tenant_name, due_date, days_until):
+        """Send advance warning notification"""
+        title = "🏠 Rent Reminder"
+        message = f"Rent for {tenant_name} is due in {days_until} day{'s' if days_until != 1 else ''} ({due_date.strftime('%B %d, %Y')})"
+        self._send_notification(title, message)
+    
+    def _send_due_today_notification(self, tenant_name, due_date):
+        """Send due today notification"""
+        title = "🚨 Rent Due Today"
+        message = f"Rent for {tenant_name} is due TODAY ({due_date.strftime('%B %d, %Y')})"
+        self._send_notification(title, message)
+    
+    def _send_overdue_notification(self, tenant_name, due_date, days_overdue):
+        """Send overdue notification"""
+        title = "⚠️ Rent Overdue"
+        message = f"Rent for {tenant_name} is {days_overdue} day{'s' if days_overdue != 1 else ''} overdue (Due: {due_date.strftime('%B %d, %Y')})"
+        self._send_notification(title, message)
+    
+    def _send_notification(self, title, message):
+        """Send cross-platform notification"""
+        try:
+            notification.notify(
+                title=title,
+                message=message,
+                app_name="Rent Tracker",
+                timeout=10
+            )
+            print(f"📢 Notification sent: {title} - {message}")
+        except Exception as e:
+            print(f"❌ Failed to send notification: {e}")
+    
+    def _apply_late_fee_if_needed(self, tenant_name, tenant_data, due_date, days_overdue):
+        """Apply late fee if configured and not already applied"""
+        late_fee_config = tenant_data.get('late_fee', {})
+        if not late_fee_config.get('enabled', False):
+            return
+        
+        fee_amount = late_fee_config.get('amount', 0)
+        grace_period = late_fee_config.get('grace_period_days', 3)
+        
+        # Only apply after grace period
+        if days_overdue <= grace_period:
+            return
+        
+        # Check if late fee already applied for this month
+        current_month = due_date.strftime("%B")
+        payments = tenant_data.get("payments", [])
+        
+        # Look for existing late fee payment for this month
+        for payment in payments:
+            if (payment.get("month") == current_month and 
+                payment.get("method") == "Late Fee" and
+                payment.get("amount") == fee_amount):
+                return  # Already applied
+        
+        # Apply late fee by adding a payment entry
+        late_fee_entry = {
+            "date": datetime.now().strftime("%m/%d/%Y"),
+            "amount": fee_amount,
+            "month": current_month,
+            "method": "Late Fee"
+        }
+        
+        tenant_data["payments"].append(late_fee_entry)
+        self.app.save_accounts()
+        self.app.refresh_dashboard()
+        
+        # Send notification about late fee
+        title = "💸 Late Fee Applied"
+        message = f"Late fee of ${fee_amount:.2f} applied to {tenant_name} for {current_month}"
+        self._send_notification(title, message)
+        
+        print(f"💸 Applied late fee: ${fee_amount:.2f} to {tenant_name} for {current_month}")
+    
+    def send_test_notification(self):
+        """Send a test notification to verify the system is working"""
+        self._send_notification(
+            "🧪 Test Notification", 
+            "This is a test notification from Rent Tracker. If you see this, notifications are working!"
+        )
+
+
+class PaymentTrackerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Multi-Tenant Rent Payment Tracker")
+        
+        # Set window icon if available
+        self.set_window_icon()
+        
+        self.accounts = self.load_accounts()
+        self.current_account = None
+        self.current_year = str(datetime.now().year)
+        self.status_var = tk.StringVar()
+        
+        # Initialize notification daemon
+        self.notification_daemon = RentNotificationDaemon(self)
+        
+        self.setup_ui()
+        
+        # Start notification daemon after UI is set up
+        self.notification_daemon.start_daemon()
+        
+        # Set up cleanup on window close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        """Handle application closing - cleanup daemon and save data"""
+        print("🔄 Shutting down application...")
+        
+        # Stop notification daemon
+        if hasattr(self, 'notification_daemon'):
+            self.notification_daemon.stop_daemon()
+        
+        # Save accounts one final time
+        self.save_accounts()
+        
+        # Destroy the window
+        self.root.destroy()
+
+    def get_rent_for_month(self, tenant_name, month, year):
+        """Get the rent amount for a specific month and year, considering monthly overrides and N/A months"""
+        if tenant_name not in self.accounts:
+            return 1000.0  # Default rent
+        
+        tenant_data = self.accounts[tenant_name]
+        
+        # Check if this month is marked as N/A (tenant not renting)
+        na_months = tenant_data.get('na_months', {})
+        year_key = str(year)
+        if year_key in na_months and month in na_months[year_key]:
+            return 0.0  # No rent owed for N/A months
+        
+        # Check for monthly rent overrides
+        monthly_rents = tenant_data.get('monthly_rents', {})
+        
+        # First check for specific month override in the year
+        if year_key in monthly_rents and month in monthly_rents[year_key]:
+            return monthly_rents[year_key][month]
+        
+        # Then check for yearly rent override
+        yearly_rents = tenant_data.get('yearly_rents', {})
+        if year_key in yearly_rents:
+            return yearly_rents[year_key]
+        
+        # Finally fall back to global rent
+        return tenant_data.get('rent', 1000.0)
+
+    def set_window_icon(self):
+        """Set the application window icon for both development and PyInstaller builds"""
+        try:
+            # List of possible icon file locations (prioritized)
+            icon_paths = [
+                "Rent_Tracker.ico",           # Exact name match
+                "rent_tracker.ico",           # Alternative naming
+                "icon.ico",                   # Generic icon name
+                "assets/Rent_Tracker.ico",    # Assets folder - exact name
+                "assets/rent_tracker.ico",    # Assets folder - alternative
+                "assets/icon.ico",            # Generic in assets
+                "icons/Rent_Tracker.ico",     # Icons folder - exact name
+                "icons/rent_tracker.ico",     # Icons folder - alternative
+                "icons/icon.ico"              # Generic in icons
+            ]
+            
+            # Get the directory where the script/executable is located
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable (PyInstaller)
+                if hasattr(sys, '_MEIPASS'):
+                    # PyInstaller temp directory
+                    script_dir = sys._MEIPASS
+                else:
+                    # Fallback to executable directory
+                    script_dir = os.path.dirname(sys.executable)
+                print(f"Running as compiled executable. Base directory: {script_dir}")
+            else:
+                # Running as script
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                print(f"Running as script. Base directory: {script_dir}")
+            
+            # Try each icon path
+            for icon_name in icon_paths:
+                icon_path = os.path.join(script_dir, icon_name)
+                print(f"Checking for icon: {icon_path}")
+                if os.path.exists(icon_path):
+                    try:
+                        self.root.iconbitmap(icon_path)
+                        print(f"✅ Icon loaded successfully: {icon_path}")
+                        
+                        # For Windows, also try to set the taskbar icon
+                        self.set_taskbar_icon(icon_path)
+                        return
+                    except Exception as icon_error:
+                        print(f"❌ Failed to load icon {icon_path}: {icon_error}")
+                        continue
+            
+            # If no icon file found, try to create a simple default
+            print("⚠️ No icon file found. Using default.")
+            self.create_default_icon()
+            
+        except Exception as e:
+            print(f"Could not set window icon: {e}")
+            # Continue without icon - not a critical error
+
+    def set_taskbar_icon(self, icon_path):
+        """Set the taskbar icon on Windows"""
+        try:
+            # Try to set the window icon for taskbar (Windows specific)
+            if os.name == 'nt':  # Windows
+                import ctypes
+                from ctypes import wintypes
+                
+                # Get window handle
+                hwnd = self.root.winfo_id()
+                
+                # Load icon
+                try:
+                    hicon = ctypes.windll.user32.LoadImageW(
+                        None, icon_path, 1, 0, 0, 0x00000010 | 0x00008000
+                    )
+                    if hicon:
+                        # Set both small and large icons
+                        ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 0, hicon)  # WM_SETICON, ICON_SMALL
+                        ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 1, hicon)  # WM_SETICON, ICON_BIG
+                        print(f"✅ Taskbar icon set successfully")
+                    else:
+                        print(f"⚠️ Failed to load icon for taskbar")
+                except Exception as e:
+                    print(f"⚠️ Could not set taskbar icon: {e}")
+        except Exception as e:
+            print(f"⚠️ Taskbar icon setting failed: {e}")
+            # Not critical, continue without taskbar icon
+
+    def create_default_icon(self):
+        """Create a simple default icon using tkinter if no icon file is found"""
+        try:
+            # Just set the window title with an emoji or symbol for visual identification
+            current_title = self.root.title()
+            if not current_title.startswith("🏠"):
+                self.root.title("🏠 " + current_title)
+                
+            print("📝 Applied emoji icon to window title")
+            
+        except Exception as e:
+            print(f"Could not create default icon: {e}")
+            pass
+
+    def setup_ui(self):
+        self.dashboard_label = ttk.Label(self.root, text="No account selected.", font=("Arial", 12, "bold"))
+        self.dashboard_label.pack(pady=10)
+
+        top_frame = ttk.Frame(self.root)
+        top_frame.pack(fill="x", padx=10)
+        self.search_entry = ttk.Entry(top_frame)
+        self.search_entry.pack(side="left", padx=5)
+        ttk.Button(top_frame, text="Search/Create Tenant", command=self.search_account).pack(side="left", padx=5)
+        ttk.Button(top_frame, text="View All Tenants", command=self.show_all_tenants).pack(side="left", padx=5)
+        ttk.Button(top_frame, text="Reset Password", command=self.reset_password).pack(side="right")
+
+        filter_frame = ttk.Frame(self.root)
+        filter_frame.pack(pady=5)
+        self.month_filter = ttk.Combobox(filter_frame, values=["Show All"] + MONTHS, state="readonly")
+        self.month_filter.set("Show All")
+        self.month_filter.pack(side="left", padx=5)
+        self.month_filter.bind("<<ComboboxSelected>>", lambda e: self.refresh_dashboard())
+
+        self.year_filter = ttk.Combobox(filter_frame, values=[self.current_year], state="readonly")
+        self.year_filter.set(self.current_year)
+        self.year_filter.pack(side="left", padx=5)
+        self.year_filter.bind("<<ComboboxSelected>>", lambda e: self.refresh_dashboard())
+
+        # Rent display (moved setting to Rent Management)
+        rent_frame = ttk.Frame(self.root)
+        rent_frame.pack(pady=5)
+
+        ttk.Label(rent_frame, text="Rent Setting: Use 'Rent Management' button below", 
+                 font=("Arial", 10, "italic"), foreground="gray").pack()
+
+
+        input_frame = ttk.LabelFrame(self.root, text="Add / Edit Payment")
+        input_frame.pack(padx=10, pady=10, fill="x")
+
+        self.date_entry = DateEntry(input_frame, width=12, background='darkblue', foreground='white', borderwidth=2)
+        self.date_entry.grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Date:").grid(row=0, column=0, sticky="e")
+
+        self.amount_entry = ttk.Entry(input_frame)
+        self.amount_entry.grid(row=1, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Amount:").grid(row=1, column=0, sticky="e")
+
+        self.month_entry = ttk.Combobox(input_frame, values=MONTHS, state="readonly")
+        self.month_entry.grid(row=2, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Month For:").grid(row=2, column=0, sticky="e")
+
+        self.method_entry = ttk.Combobox(input_frame, values=["Cash", "Card", "Venmo", "Zelle"], state="readonly")
+        self.method_entry.grid(row=3, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Method:").grid(row=3, column=0, sticky="e")
+
+        self.notes_entry = ttk.Entry(input_frame, width=30)
+        self.notes_entry.grid(row=4, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Notes:").grid(row=4, column=0, sticky="e")
+
+        ttk.Button(input_frame, text="Add Payment", command=self.add_payment).grid(row=5, column=0, columnspan=2, pady=5)
+
+        self.tree = ttk.Treeview(self.root, columns=("Date", "Amount", "Month", "Method", "Notes"), show="headings")
+        for col in self.tree["columns"]:
+            self.tree.heading(col, text=col)
+            # Set column widths
+            if col == "Notes":
+                self.tree.column(col, width=150)
+            elif col == "Date":
+                self.tree.column(col, width=100)
+            elif col == "Amount":
+                self.tree.column(col, width=80)
+            elif col == "Month":
+                self.tree.column(col, width=100)
+            elif col == "Method":
+                self.tree.column(col, width=80)
+        self.tree.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        # Add double-click event for editing payments
+        self.tree.bind("<Double-1>", self.edit_payment)
+
+        action_frame = ttk.Frame(self.root)
+        action_frame.pack()
+        ttk.Button(action_frame, text="Edit Selected", command=self.edit_payment).pack(side="left", padx=5)
+        ttk.Button(action_frame, text="Delete Selected", command=self.delete_selected).pack(side="left", padx=5)
+        ttk.Button(action_frame, text="View Year Status", command=self.show_year_status).pack(side="left", padx=5)
+        ttk.Button(action_frame, text="Export Tenant CSV", command=self.export_current).pack(side="left", padx=5)
+        ttk.Button(action_frame, text="Export All CSV", command=self.export_all).pack(side="left", padx=5)
+        
+        # New buttons for due date and notification management
+        settings_frame = ttk.Frame(self.root)
+        settings_frame.pack(pady=5)
+        ttk.Button(settings_frame, text="📅 Due Date & Late Fees", command=self.configure_due_date_settings).pack(side="left", padx=5)
+        ttk.Button(settings_frame, text="🔔 Notification Settings", command=self.configure_notification_settings).pack(side="left", padx=5)
+        ttk.Button(settings_frame, text="🚫 Disable Notifications", command=self.disable_notification_dates).pack(side="left", padx=5)
+        ttk.Button(settings_frame, text="💰 Rent Management", command=self.open_rent_management).pack(side="left", padx=5)
+
+        ttk.Label(self.root, textvariable=self.status_var, foreground="blue").pack(pady=5)
+
+    def search_account(self):
+        name = self.search_entry.get().strip()
+        if not name:
+            return
+        if name not in self.accounts:
+            self.accounts[name] = {"rent": 1000.0, "payments": []}
+            # Save immediately when creating new account
+            self.save_accounts()
+        self.current_account = name
+        self.refresh_dashboard()
+        self.status_var.set(f"Switched to: {name}")
+
+    def calculate_payment_summary_with_auto_credits(self, summary, tenant_name, year, na_month_list):
+        """Calculate payment summary with automatic delinquency crediting logic"""
+        outstanding_months = []
+        paid_months = []
+        overpayment_months = []
+        delinquent_auto_credits = []
+        
+        # Calculate overpayments and rollovers
+        overpayment_balance = 0
+        monthly_balances = {}
+        
+        # First pass: calculate basic monthly totals
+        for m, a in summary.items():
+            monthly_balances[m] = a
+        
+        # Enhanced pass: apply overpayment rollover logic with delinquency prioritization
+        
+        # First, identify all delinquent months (underpaid months)
+        delinquent_balances = {}
+        for month in MONTHS:
+            if month in monthly_balances and month not in na_month_list:
+                month_payment = monthly_balances[month]
+                rent_amount = self.get_rent_for_month(tenant_name, month, year)
+                if month_payment < rent_amount:
+                    delinquent_balances[month] = rent_amount - month_payment
+        
+        # Process months chronologically with enhanced overpayment logic
+        for month in MONTHS:
+            if month in monthly_balances:
+                # Skip NA months in calculations
+                if month in na_month_list:
+                    continue
+                
+                rent_amount = self.get_rent_for_month(tenant_name, month, year)
+                month_paid = monthly_balances[month] + overpayment_balance
+                remaining = rent_amount - month_paid
+                
+                if month_paid > rent_amount:  # Overpayment
+                    new_overpayment = month_paid - rent_amount
+                    
+                    # Check if there are any delinquent balances to pay down
+                    auto_credit_applied = 0
+                    for delinq_month in MONTHS:
+                        if delinq_month in delinquent_balances and delinquent_balances[delinq_month] > 0:
+                            # Apply overpayment to this delinquent balance
+                            credit_amount = min(new_overpayment, delinquent_balances[delinq_month])
+                            delinquent_balances[delinq_month] -= credit_amount
+                            new_overpayment -= credit_amount
+                            auto_credit_applied += credit_amount
+                            
+                            # Track this automatic credit for user notification
+                            delinquent_auto_credits.append(f"Auto-credited ${credit_amount:.2f} from {month} overpayment to {delinq_month}")
+                            
+                            if new_overpayment <= 0:
+                                break
+                    
+                    overpayment_balance = new_overpayment
+                    status = '💰'  # Overpaid indicator
+                    
+                    if auto_credit_applied > 0:
+                        overpayment_months.append(f"{month}: ${monthly_balances[month]:.2f} (Overpaid: ${overpayment_balance:.2f}, Auto-credited: ${auto_credit_applied:.2f}) {status}")
+                    else:
+                        overpayment_months.append(f"{month}: ${monthly_balances[month]:.2f} (Overpaid: ${overpayment_balance:.2f}) {status}")
+                elif month_paid >= rent_amount:  # Exactly paid (possibly with rollover)
+                    overpayment_balance = 0
+                    status = '✔️'
+                    if overpayment_balance > 0:
+                        paid_months.append(f"{month}: ${monthly_balances[month]:.2f} (Paid with rollover) {status}")
+                    else:
+                        paid_months.append(f"{month}: ${monthly_balances[month]:.2f} (Paid in Full) {status}")
+                else:  # Underpaid - check if auto-credit reduced the balance
+                    original_balance = rent_amount - monthly_balances[month]
+                    current_balance = delinquent_balances.get(month, original_balance)
+                    
+                    overpayment_balance = 0
+                    status = '⚠️'
+                    
+                    if current_balance < original_balance:
+                        # Some auto-credit was applied to this month
+                        auto_credited = original_balance - current_balance
+                        outstanding_months.append(f"{month}: ${monthly_balances[month]:.2f} (Balance: ${current_balance:.2f}, Auto-credited: ${auto_credited:.2f}) {status}")
+                    else:
+                        outstanding_months.append(f"{month}: ${monthly_balances[month]:.2f} (Balance: ${current_balance:.2f}) {status}")
+        
+        return {
+            'outstanding_months': outstanding_months,
+            'paid_months': paid_months,
+            'overpayment_months': overpayment_months,
+            'delinquent_auto_credits': delinquent_auto_credits,
+            'overpayment_balance': overpayment_balance,
+            'monthly_balances': monthly_balances,
+            'delinquent_balances': delinquent_balances
+        }
+
+    def refresh_dashboard(self):
+        self.tree.delete(*self.tree.get_children())
+        if not self.current_account:
+            return
+
+        acc_data = self.accounts[self.current_account]
+        payments = acc_data.get("payments", [])
+        rent_amount = acc_data.get("rent", 1000.0)
+        
+        # Ensure rent amount is saved in accounts data
+        self.accounts[self.current_account]["rent"] = rent_amount
+
+        current_year = self.year_filter.get()
+        month_filter = self.month_filter.get()
+        seen_months = set()
+
+        summary = {}
+        for p in payments:
+            try:
+                dt = datetime.strptime(p["date"], "%m/%d/%Y")
+            except ValueError:
+                continue
+            if current_year != "Show All" and str(dt.year) != current_year:
+                continue
+            if month_filter != "Show All" and p["month"] != month_filter:
+                continue
+            self.tree.insert("", "end", values=(p["date"], f"${p['amount']:.2f}", p["month"], p["method"], p.get("notes", "N/A")))
+            summary[p["month"]] = summary.get(p["month"], 0) + float(p["amount"])
+            seen_months.add(str(dt.year))
+
+        self.year_filter["values"] = sorted(list(seen_months | {self.current_year}))
+        
+        # Calculate payment summary - only show outstanding balances by default
+        lines = []
+        current_month = datetime.now().strftime("%B")  # Get current month name
+        current_year_display = self.year_filter.get()
+        
+        # Get NA months for current year
+        na_months = acc_data.get("na_months", {})
+        year_key = current_year_display if current_year_display != "Show All" else str(datetime.now().year)
+        na_month_list = na_months.get(year_key, [])
+        
+        # Calculate payment summary using enhanced logic with auto-credits
+        payment_summary = self.calculate_payment_summary_with_auto_credits(summary, self.current_account, year_key, na_month_list)
+        
+        outstanding_months = payment_summary['outstanding_months']
+        paid_months = payment_summary['paid_months']
+        overpayment_months = payment_summary['overpayment_months']
+        delinquent_auto_credits = payment_summary['delinquent_auto_credits']
+        overpayment_balance = payment_summary['overpayment_balance']
+        
+        # Calculate totals
+        total_paid = 0
+        total_owed = 0
+        for month, amount in summary.items():
+            if month not in na_month_list:
+                total_paid += amount
+                # Use the override-aware rent calculation for each month
+                month_rent = self.get_rent_for_month(self.current_account, month, year_key)
+                total_owed += month_rent
+        
+        # Show overpayments first (good news!)
+        lines.extend(overpayment_months)
+        
+        # Show automatic credit notifications if any occurred
+        if delinquent_auto_credits:
+            lines.append("--- Automatic Delinquency Credits ---")
+            lines.extend(delinquent_auto_credits)
+            lines.append("--- End Auto Credits ---")
+        
+        # Then outstanding months
+        lines.extend(outstanding_months)
+        
+        # Only show current month if it's paid in full
+        current_month_status = None
+        for paid_line in paid_months:
+            if paid_line.startswith(current_month + ":"):
+                current_month_status = paid_line
+                break
+        
+        if current_month_status:
+            lines.append(current_month_status)
+        
+        # Calculate overall totals
+        total_remaining = max(0, total_owed - total_paid)
+        
+        # Create enhanced rent display that shows if overrides are active
+        current_month_name = datetime.now().strftime("%B")
+        current_rent_for_month = self.get_rent_for_month(self.current_account, current_month_name, year_key)
+        
+        # Check if we have any rent overrides active
+        monthly_rents = acc_data.get('monthly_rents', {})
+        yearly_rents = acc_data.get('yearly_rents', {})
+        has_overrides = bool(monthly_rents) or bool(yearly_rents)
+        
+        if has_overrides:
+            if current_rent_for_month != rent_amount:
+                rent_display = f"Rent: ${current_rent_for_month:.2f}/month (Override: ${current_rent_for_month:.2f} vs Global: ${rent_amount:.2f})"
+            else:
+                rent_display = f"Rent: ${rent_amount:.2f}/month (Overrides Active)"
+        else:
+            rent_display = f"Rent: ${rent_amount:.2f}/month"
+        
+        # Add due date information
+        due_day = acc_data.get('due_day', 1)
+        late_fee_config = acc_data.get('late_fee', {})
+        
+        # Calculate next due date
+        current_date = datetime.now()
+        current_month = current_date.month
+        current_year = current_date.year
+        
+        try:
+            next_due_date = datetime(current_year, current_month, due_day)
+            if next_due_date.date() < current_date.date():
+                # Due date has passed, move to next month
+                if current_month == 12:
+                    next_due_date = datetime(current_year + 1, 1, due_day)
+                else:
+                    next_due_date = datetime(current_year, current_month + 1, due_day)
+        except ValueError:
+            # Handle months with fewer days
+            import calendar
+            if current_month == 12:
+                next_year = current_year + 1
+                next_month = 1
+            else:
+                next_year = current_year
+                next_month = current_month + 1
+            last_day = calendar.monthrange(next_year, next_month)[1]
+            actual_due_day = min(due_day, last_day)
+            next_due_date = datetime(next_year, next_month, actual_due_day)
+        
+        days_until_due = (next_due_date.date() - current_date.date()).days
+        
+        if days_until_due == 0:
+            due_status = "📅 DUE TODAY!"
+        elif days_until_due > 0:
+            due_status = f"📅 Due in {days_until_due} day{'s' if days_until_due != 1 else ''} ({next_due_date.strftime('%B %d')})"
+        else:
+            due_status = f"⚠️ {abs(days_until_due)} day{'s' if abs(days_until_due) != 1 else ''} overdue!"
+        
+        # Add late fee info if enabled
+        late_fee_info = ""
+        if late_fee_config.get('enabled', False):
+            late_fee_amount = late_fee_config.get('amount', 0)
+            grace_period = late_fee_config.get('grace_period_days', 3)
+            late_fee_info = f" | Late Fee: ${late_fee_amount:.2f} (after {grace_period} day grace)"
+        
+        rent_display = f"{rent_display} | {due_status}{late_fee_info}"
+        
+        # Enhanced totals display with overpayment info
+        if overpayment_balance > 0:
+            totals_display = f"Total Paid: ${total_paid:.2f} | Total Remaining: ${total_remaining:.2f} | Credit Balance: ${overpayment_balance:.2f} 💰"
+        else:
+            totals_display = f"Total Paid: ${total_paid:.2f} | Total Remaining: ${total_remaining:.2f}"
+        
+        # Create dashboard text
+        if lines:
+            dashboard_text = f"{self.current_account} | {rent_display}\n{totals_display}\n" + "\n".join(lines)
+        else:
+            if summary:  # Has payments but all paid up
+                if overpayment_balance > 0:
+                    dashboard_text = f"{self.current_account} | {rent_display}\n{totals_display}\nAll payments up to date with credit! 💰✅"
+                else:
+                    dashboard_text = f"{self.current_account} | {rent_display}\n{totals_display}\nAll payments up to date! ✅"
+            else:  # No payments at all
+                dashboard_text = f"{self.current_account} | {rent_display}\n{totals_display}\nNo payments recorded"
+        
+        self.dashboard_label.config(text=dashboard_text)
+        
+        # Save accounts data whenever dashboard refreshes to ensure data persistence
+        self.save_accounts()
+
+    def add_payment(self):
+        if not self.current_account:
+            return
+        
+        # Get date from DateEntry widget and format it properly
+        date_obj = self.date_entry.get_date()
+        date = date_obj.strftime("%m/%d/%Y")
+        
+        try:
+            amount = float(self.amount_entry.get())
+        except ValueError:
+            self.status_var.set("Invalid amount.")
+            return
+        month = self.month_entry.get()
+        method = self.method_entry.get()
+        notes = self.notes_entry.get().strip()
+        
+        # If no notes entered, default to "N/A"
+        if not notes:
+            notes = "N/A"
+        
+        if not month or not method:
+            self.status_var.set("Please select month and payment method.")
+            return
+            
+        entry = {"date": date, "amount": amount, "month": month, "method": method, "notes": notes}
+        self.accounts[self.current_account]["payments"].append(entry)
+        self.save_accounts()
+        self.refresh_dashboard()
+        self.status_var.set("Payment added.")
+        
+        # Clear the notes field after adding payment
+        self.notes_entry.delete(0, tk.END)
+
+    def edit_payment(self, event=None):
+        """Edit the selected payment entry"""
+        if not self.current_account:
+            self.status_var.set("No tenant selected.")
+            return
+            
+        selection = self.tree.selection()
+        if not selection:
+            self.status_var.set("Please select a payment to edit.")
+            return
+        
+        # Get the selected payment index and data
+        selected_item = selection[0]
+        payment_index = self.tree.index(selected_item)
+        
+        # Get current payment data (considering filters)
+        acc_data = self.accounts[self.current_account]
+        payments = acc_data.get("payments", [])
+        
+        # Find the actual payment in the filtered list
+        current_year = self.year_filter.get()
+        month_filter = self.month_filter.get()
+        filtered_payments = []
+        
+        for i, p in enumerate(payments):
+            try:
+                dt = datetime.strptime(p["date"], "%m/%d/%Y")
+            except ValueError:
+                continue
+            if current_year != "Show All" and str(dt.year) != current_year:
+                continue
+            if month_filter != "Show All" and p["month"] != month_filter:
+                continue
+            filtered_payments.append((i, p))
+        
+        if payment_index >= len(filtered_payments):
+            self.status_var.set("Error: Payment not found.")
+            return
+            
+        actual_index, payment_data = filtered_payments[payment_index]
+        
+        # Create edit dialog
+        self.create_edit_payment_dialog(actual_index, payment_data)
+
+    def create_edit_payment_dialog(self, payment_index, payment_data):
+        """Create a dialog window for editing payment details"""
+        edit_window = tk.Toplevel(self.root)
+        edit_window.title("Edit Payment")
+        edit_window.geometry("400x300")
+        edit_window.grab_set()  # Make it modal
+        
+        # Center the window
+        edit_window.transient(self.root)
+        
+        frame = ttk.LabelFrame(edit_window, text="Edit Payment Details")
+        frame.pack(padx=20, pady=20, fill="both", expand=True)
+        
+        # Date field
+        ttk.Label(frame, text="Date:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        date_entry = DateEntry(frame, width=12, background='darkblue', foreground='white', borderwidth=2)
+        try:
+            # Parse the existing date and set it
+            existing_date = datetime.strptime(payment_data["date"], "%m/%d/%Y")
+            date_entry.set_date(existing_date.date())
+        except ValueError:
+            pass
+        date_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Amount field
+        ttk.Label(frame, text="Amount:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        amount_entry = ttk.Entry(frame)
+        amount_entry.insert(0, str(payment_data["amount"]))
+        amount_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        # Month field
+        ttk.Label(frame, text="Month For:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        month_entry = ttk.Combobox(frame, values=MONTHS, state="readonly")
+        month_entry.set(payment_data["month"])
+        month_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Method field
+        ttk.Label(frame, text="Method:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        method_entry = ttk.Combobox(frame, values=["Cash", "Card", "Venmo", "Zelle"], state="readonly")
+        method_entry.set(payment_data["method"])
+        method_entry.grid(row=3, column=1, padx=5, pady=5)
+        
+        # Notes field
+        ttk.Label(frame, text="Notes:").grid(row=4, column=0, sticky="e", padx=5, pady=5)
+        notes_entry = ttk.Entry(frame, width=30)
+        notes_entry.insert(0, payment_data.get("notes", "N/A"))
+        notes_entry.grid(row=4, column=1, padx=5, pady=5)
+        
+        # Buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=20)
+        
+        def save_changes():
+            try:
+                # Get updated values
+                new_date = date_entry.get_date().strftime("%m/%d/%Y")
+                new_amount = float(amount_entry.get())
+                new_month = month_entry.get()
+                new_method = method_entry.get()
+                new_notes = notes_entry.get().strip()
+                
+                # If no notes entered, default to "N/A"
+                if not new_notes:
+                    new_notes = "N/A"
+                
+                if not new_month or not new_method:
+                    messagebox.showerror("Error", "Please select month and payment method.")
+                    return
+                
+                # Update the payment
+                updated_payment = {
+                    "date": new_date,
+                    "amount": new_amount,
+                    "month": new_month,
+                    "method": new_method,
+                    "notes": new_notes
+                }
+                
+                self.accounts[self.current_account]["payments"][payment_index] = updated_payment
+                self.save_accounts()
+                self.refresh_dashboard()
+                self.status_var.set("Payment updated successfully.")
+                edit_window.destroy()
+                
+            except ValueError:
+                messagebox.showerror("Error", "Invalid amount entered.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update payment: {str(e)}")
+        
+        def cancel_edit():
+            edit_window.destroy()
+        
+        ttk.Button(button_frame, text="Save Changes", command=save_changes).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel_edit).pack(side="left", padx=5)
+        
+        # Focus on amount field for quick editing
+        amount_entry.focus()
+        amount_entry.select_range(0, tk.END)
+
+    def delete_selected(self):
+        """Delete the selected payment entry"""
+        selection = self.tree.selection()
+        if not selection or not self.current_account:
+            self.status_var.set("Please select a payment to delete.")
+            return
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this payment?"):
+            return
+        
+        # Get the selected payment index
+        selected_item = selection[0]
+        payment_index = self.tree.index(selected_item)
+        
+        # Get current payment data (considering filters)
+        acc_data = self.accounts[self.current_account]
+        payments = acc_data.get("payments", [])
+        
+        # Find the actual payment in the filtered list
+        current_year = self.year_filter.get()
+        month_filter = self.month_filter.get()
+        filtered_payments = []
+        
+        for i, p in enumerate(payments):
+            try:
+                dt = datetime.strptime(p["date"], "%m/%d/%Y")
+            except ValueError:
+                continue
+            if current_year != "Show All" and str(dt.year) != current_year:
+                continue
+            if month_filter != "Show All" and p["month"] != month_filter:
+                continue
+            filtered_payments.append((i, p))
+        
+        if payment_index >= len(filtered_payments):
+            self.status_var.set("Error: Payment not found.")
+            return
+            
+        actual_index, _ = filtered_payments[payment_index]
+        
+        # Delete the payment
+        del self.accounts[self.current_account]["payments"][actual_index]
+        self.save_accounts()
+        self.refresh_dashboard()
+        self.status_var.set("Payment deleted.")
+
+    def show_year_status(self):
+        """Show a detailed view of all months in the current year"""
+        if not self.current_account:
+            self.status_var.set("No tenant selected.")
+            return
+        
+        # Create year status window
+        status_window = tk.Toplevel(self.root)
+        status_window.title(f"Year Status - {self.current_account}")
+        status_window.geometry("800x800")  # Expanded size
+        status_window.grab_set()  # Make it modal
+        status_window.transient(self.root)
+        
+        # Try to use the same icon as the main window
+        try:
+            status_window.iconbitmap(self.root.iconbitmap())
+        except:
+            pass
+        
+        # Header frame
+        header_frame = ttk.Frame(status_window)
+        header_frame.pack(fill="x", padx=10, pady=5)
+        
+        acc_data = self.accounts[self.current_account]
+        rent_amount = acc_data.get("rent", 1000.0)
+        current_year = self.year_filter.get()
+        
+        ttk.Label(header_frame, text=f"Year Status for {self.current_account}", 
+                 font=("Arial", 14, "bold")).pack()
+        ttk.Label(header_frame, text=f"Monthly Rent: ${rent_amount:.2f} | Year: {current_year}", 
+                 font=("Arial", 10)).pack()
+        
+        # Create treeview for year status with expanded columns
+        columns = ("Month", "Amount Paid", "Balance", "Status", "Actions")
+        year_tree = ttk.Treeview(status_window, columns=columns, show="headings", height=15)
+        
+        for col in columns:
+            year_tree.heading(col, text=col)
+            if col == "Month":
+                year_tree.column(col, width=100)
+            elif col == "Actions":
+                year_tree.column(col, width=100)
+            else:
+                year_tree.column(col, width=130)
+        
+        year_tree.pack(padx=10, pady=5, fill="both", expand=True)
+        
+        # Calculate monthly totals for current year
+        payments = acc_data.get("payments", [])
+        monthly_totals = {}
+        na_months = acc_data.get("na_months", {})  # Get NA months for this tenant
+        
+        for p in payments:
+            try:
+                dt = datetime.strptime(p["date"], "%m/%d/%Y")
+                if current_year == "Show All" or str(dt.year) == current_year:
+                    month = p["month"]
+                    amount = float(p["amount"])
+                    monthly_totals[month] = monthly_totals.get(month, 0) + amount
+            except ValueError:
+                continue
+        
+        # Populate year status with overpayment rollover logic and NA support
+        total_paid_year = 0
+        total_owed_year = 0
+        outstanding_count = 0
+        overpayment_balance = 0
+        na_count = 0
+        
+        current_month = datetime.now().strftime("%B")
+        
+        def toggle_na_month(month_name):
+            """Toggle NA status for a month"""
+            year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+            if "na_months" not in self.accounts[self.current_account]:
+                self.accounts[self.current_account]["na_months"] = {}
+            if year_key not in self.accounts[self.current_account]["na_months"]:
+                self.accounts[self.current_account]["na_months"][year_key] = []
+            
+            na_list = self.accounts[self.current_account]["na_months"][year_key]
+            if month_name in na_list:
+                na_list.remove(month_name)
+                action = "unmarked"
+            else:
+                na_list.append(month_name)
+                action = "marked"
+            
+            self.save_accounts()
+            # Refresh the year status window
+            status_window.destroy()
+            self.show_year_status()
+        
+        for month in MONTHS:
+            year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+            month_na_list = na_months.get(year_key, [])
+            is_na_month = month in month_na_list
+            
+            if is_na_month:
+                # Month is marked as NA - tenant wasn't renting
+                status = "🚫 N/A"
+                status_color = "gray"
+                balance = 0
+                na_count += 1
+                actions_text = "Mark Active"
+            else:
+                base_amount_paid = monthly_totals.get(month, 0)
+                
+                # Get the rent amount for this specific month (considering overrides)
+                month_rent_amount = self.get_rent_for_month(self.current_account, month, current_year)
+                
+                # Apply overpayment rollover from previous months
+                effective_amount_paid = base_amount_paid + overpayment_balance
+                balance = month_rent_amount - effective_amount_paid
+                
+                # Check if this month is in the future
+                months_index = MONTHS.index(month)
+                current_month_index = MONTHS.index(current_month)
+                is_future_month = False
+                
+                # Only consider future months for current year
+                if current_year == str(datetime.now().year) and months_index > current_month_index:
+                    is_future_month = True
+                
+                if is_future_month and base_amount_paid == 0:
+                    # Future month with no payment - not due yet
+                    status = "🕒 Not Due Yet"
+                    status_color = "gray"
+                    balance = 0  # No balance for future months
+                    overpayment_balance = overpayment_balance  # Keep rollover balance
+                elif effective_amount_paid > month_rent_amount:  # Overpayment
+                    overpayment_balance = effective_amount_paid - month_rent_amount
+                    status = "💰 Overpaid"
+                    status_color = "blue"
+                    balance = 0  # No balance when overpaid
+                elif effective_amount_paid >= month_rent_amount:  # Exactly paid (with or without rollover)
+                    if overpayment_balance > 0 and base_amount_paid < month_rent_amount:
+                        status = "✅ Paid (with rollover)"
+                    else:
+                        status = "✅ Paid in Full"
+                    overpayment_balance = 0
+                    status_color = "green"
+                    balance = 0
+                elif base_amount_paid > 0:  # Partial payment
+                    if is_future_month:
+                        status = "🕒 Early Payment"
+                        status_color = "lightblue"
+                    else:
+                        status = "⚠️ Partial Payment"
+                        status_color = "orange"
+                        outstanding_count += 1
+                    overpayment_balance = 0  # Reset rollover for underpaid months
+                else:  # No payment
+                    if is_future_month:
+                        status = "🕒 Not Due Yet"
+                        status_color = "gray"
+                        balance = 0  # No balance for future months
+                    else:
+                        status = "❌ No Payment"
+                        status_color = "red"
+                        outstanding_count += 1
+                    overpayment_balance = 0  # Reset rollover for unpaid months
+                
+                actions_text = "Mark N/A"
+                
+                # Only count months up to current month for year totals (and exclude NA months)
+                if current_year == str(datetime.now().year) and months_index <= current_month_index:
+                    total_owed_year += month_rent_amount
+                elif current_year != str(datetime.now().year):
+                    total_owed_year += month_rent_amount
+                
+                total_paid_year += base_amount_paid
+            
+            # Insert into treeview with enhanced display
+            if is_na_month:
+                display_amount = "N/A"
+                display_balance = "N/A"
+            else:
+                display_amount = f"${monthly_totals.get(month, 0):.2f}"
+                if effective_amount_paid != monthly_totals.get(month, 0) and monthly_totals.get(month, 0) > 0:
+                    display_amount += f" (${effective_amount_paid:.2f} with rollover)"
+                
+                display_balance = f"${balance:.2f}"
+                if not is_na_month and effective_amount_paid > month_rent_amount:
+                    credit = effective_amount_paid - month_rent_amount
+                    display_balance = f"${balance:.2f} (Credit: ${credit:.2f})"
+            
+            item = year_tree.insert("", "end", values=(
+                month,
+                display_amount,
+                display_balance,
+                status,
+                actions_text
+            ))
+            
+            # Color code the rows
+            if is_na_month:
+                year_tree.set(item, "Month", f"🚫 {month}")
+            elif status_color == "blue":
+                year_tree.set(item, "Month", f"💰 {month}")
+            elif status_color == "green":
+                year_tree.set(item, "Month", f"✅ {month}")
+            elif status_color == "orange":
+                year_tree.set(item, "Month", f"⚠️ {month}")
+            elif status_color == "gray":
+                year_tree.set(item, "Month", f"🕒 {month}")
+            elif status_color == "lightblue":
+                year_tree.set(item, "Month", f"🕒 {month}")
+            else:
+                year_tree.set(item, "Month", f"❌ {month}")
+        
+        # Add double-click event for toggling NA status
+        def on_double_click(event):
+            selection = year_tree.selection()
+            if selection:
+                item = selection[0]
+                month_name = year_tree.item(item, "values")[0]
+                # Remove emoji prefix to get clean month name
+                clean_month = month_name.split(" ", 1)[-1] if " " in month_name else month_name
+                toggle_na_month(clean_month)
+        
+        year_tree.bind("<Double-1>", on_double_click)
+        
+        # Summary frame with overpayment info and NA months
+        summary_frame = ttk.LabelFrame(status_window, text="Year Summary")
+        summary_frame.pack(fill="x", padx=10, pady=5)
+        
+        total_remaining_year = max(0, total_owed_year - total_paid_year)
+        final_credit_balance = max(0, total_paid_year - total_owed_year)
+        
+        # Calculate applicable months (total - NA months)
+        total_months = 12
+        applicable_months = total_months - na_count
+        months_with_payments = len(monthly_totals)
+        
+        summary_text = f"""
+Total Paid This Year: ${total_paid_year:.2f}
+Total Owed This Year: ${total_owed_year:.2f}
+Total Outstanding: ${total_remaining_year:.2f}
+Credit Balance: ${final_credit_balance:.2f}
+
+Month Breakdown:
+• Months with Outstanding Balance: {outstanding_count}
+• Months Marked N/A: {na_count}
+• Applicable Months: {applicable_months}
+• Months with Payments: {months_with_payments}
+        """.strip()
+        
+        if final_credit_balance > 0:
+            summary_text += f"\n\n💰 Tenant has credit for next month!"
+        
+        if na_count > 0:
+            summary_text += f"\n\n📝 Double-click any month to toggle N/A status"
+        else:
+            summary_text += f"\n\n📝 Double-click months to mark as N/A (tenant not renting)"
+        
+        ttk.Label(summary_frame, text=summary_text, font=("Arial", 10)).pack(pady=5)
+        
+        # Buttons frame with expanded functionality
+        button_frame = ttk.Frame(status_window)
+        button_frame.pack(pady=10)
+        
+        def close_window():
+            status_window.destroy()
+        
+        def clear_all_na():
+            """Clear all NA months for this year"""
+            year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+            if "na_months" in self.accounts[self.current_account]:
+                if year_key in self.accounts[self.current_account]["na_months"]:
+                    self.accounts[self.current_account]["na_months"][year_key] = []
+            self.save_accounts()
+            status_window.destroy()
+            self.show_year_status()
+        
+        def export_year_status():
+            """Export year status to CSV"""
+            try:
+                year_str = current_year if current_year != "Show All" else str(datetime.now().year)
+                filepath = filedialog.asksaveasfilename(
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                    title="Export Year Status"
+                )
+                if filepath:
+                    with open(filepath, 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        
+                        # Header information
+                        writer.writerow([f"Year Status Report - {self.current_account}"])
+                        writer.writerow([f"Monthly Rent: ${rent_amount:.2f}"])
+                        writer.writerow([f"Year: {year_str}"])
+                        writer.writerow([f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                        writer.writerow([])
+                        
+                        # Column headers
+                        writer.writerow(["Month", "Status", "Due", "Paid", "Balance", "Notes"])
+                        
+                        # Calculate monthly totals for the year
+                        monthly_payment_totals = {}
+                        for p in payments:
+                            try:
+                                dt = datetime.strptime(p["date"], "%m/%d/%Y")
+                                if str(dt.year) == year_str:
+                                    month = p["month"]
+                                    amount = float(p["amount"])
+                                    monthly_payment_totals[month] = monthly_payment_totals.get(month, 0) + amount
+                            except ValueError:
+                                continue
+                        
+                        # Check NA months
+                        year_key = year_str
+                        month_na_list = na_months.get(year_key, [])
+                        
+                        for month in MONTHS:
+                            is_na = month in month_na_list
+                            
+                            if is_na:
+                                writer.writerow([month, "N/A", "N/A", "N/A", "N/A", "Not renting"])
+                            else:
+                                # Get actual data for active months
+                                due = rent_amount
+                                paid = monthly_payment_totals.get(month, 0)
+                                balance = due - paid
+                                
+                                # Check if this is a future month
+                                months_index = MONTHS.index(month)
+                                current_month_index = MONTHS.index(datetime.now().strftime("%B"))
+                                is_future_month = False
+                                
+                                if year_str == str(datetime.now().year) and months_index > current_month_index:
+                                    is_future_month = True
+                                
+                                if is_future_month and paid == 0:
+                                    status = "Not Due Yet"
+                                    balance = 0  # No balance for future months
+                                elif paid == 0:
+                                    status = "No Payment"
+                                elif balance > 0:
+                                    if is_future_month:
+                                        status = "Early Payment"
+                                    else:
+                                        status = "Partial Payment"
+                                elif balance == 0:
+                                    status = "Paid in Full"
+                                else:
+                                    status = "Overpaid"
+                                    
+                                writer.writerow([month, status, f"${due:.2f}", f"${paid:.2f}", 
+                                               f"${balance:.2f}", ""])
+                        
+                        # Add overpayment rollover summary
+                        writer.writerow([])
+                        writer.writerow(["OVERPAYMENT ROLLOVER ANALYSIS"])
+                        writer.writerow(["Month", "Base Payment", "Credit Applied", "Effective Payment", "Balance", "Credit Generated", "Status with Rollover"])
+                        
+                        overpayment_balance = 0
+                        for month in MONTHS:
+                            is_na = month in month_na_list
+                            if is_na:
+                                writer.writerow([month, "N/A", "N/A", "N/A", "N/A", "N/A", "Not renting"])
+                                continue
+                                
+                            base_payment = monthly_payment_totals.get(month, 0)
+                            credit_applied = overpayment_balance
+                            effective_payment = base_payment + overpayment_balance
+                            
+                            # Get the rent amount for this specific month (considering overrides)
+                            month_rent_amount = self.get_rent_for_month(self.current_account, month, current_year)
+                            
+                            balance = max(0, month_rent_amount - effective_payment)
+                            credit_generated = max(0, effective_payment - month_rent_amount)
+                            
+                            if effective_payment == 0:
+                                status = "No Payment"
+                            elif balance > 0:
+                                status = "Outstanding"
+                            elif credit_generated > 0:
+                                status = "Overpaid + Credit Generated"
+                            else:
+                                status = "Paid in Full"
+                            
+                            if credit_applied > 0:
+                                status += f" (Used ${credit_applied:.2f} credit)"
+                            
+                            writer.writerow([
+                                month,
+                                f"${base_payment:.2f}",
+                                f"${credit_applied:.2f}",
+                                f"${effective_payment:.2f}",
+                                f"${balance:.2f}",
+                                f"${credit_generated:.2f}",
+                                status
+                            ])
+                            
+                            overpayment_balance = credit_generated
+                        
+                        # Summary with NA months and overpayments
+                        writer.writerow([])
+                        writer.writerow(["YEAR SUMMARY"])
+                        
+                        total_base_payments = sum(monthly_payment_totals.values())
+                        na_month_count = len(month_na_list)
+                        active_months = 12 - na_month_count
+                        total_rent_owed = active_months * rent_amount
+                        total_outstanding = max(0, total_rent_owed - total_base_payments)
+                        final_credit = overpayment_balance
+                        
+                        writer.writerow(["Total Base Payments", f"${total_base_payments:.2f}"])
+                        writer.writerow(["Total Rent Owed (Active Months)", f"${total_rent_owed:.2f}"])
+                        writer.writerow(["Total Outstanding", f"${total_outstanding:.2f}"])
+                        writer.writerow(["Final Credit Balance", f"${final_credit:.2f}"])
+                        writer.writerow(["Active Months", active_months])
+                        writer.writerow(["N/A Months", na_month_count])
+                        writer.writerow(["Months with Payments", len(monthly_payment_totals)])
+                    
+                    messagebox.showinfo("Export Complete", f"Year status exported to:\n{filepath}")
+            except Exception as e:
+                messagebox.showerror("Export Error", f"Failed to export year status:\n{str(e)}")
+        
+        def set_rental_start():
+            """Set all months before a certain month as NA"""
+            # Create dialog window for month selection
+            start_dialog = tk.Toplevel(status_window)
+            start_dialog.title("Set Rental Start Month")
+            start_dialog.geometry("400x250")
+            start_dialog.grab_set()
+            start_dialog.transient(status_window)
+            
+            # Center the dialog
+            start_dialog.update_idletasks()
+            x = (start_dialog.winfo_screenwidth() // 2) - (400 // 2)
+            y = (start_dialog.winfo_screenheight() // 2) - (250 // 2)
+            start_dialog.geometry(f"400x250+{x}+{y}")
+            
+            frame = ttk.LabelFrame(start_dialog, text="Select Rental Start Month")
+            frame.pack(padx=20, pady=20, fill="both", expand=True)
+            
+            ttk.Label(frame, text=f"When did {self.current_account} start renting?", 
+                     font=("Arial", 10, "bold")).pack(pady=10)
+            ttk.Label(frame, text="All months before this will be marked as N/A", 
+                     font=("Arial", 9)).pack(pady=5)
+            
+            # Dropdown for month selection
+            month_var = tk.StringVar()
+            month_combo = ttk.Combobox(frame, textvariable=month_var, values=MONTHS, state="readonly", width=15)
+            month_combo.set("January")  # Default selection
+            month_combo.pack(pady=10)
+            
+            def apply_rental_start():
+                selected_month = month_var.get()
+                if selected_month and selected_month in MONTHS:
+                    start_index = MONTHS.index(selected_month)
+                    year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+                    
+                    if "na_months" not in self.accounts[self.current_account]:
+                        self.accounts[self.current_account]["na_months"] = {}
+                    if year_key not in self.accounts[self.current_account]["na_months"]:
+                        self.accounts[self.current_account]["na_months"][year_key] = []
+                    
+                    # Clear existing NA months first
+                    na_list = self.accounts[self.current_account]["na_months"][year_key]
+                    na_list.clear()
+                    
+                    # Mark all months before start month as NA
+                    for i in range(start_index):
+                        month = MONTHS[i]
+                        na_list.append(month)
+                    
+                    self.save_accounts()
+                    start_dialog.destroy()
+                    status_window.destroy()
+                    self.show_year_status()
+                else:
+                    messagebox.showerror("Invalid Selection", "Please select a valid month.")
+            
+            def cancel_start():
+                start_dialog.destroy()
+            
+            # Buttons
+            button_frame_dialog = ttk.Frame(frame)
+            button_frame_dialog.pack(pady=15)
+            
+            ttk.Button(button_frame_dialog, text="Apply", command=apply_rental_start).pack(side="left", padx=5)
+            ttk.Button(button_frame_dialog, text="Cancel", command=cancel_start).pack(side="left", padx=5)
+        
+        def set_rental_end():
+            """Set all months after a certain month as NA"""
+            # Create dialog window for month selection
+            end_dialog = tk.Toplevel(status_window)
+            end_dialog.title("Set Rental End Month")
+            end_dialog.geometry("400x250")
+            end_dialog.grab_set()
+            end_dialog.transient(status_window)
+            
+            # Center the dialog
+            end_dialog.update_idletasks()
+            x = (end_dialog.winfo_screenwidth() // 2) - (400 // 2)
+            y = (end_dialog.winfo_screenheight() // 2) - (250 // 2)
+            end_dialog.geometry(f"400x250+{x}+{y}")
+            
+            frame = ttk.LabelFrame(end_dialog, text="Select Rental End Month")
+            frame.pack(padx=20, pady=20, fill="both", expand=True)
+            
+            ttk.Label(frame, text=f"When did {self.current_account} stop renting?", 
+                     font=("Arial", 10, "bold")).pack(pady=10)
+            ttk.Label(frame, text="All months after this will be marked as N/A", 
+                     font=("Arial", 9)).pack(pady=5)
+            
+            # Dropdown for month selection
+            month_var = tk.StringVar()
+            month_combo = ttk.Combobox(frame, textvariable=month_var, values=MONTHS, state="readonly", width=15)
+            month_combo.set("December")  # Default selection
+            month_combo.pack(pady=10)
+            
+            def apply_rental_end():
+                selected_month = month_var.get()
+                if selected_month and selected_month in MONTHS:
+                    end_index = MONTHS.index(selected_month)
+                    year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+                    
+                    if "na_months" not in self.accounts[self.current_account]:
+                        self.accounts[self.current_account]["na_months"] = {}
+                    if year_key not in self.accounts[self.current_account]["na_months"]:
+                        self.accounts[self.current_account]["na_months"][year_key] = []
+                    
+                    # Mark all months after end month as NA
+                    na_list = self.accounts[self.current_account]["na_months"][year_key]
+                    for i in range(end_index + 1, 12):
+                        month = MONTHS[i]
+                        if month not in na_list:
+                            na_list.append(month)
+                    
+                    self.save_accounts()
+                    end_dialog.destroy()
+                    status_window.destroy()
+                    self.show_year_status()
+                else:
+                    messagebox.showerror("Invalid Selection", "Please select a valid month.")
+            
+            def cancel_end():
+                end_dialog.destroy()
+            
+            # Buttons
+            button_frame_dialog = ttk.Frame(frame)
+            button_frame_dialog.pack(pady=15)
+            
+            ttk.Button(button_frame_dialog, text="Apply", command=apply_rental_end).pack(side="left", padx=5)
+            ttk.Button(button_frame_dialog, text="Cancel", command=cancel_end).pack(side="left", padx=5)
+        
+        def set_rental_period():
+            """Set rental period with start and end months"""
+            # Create dialog window for period selection
+            period_dialog = tk.Toplevel(status_window)
+            period_dialog.title("Set Rental Period")
+            period_dialog.geometry("500x350")
+            period_dialog.grab_set()
+            period_dialog.transient(status_window)
+            
+            # Center the dialog
+            period_dialog.update_idletasks()
+            x = (period_dialog.winfo_screenwidth() // 2) - (500 // 2)
+            y = (period_dialog.winfo_screenheight() // 2) - (350 // 2)
+            period_dialog.geometry(f"500x350+{x}+{y}")
+            
+            frame = ttk.LabelFrame(period_dialog, text="Set Complete Rental Period")
+            frame.pack(padx=20, pady=20, fill="both", expand=True)
+            
+            ttk.Label(frame, text=f"Define the rental period for {self.current_account}", 
+                     font=("Arial", 12, "bold")).pack(pady=10)
+            ttk.Label(frame, text="Months outside this period will be marked as N/A", 
+                     font=("Arial", 10)).pack(pady=5)
+            
+            # Start month selection
+            start_frame = ttk.Frame(frame)
+            start_frame.pack(pady=10)
+            ttk.Label(start_frame, text="Start Month:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
+            start_var = tk.StringVar()
+            start_combo = ttk.Combobox(start_frame, textvariable=start_var, values=MONTHS, state="readonly", width=12)
+            start_combo.set("January")
+            start_combo.pack(side="left", padx=10)
+            
+            # End month selection
+            end_frame = ttk.Frame(frame)
+            end_frame.pack(pady=10)
+            ttk.Label(end_frame, text="End Month:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
+            end_var = tk.StringVar()
+            end_combo = ttk.Combobox(end_frame, textvariable=end_var, values=MONTHS, state="readonly", width=12)
+            end_combo.set("December")
+            end_combo.pack(side="left", padx=10)
+            
+            def apply_rental_period():
+                start_month = start_var.get()
+                end_month = end_var.get()
+                
+                if start_month and end_month and start_month in MONTHS and end_month in MONTHS:
+                    start_index = MONTHS.index(start_month)
+                    end_index = MONTHS.index(end_month)
+                    
+                    if start_index > end_index:
+                        messagebox.showerror("Invalid Period", "Start month cannot be after end month.")
+                        return
+                    
+                    year_key = current_year if current_year != "Show All" else str(datetime.now().year)
+                    
+                    if "na_months" not in self.accounts[self.current_account]:
+                        self.accounts[self.current_account]["na_months"] = {}
+                    if year_key not in self.accounts[self.current_account]["na_months"]:
+                        self.accounts[self.current_account]["na_months"][year_key] = []
+                    
+                    # Clear existing NA months first
+                    na_list = self.accounts[self.current_account]["na_months"][year_key]
+                    na_list.clear()
+                    
+                    # Mark months before start as NA
+                    for i in range(start_index):
+                        na_list.append(MONTHS[i])
+                    
+                    # Mark months after end as NA
+                    for i in range(end_index + 1, 12):
+                        na_list.append(MONTHS[i])
+                    
+                    self.save_accounts()
+                    period_dialog.destroy()
+                    status_window.destroy()
+                    self.show_year_status()
+                else:
+                    messagebox.showerror("Invalid Selection", "Please select valid start and end months.")
+            
+            def cancel_period():
+                period_dialog.destroy()
+            
+            # Buttons
+            button_frame_dialog = ttk.Frame(frame)
+            button_frame_dialog.pack(pady=20)
+            
+            ttk.Button(button_frame_dialog, text="Apply Period", command=apply_rental_period).pack(side="left", padx=5)
+            ttk.Button(button_frame_dialog, text="Cancel", command=cancel_period).pack(side="left", padx=5)
+        
+        # Button layout
+        button_row1 = ttk.Frame(button_frame)
+        button_row1.pack(pady=2)
+        button_row2 = ttk.Frame(button_frame)
+        button_row2.pack(pady=2)
+        
+        ttk.Button(button_row1, text="Set Rental Start", command=set_rental_start).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="Set Rental End", command=set_rental_end).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="Set Period", command=set_rental_period).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="Clear All N/A", command=clear_all_na).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="Export Year Status", command=export_year_status).pack(side="left", padx=5)
+        
+        ttk.Label(button_row2, text="💡 Tip: Double-click any month to toggle N/A status", 
+                 font=("Arial", 9), foreground="gray").pack(pady=5)
+        ttk.Button(button_row2, text="Close", command=close_window).pack(pady=5)
+        
+        # Focus on the window
+        status_window.focus()
+
+    def export_current(self):
+        """Export current tenant's data to CSV with all tracked information"""
+        if not self.current_account:
+            self.status_var.set("No tenant selected for export.")
+            return
+        
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title=f"Export {self.current_account} Data"
+        )
+        if not path:
+            return
+        
+        try:
+            acc_data = self.accounts[self.current_account]
+            payments = acc_data.get("payments", [])
+            rent_amount = acc_data.get("rent", 1000.0)
+            
+            with open(path, "w", newline="", encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header with tenant info
+                writer.writerow([f"Tenant: {self.current_account}"])
+                writer.writerow([f"Monthly Rent: ${rent_amount:.2f}"])
+                writer.writerow([f"Export Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([])  # Empty row for separation
+                writer.writerow(["NOTE: Overpayments automatically roll over to cover future months"])
+                writer.writerow(["NEW: Overpayments now automatically credit past delinquent balances first"])
+                writer.writerow(["Credits are applied in chronological order (January to December)"])
+                writer.writerow([])  # Empty row for separation
+                
+                # Write payment data header
+                writer.writerow(["Date", "Amount", "Month For", "Payment Method", "Notes", "Balance After Payment"])
+                
+                # Calculate running balances by month
+                monthly_totals = {}
+                for p in payments:
+                    month = p["month"]
+                    amount = float(p["amount"])
+                    monthly_totals[month] = monthly_totals.get(month, 0) + amount
+                
+                # Get NA months for current year 
+                na_months = acc_data.get("na_months", {})
+                current_year = datetime.now().year
+                na_month_list = na_months.get(str(current_year), [])
+                
+                # Use the enhanced calculation logic
+                payment_summary = self.calculate_payment_summary_with_auto_credits(monthly_totals, self.current_account, current_year, na_month_list)
+                
+                # Write actual payments first
+                for p in payments:
+                    month = p["month"]
+                    amount = float(p["amount"])
+                    
+                    # Find the balance info from our enhanced calculation
+                    balance_info = "Calculated"
+                    for line in payment_summary['overpayment_months']:
+                        if line.startswith(month + ":"):
+                            balance_info = "Overpaid (creates credit)"
+                            break
+                    for line in payment_summary['paid_months']:
+                        if line.startswith(month + ":"):
+                            balance_info = "Paid in Full"
+                            break
+                    for line in payment_summary['outstanding_months']:
+                        if line.startswith(month + ":"):
+                            if "Auto-credited" in line:
+                                balance_info = "Outstanding (auto-credit applied)"
+                            else:
+                                balance_info = "Outstanding balance"
+                            break
+                    
+                    writer.writerow([
+                        p["date"],
+                        f"${amount:.2f}",
+                        p["month"],
+                        p["method"],
+                        p.get("notes", "N/A"),
+                        balance_info
+                    ])
+                
+                # Add automatic delinquency credits section
+                if payment_summary['delinquent_auto_credits']:
+                    writer.writerow([])  # Separator
+                    writer.writerow(["AUTOMATIC DELINQUENCY CREDITS"])
+                    writer.writerow(["Description", "Credit Amount", "Applied To Month", "Source", "Notes"])
+                    
+                    for credit_desc in payment_summary['delinquent_auto_credits']:
+                        # Parse the credit description to extract details
+                        # Format: "Auto-credited $X.XX from SourceMonth overpayment to TargetMonth"
+                        parts = credit_desc.split()
+                        amount_str = parts[1]  # $X.XX
+                        source_month = parts[3]  # SourceMonth
+                        target_month = parts[6]  # TargetMonth
+                        
+                        writer.writerow([
+                            credit_desc,
+                            amount_str,
+                            target_month,
+                            f"{source_month} Overpayment",
+                            "Automatically applied to past delinquent balance"
+                        ])
+                
+                # Add summary section with overpayment and balance information
+                writer.writerow([])  # Separator
+                writer.writerow(["PAYMENT SUMMARY"])
+                writer.writerow(["Category", "Details"])
+                
+                if payment_summary['overpayment_balance'] > 0:
+                    writer.writerow(["Current Credit Balance", f"${payment_summary['overpayment_balance']:.2f}"])
+                else:
+                    writer.writerow(["Current Credit Balance", "$0.00"])
+                
+                total_auto_credits = len(payment_summary['delinquent_auto_credits'])
+                writer.writerow(["Automatic Credits Applied", f"{total_auto_credits} transactions"])
+                
+                outstanding_count = len(payment_summary['outstanding_months'])
+                overpaid_count = len(payment_summary['overpayment_months'])
+                paid_count = len(payment_summary['paid_months'])
+                
+                writer.writerow(["Outstanding Months", f"{outstanding_count}"])
+                writer.writerow(["Overpaid Months", f"{overpaid_count}"])
+                writer.writerow(["Fully Paid Months", f"{paid_count}"])
+                
+                # Add NA months section
+                na_months = acc_data.get("na_months", {})
+                writer.writerow([])
+                writer.writerow(["N/A MONTHS ANALYSIS"])
+                writer.writerow(["Year", "N/A Months", "Reason"])
+                
+                if na_months:
+                    for year_key, na_month_list in na_months.items():
+                        if na_month_list:
+                            writer.writerow([year_key, ", ".join(na_month_list), "Tenant not renting these months"])
+                        else:
+                            writer.writerow([year_key, "None", "All months active"])
+                else:
+                    writer.writerow(["All Years", "None", "No N/A months marked"])
+                
+                # Write monthly summary with overpayment rollover effects
+                writer.writerow([])  # Empty row
+                writer.writerow(["Monthly Summary with Overpayment Tracking"])
+                writer.writerow(["Month", "Base Payment", "Credit Applied", "Effective Payment", "Rent Amount", "Balance", "Credit Generated", "Status"])
+                
+                total_paid_all = 0
+                total_owed_all = 0
+                overpayment_balance = 0
+                
+                for month in MONTHS:
+                    if month in monthly_totals:
+                        base_payment = monthly_totals[month]
+                        credit_applied = overpayment_balance
+                        effective_payment = base_payment + overpayment_balance
+                        
+                        # Get the rent amount for this specific month (considering overrides)
+                        month_rent_amount = self.get_rent_for_month(self.current_account, month, current_year)
+                        
+                        balance = max(0, month_rent_amount - effective_payment)
+                        credit_generated = 0
+                        
+                        # Check if this is a future month
+                        current_month = datetime.now().month
+                        month_index = MONTHS.index(month) + 1  # Convert to 1-based month number
+                        is_future_month = (month_index > current_month)
+                        
+                        if effective_payment > month_rent_amount:
+                            credit_generated = effective_payment - month_rent_amount
+                            overpayment_balance = credit_generated
+                            if is_future_month:
+                                status = "Early Payment + Credit"
+                            else:
+                                status = "Paid + Credit Generated"
+                        elif effective_payment >= rent_amount:
+                            overpayment_balance = 0
+                            if credit_applied > 0:
+                                if is_future_month:
+                                    status = "Early Payment with Credit"
+                                else:
+                                    status = "Paid with Credit"
+                            else:
+                                if is_future_month:
+                                    status = "Early Payment"
+                                else:
+                                    status = "Paid in Full"
+                        else:
+                            overpayment_balance = 0
+                            if is_future_month:
+                                status = "Early Partial Payment"
+                            else:
+                                status = "Outstanding"
+                        
+                        writer.writerow([
+                            month,
+                            f"${base_payment:.2f}",
+                            f"${credit_applied:.2f}",
+                            f"${effective_payment:.2f}",
+                            f"${rent_amount:.2f}",
+                            f"${balance:.2f}",
+                            f"${credit_generated:.2f}",
+                            status
+                        ])
+                        
+                        total_paid_all += base_payment
+                        total_owed_all += rent_amount
+                    else:
+                        # Check if this is a future month
+                        current_month = datetime.now().month
+                        month_index = MONTHS.index(month) + 1  # Convert to 1-based month number
+                        is_future_month = (month_index > current_month)
+                        
+                        if is_future_month:
+                            # Show future months without payments as "Not Due Yet"
+                            writer.writerow([
+                                month,
+                                "$0.00",
+                                "$0.00", 
+                                "$0.00",
+                                f"${rent_amount:.2f}",
+                                "$0.00",
+                                "$0.00",
+                                "Not Due Yet"
+                            ])
+                            # Don't count future months in totals
+                        else:
+                            # Past months without payments
+                            writer.writerow([
+                                month,
+                                "$0.00",
+                                "$0.00",
+                                "$0.00", 
+                                f"${rent_amount:.2f}",
+                                f"${rent_amount:.2f}",
+                                "$0.00",
+                                "Outstanding"
+                            ])
+                            total_owed_all += rent_amount
+                
+                # Overall totals with final credit balance
+                total_remaining_all = max(0, total_owed_all - total_paid_all)
+                final_credit = max(0, total_paid_all - total_owed_all)
+                
+                writer.writerow([])  # Empty row
+                writer.writerow(["TOTALS"])
+                writer.writerow(["Total Base Payments", f"${total_paid_all:.2f}"])
+                writer.writerow(["Total Rent Owed", f"${total_owed_all:.2f}"])
+                writer.writerow(["Total Outstanding", f"${total_remaining_all:.2f}"])
+                writer.writerow(["Final Credit Balance", f"${final_credit:.2f}"])
+                
+            self.status_var.set(f"Exported {self.current_account} data to {os.path.basename(path)}")
+            
+        except Exception as e:
+            self.status_var.set(f"Export failed: {str(e)}")
+            messagebox.showerror("Export Error", f"Failed to export data:\n{str(e)}")
+
+    def export_all(self):
+        """Export all tenants' data to CSV with comprehensive information"""
+        if not self.accounts:
+            self.status_var.set("No tenant data to export.")
+            return
+            
+        # Get current year for rent override calculations
+        current_year = str(datetime.now().year)
+            
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Export All Tenants Data"
+        )
+        if not path:
+            return
+        
+        try:
+            with open(path, "w", newline="", encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header
+                writer.writerow([f"All Tenants Rent Tracker Export"])
+                writer.writerow([f"Export Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([f"Total Tenants: {len(self.accounts)}"])
+                writer.writerow([])  # Empty row
+                writer.writerow(["NOTE: Overpayments automatically roll over to cover future months"])
+                writer.writerow(["NEW: Overpayments now automatically credit past delinquent balances first"])
+                writer.writerow(["Credits are applied in chronological order (January to December)"])
+                writer.writerow(["Virtual 'Overpayment from Previous Month' entries show credit applications"])
+                writer.writerow([])  # Empty row
+                
+                # Write detailed payment data
+                writer.writerow(["PAYMENT DETAILS"])
+                writer.writerow(["Tenant", "Monthly Rent", "Date", "Amount", "Month For", "Payment Method", "Notes", "Balance After Payment"])
+                
+                # Process each tenant with overpayment rollover
+                for tenant_name, tenant_data in self.accounts.items():
+                    rent_amount = tenant_data.get("rent", 1000.0)
+                    payments = tenant_data.get("payments", [])
+                    
+                    if not payments:
+                        # Show tenant even if no payments
+                        writer.writerow([tenant_name, f"${rent_amount:.2f}", "No payments recorded", "", "", "", "", f"${rent_amount:.2f}"])
+                        continue
+                    
+                    # Calculate monthly totals for this tenant with overpayment rollover
+                    monthly_totals = {}
+                    for p in payments:
+                        month = p["month"]
+                        amount = float(p["amount"])
+                        monthly_totals[month] = monthly_totals.get(month, 0) + amount
+                    
+                    # Calculate running balances with overpayment rollover
+                    overpayment_balance = 0
+                    monthly_status = {}
+                    
+                    for month in MONTHS:
+                        base_amount_paid = monthly_totals.get(month, 0)
+                        effective_amount_paid = base_amount_paid + overpayment_balance
+                        
+                        # Get the rent amount for this specific month (considering overrides)
+                        month_rent_amount = self.get_rent_for_month(tenant_name, month, current_year)
+                        
+                        if effective_amount_paid > month_rent_amount:  # Overpayment
+                            overpayment_balance = effective_amount_paid - month_rent_amount
+                            monthly_status[month] = {
+                                "balance": 0,
+                                "overpaid": overpayment_balance,
+                                "rollover_used": overpayment_balance - (effective_amount_paid - month_rent_amount) if overpayment_balance > (effective_amount_paid - month_rent_amount) else 0
+                            }
+                        elif effective_amount_paid >= month_rent_amount:  # Exactly paid
+                            monthly_status[month] = {
+                                "balance": 0,
+                                "overpaid": 0,
+                                "rollover_used": overpayment_balance
+                            }
+                            overpayment_balance = 0
+                        else:  # Underpaid
+                            monthly_status[month] = {
+                                "balance": month_rent_amount - effective_amount_paid,
+                                "overpaid": 0,
+                                "rollover_used": overpayment_balance
+                            }
+                            overpayment_balance = 0
+                    
+                    # Write actual payments
+                    for p in payments:
+                        month = p["month"]
+                        amount = float(p["amount"])
+                        status = monthly_status.get(month, {"balance": rent_amount, "overpaid": 0, "rollover_used": 0})
+                        
+                        balance_info = f"${status['balance']:.2f}"
+                        if status['overpaid'] > 0:
+                            balance_info = f"${status['balance']:.2f} (Creates ${status['overpaid']:.2f} credit)"
+                        elif status['rollover_used'] > 0:
+                            balance_info = f"${status['balance']:.2f} (Used ${status['rollover_used']:.2f} credit)"
+                        
+                        writer.writerow([
+                            tenant_name,
+                            f"${rent_amount:.2f}",
+                            p["date"],
+                            f"${amount:.2f}",
+                            p["month"],
+                            p["method"],
+                            p.get("notes", "N/A"),
+                            balance_info
+                        ])
+                    
+                    # Add virtual overpayment credit entries for this tenant
+                    overpayment_balance = 0
+                    for month in MONTHS:
+                        if month in monthly_totals:
+                            base_amount = monthly_totals[month]
+                            effective_amount = base_amount + overpayment_balance
+                            
+                            # Get the rent amount for this specific month (considering overrides)
+                            month_rent_amount = self.get_rent_for_month(tenant_name, month, current_year)
+                            
+                            if effective_amount > month_rent_amount:
+                                overpayment_balance = effective_amount - month_rent_amount
+                            elif effective_amount >= month_rent_amount and overpayment_balance > 0:
+                                # This month used rollover credit - add virtual entry
+                                writer.writerow([
+                                    tenant_name,
+                                    f"${month_rent_amount:.2f}",
+                                    "Auto-Applied",
+                                    f"${overpayment_balance:.2f}",
+                                    month,
+                                    "Overpayment from Previous Month",
+                                    "$0.00"
+                                ])
+                                overpayment_balance = 0
+                            else:
+                                overpayment_balance = 0
+                
+                writer.writerow([])  # Empty row
+                
+                # Write tenant summary with overpayment tracking
+                writer.writerow(["TENANT SUMMARY"])
+                writer.writerow(["Tenant", "Monthly Rent", "Total Payments", "Total Outstanding", "Credit Balance", "Months with Payments", "Status"])
+                
+                grand_total_paid = 0
+                grand_total_owed = 0
+                grand_total_credit = 0
+                
+                for tenant_name, tenant_data in self.accounts.items():
+                    rent_amount = tenant_data.get("rent", 1000.0)
+                    payments = tenant_data.get("payments", [])
+                    
+                    # Calculate totals for this tenant with overpayment rollover
+                    monthly_totals = {}
+                    total_paid = 0
+                    for p in payments:
+                        month = p["month"]
+                        amount = float(p["amount"])
+                        monthly_totals[month] = monthly_totals.get(month, 0) + amount
+                        total_paid += amount
+                    
+                    # Calculate with rollover logic
+                    overpayment_balance = 0
+                    months_paid = 0
+                    months_with_data = len(monthly_totals)
+                    
+                    for month in MONTHS:
+                        if month not in monthly_totals:
+                            continue
+                            
+                        base_amount_paid = monthly_totals[month]
+                        effective_amount_paid = base_amount_paid + overpayment_balance
+                        
+                        # Get the rent amount for this specific month (considering overrides)
+                        month_rent_amount = self.get_rent_for_month(tenant_name, month, current_year)
+                        
+                        if effective_amount_paid >= month_rent_amount:
+                            months_paid += 1
+                            if effective_amount_paid > month_rent_amount:
+                                overpayment_balance = effective_amount_paid - month_rent_amount
+                            else:
+                                overpayment_balance = 0
+                        else:
+                            overpayment_balance = 0
+                    
+                    # Calculate total owed based on actual rent amounts for months with data
+                    total_owed = 0
+                    for month in MONTHS:
+                        if month in monthly_totals:
+                            month_rent_amount = self.get_rent_for_month(tenant_name, month, current_year)
+                            total_owed += month_rent_amount
+                    
+                    if total_owed == 0:  # Fallback if no months with data
+                        total_owed = self.get_rent_for_month(tenant_name, "January", current_year)
+                    
+                    total_outstanding = max(0, total_owed - total_paid)
+                    credit_balance = max(0, total_paid - total_owed)
+                    
+                    # Determine status
+                    if months_with_data == 0:
+                        status = "No Payments"
+                    elif credit_balance > 0:
+                        status = f"Credit Available: ${credit_balance:.2f}"
+                    elif total_outstanding == 0:
+                        status = "Paid in Full"
+                    else:
+                        status = f"Outstanding: ${total_outstanding:.2f}"
+                    
+                    writer.writerow([
+                        tenant_name,
+                        f"${rent_amount:.2f}",
+                        f"${total_paid:.2f}",
+                        f"${total_outstanding:.2f}",
+                        f"${credit_balance:.2f}",
+                        months_with_data,
+                        status
+                    ])
+                    
+                    grand_total_paid += total_paid
+                    grand_total_owed += total_owed
+                    grand_total_credit += credit_balance
+                
+                # Grand totals with credit tracking
+                grand_total_outstanding = max(0, grand_total_owed - grand_total_paid)
+                writer.writerow([])  # Empty row
+                writer.writerow(["GRAND TOTALS"])
+                writer.writerow(["Total Rent Collected", f"${grand_total_paid:.2f}"])
+                writer.writerow(["Total Rent Owed", f"${grand_total_owed:.2f}"])
+                writer.writerow(["Total Outstanding", f"${grand_total_outstanding:.2f}"])
+                writer.writerow(["Total Credit Balance", f"${grand_total_credit:.2f}"])
+                
+                # Monthly breakdown across all tenants
+                writer.writerow([])  # Empty row
+                writer.writerow(["MONTHLY BREAKDOWN (All Tenants)"])
+                writer.writerow(["Month", "Total Collected", "Expected Rent", "Shortfall", "Tenants Paid"])
+                
+                for month in MONTHS:
+                    month_collected = 0
+                    expected_rent = 0
+                    tenants_paid = 0
+                    
+                    for tenant_name, tenant_data in self.accounts.items():
+                        rent_amount = tenant_data.get("rent", 1000.0)
+                        payments = tenant_data.get("payments", [])
+                        
+                        month_total = 0
+                        has_payment_this_month = False
+                        for p in payments:
+                            if p["month"] == month:
+                                month_total += float(p["amount"])
+                                has_payment_this_month = True
+                        
+                        if has_payment_this_month:
+                            month_collected += month_total
+                            expected_rent += rent_amount
+                            tenants_paid += 1
+                    
+                    if tenants_paid > 0:
+                        shortfall = max(0, expected_rent - month_collected)
+                        writer.writerow([
+                            month,
+                            f"${month_collected:.2f}",
+                            f"${expected_rent:.2f}",
+                            f"${shortfall:.2f}",
+                            tenants_paid
+                        ])
+                
+            self.status_var.set(f"Exported all tenant data to {os.path.basename(path)}")
+            
+        except Exception as e:
+            self.status_var.set(f"Export failed: {str(e)}")
+            messagebox.showerror("Export Error", f"Failed to export data:\n{str(e)}")
+
+    def reset_password(self):
+        """Reset password with enhanced security features"""
+        # Create password reset window
+        reset_window = tk.Toplevel(self.root)
+        reset_window.title("🔒 Reset Password")
+        reset_window.geometry("500x450")
+        reset_window.grab_set()
+        reset_window.transient(self.root)
+        reset_window.resizable(False, False)
+        
+        # Center the window
+        reset_window.update_idletasks()
+        x = (reset_window.winfo_screenwidth() // 2) - (500 // 2)
+        y = (reset_window.winfo_screenheight() // 2) - (450 // 2)
+        reset_window.geometry(f"500x450+{x}+{y}")
+        
+        # Header
+        header_frame = ttk.Frame(reset_window)
+        header_frame.pack(fill="x", padx=20, pady=20)
+        
+        ttk.Label(header_frame, text="Reset Password", 
+                 font=("Arial", 16, "bold")).pack()
+        ttk.Label(header_frame, text="Enter your current password and create a new one", 
+                 font=("Arial", 10), foreground="gray").pack()
+        
+        # Current password verification
+        current_frame = ttk.LabelFrame(reset_window, text="Current Password")
+        current_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(current_frame, text="Enter your current password to continue:", 
+                 font=("Arial", 10)).pack(padx=10, pady=(10, 5), anchor="w")
+        
+        current_var = tk.StringVar()
+        current_entry = ttk.Entry(current_frame, textvariable=current_var, show='*', font=("Arial", 12))
+        current_entry.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # New password section
+        new_frame = ttk.LabelFrame(reset_window, text="New Password")
+        new_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Password requirements
+        requirements_text = """Requirements: 6-30 characters, letters/numbers/symbols (!@#$%^&*()_+-=[]{}|;:,.<>?), no spaces"""
+        ttk.Label(new_frame, text=requirements_text, font=("Arial", 9), 
+                 foreground="gray", wraplength=450).pack(padx=10, pady=(10, 5))
+        
+        ttk.Label(new_frame, text="New Password:", font=("Arial", 10, "bold")).pack(padx=10, anchor="w")
+        new_var = tk.StringVar()
+        new_entry = ttk.Entry(new_frame, textvariable=new_var, show='*', font=("Arial", 12))
+        new_entry.pack(fill="x", padx=10, pady=5)
+        
+        ttk.Label(new_frame, text="Confirm New Password:", font=("Arial", 10, "bold")).pack(padx=10, anchor="w")
+        confirm_var = tk.StringVar()
+        confirm_entry = ttk.Entry(new_frame, textvariable=confirm_var, show='*', font=("Arial", 12))
+        confirm_entry.pack(fill="x", padx=10, pady=5)
+        
+        # Show/Hide password toggle
+        show_var = tk.BooleanVar()
+        def toggle_password_visibility():
+            if show_var.get():
+                current_entry.config(show='')
+                new_entry.config(show='')
+                confirm_entry.config(show='')
+            else:
+                current_entry.config(show='*')
+                new_entry.config(show='*')
+                confirm_entry.config(show='*')
+        
+        ttk.Checkbutton(new_frame, text="Show passwords", variable=show_var, 
+                       command=toggle_password_visibility).pack(padx=10, anchor="w", pady=5)
+        
+        # Password strength indicator
+        strength_frame = ttk.Frame(new_frame)
+        strength_frame.pack(fill="x", padx=10, pady=5)
+        
+        strength_label = ttk.Label(strength_frame, text="Password Strength: ", font=("Arial", 9))
+        strength_label.pack(side="left")
+        
+        strength_indicator = ttk.Label(strength_frame, text="", font=("Arial", 9, "bold"))
+        strength_indicator.pack(side="left")
+        
+        def update_strength(*args):
+            password = new_var.get()
+            if len(password) > 0:
+                strength, color = self.calculate_password_strength(password)
+                strength_indicator.config(text=strength, foreground=color)
+            else:
+                strength_indicator.config(text="")
+        
+        new_var.trace("w", update_strength)
+        
+        # Buttons
+        button_frame = ttk.Frame(reset_window)
+        button_frame.pack(pady=20)
+        
+        def save_new_password():
+            current_password = current_var.get()
+            new_password = new_var.get()
+            confirm_password = confirm_var.get()
+            
+            # Verify current password
+            if not self.verify_current_password(current_password):
+                messagebox.showerror("Error", "Current password is incorrect.")
+                return
+            
+            # Validate new password
+            if not self.validate_password(new_password):
+                return
+            
+            # Check passwords match
+            if new_password != confirm_password:
+                messagebox.showerror("Error", "New passwords do not match.")
+                return
+            
+            # Save new password
+            with open(PIN_FILE, "w") as f:
+                f.write(self.hash_password(new_password))
+            
+            messagebox.showinfo("Success", "Password has been reset successfully!")
+            reset_window.destroy()
+        
+        def cancel():
+            reset_window.destroy()
+        
+        ttk.Button(button_frame, text="💾 Reset Password", command=save_new_password).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="❌ Cancel", command=cancel).pack(side="left", padx=5)
+        
+        # Focus on current password entry
+        current_entry.focus()
+
+    def verify_current_password(self, password):
+        """Verify the current password"""
+        try:
+            if os.path.exists(PIN_FILE):
+                with open(PIN_FILE, "r") as f:
+                    saved_hash = f.read()
+                return self.hash_password(password) == saved_hash
+            elif os.path.exists("pin_hash.txt"):
+                # Legacy PIN system
+                with open("pin_hash.txt", "r") as f:
+                    saved_hash = f.read()
+                return hashlib.sha256(password.encode()).hexdigest() == saved_hash
+            return False
+        except Exception:
+            return False
+
+    def validate_password(self, password):
+        """Validate password meets requirements"""
+        if len(password) < 6:
+            messagebox.showerror("Invalid Password", "Password must be at least 6 characters long.")
+            return False
+        
+        if len(password) > 30:
+            messagebox.showerror("Invalid Password", "Password must be 30 characters or less.")
+            return False
+        
+        if ' ' in password:
+            messagebox.showerror("Invalid Password", "Password cannot contain spaces.")
+            return False
+        
+        # Check for valid characters
+        import re
+        valid_chars = re.match(r'^[A-Za-z0-9!@#$%^&*()_+\-=\[\]{}|;:,.<>?]+$', password)
+        if not valid_chars:
+            messagebox.showerror("Invalid Password", 
+                               "Password contains invalid characters.\n\n"
+                               "Allowed: letters, numbers, and symbols:\n"
+                               "!@#$%^&*()_+-=[]{}|;:,.<>?")
+            return False
+        
+        return True
+
+    def calculate_password_strength(self, password):
+        """Calculate password strength and return (description, color)"""
+        if len(password) == 0:
+            return "", "black"
+        
+        score = 0
+        
+        # Length scoring
+        if len(password) >= 8:
+            score += 2
+        elif len(password) >= 6:
+            score += 1
+        
+        # Character variety
+        if any(c.islower() for c in password):
+            score += 1
+        if any(c.isupper() for c in password):
+            score += 1
+        if any(c.isdigit() for c in password):
+            score += 1
+        if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+            score += 1
+        
+        # Length bonus
+        if len(password) >= 12:
+            score += 1
+        
+        if score <= 2:
+            return "Weak", "red"
+        elif score <= 4:
+            return "Moderate", "orange"
+        elif score <= 5:
+            return "Strong", "green"
+        else:
+            return "Very Strong", "darkgreen"
+
+    def hash_password(self, password):
+        """Hash password using SHA-256 with salt for security"""
+        import secrets
+        # Add salt for better security
+        salt = "RentTracker2025"  # Static salt for consistency
+        return hashlib.sha256((password + salt).encode()).hexdigest()
+
+    def show_all_tenants(self):
+        TenantSelector(self.root, self.accounts.keys(), self.switch_account)
+
+    def switch_account(self, name):
+        self.search_entry.delete(0, tk.END)
+        self.search_entry.insert(0, name)
+        self.search_account()
+
+    def load_accounts(self):
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        return {}
+
+    def save_accounts(self):
+        with open(DATA_FILE, "w") as f:
+            json.dump(self.accounts, f, indent=2)
+
+    def set_rent_amount(self):
+        """Legacy rent setting function - redirect to rent management"""
+        if not self.current_account:
+            messagebox.showwarning("No Tenant Selected", "Please select a tenant first.")
+            return
+        
+        messagebox.showinfo(
+            "Use Rent Management", 
+            "Rent setting has moved to the '💰 Rent Management' button.\n\n"
+            "This provides more options including:\n"
+            "• Global rent setting\n"
+            "• Yearly overrides\n"
+            "• Monthly overrides\n\n"
+            "Click the '💰 Rent Management' button to set rent amounts."
+        )
+        self.open_rent_management()
+
+    def load_all_tenants_on_startup(self):
+        """Load and display all existing tenants in the interface"""
+        if self.accounts:
+            tenant_names = list(self.accounts.keys())
+            self.status_var.set(f"Loaded {len(tenant_names)} existing tenants. Use 'View All Tenants' to see them.")
+            
+            # If there's only one tenant, auto-select it
+            if len(tenant_names) == 1:
+                self.current_account = tenant_names[0]
+                self.search_entry.delete(0, tk.END)
+                self.search_entry.insert(0, tenant_names[0])
+                self.refresh_dashboard()
+                self.status_var.set(f"Auto-selected: {tenant_names[0]}")
+        else:
+            self.status_var.set("No existing tenants found. Create a new tenant using the search box.")
+
+    def configure_due_date_settings(self):
+        """Configure due date and late fee settings for current tenant"""
+        if not self.current_account:
+            messagebox.showwarning("No Tenant Selected", "Please select a tenant first.")
+            return
+        
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title(f"Due Date & Late Fee Settings - {self.current_account}")
+        settings_window.geometry("500x400")
+        settings_window.grab_set()
+        settings_window.transient(self.root)
+        
+        # Get current settings
+        tenant_data = self.accounts[self.current_account]
+        current_due_day = tenant_data.get('due_day', 1)
+        late_fee_config = tenant_data.get('late_fee', {
+            'enabled': False,
+            'amount': 50.0,
+            'grace_period_days': 3
+        })
+        
+        # Due date section
+        due_frame = ttk.LabelFrame(settings_window, text="Rent Due Date")
+        due_frame.pack(padx=20, pady=10, fill="x")
+        
+        ttk.Label(due_frame, text="Day of month rent is due:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        due_day_var = tk.IntVar(value=current_due_day)
+        due_day_spinbox = ttk.Spinbox(due_frame, from_=1, to=31, textvariable=due_day_var, width=10)
+        due_day_spinbox.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Late fee section
+        late_fee_frame = ttk.LabelFrame(settings_window, text="Late Fee Configuration")
+        late_fee_frame.pack(padx=20, pady=10, fill="x")
+        
+        late_fee_enabled_var = tk.BooleanVar(value=late_fee_config.get('enabled', False))
+        late_fee_checkbox = ttk.Checkbutton(late_fee_frame, text="Enable automatic late fees", variable=late_fee_enabled_var)
+        late_fee_checkbox.grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(late_fee_frame, text="Late fee amount ($):").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        late_fee_amount_var = tk.DoubleVar(value=late_fee_config.get('amount', 50.0))
+        late_fee_amount_entry = ttk.Entry(late_fee_frame, textvariable=late_fee_amount_var, width=10)
+        late_fee_amount_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(late_fee_frame, text="Grace period (days):").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        grace_period_var = tk.IntVar(value=late_fee_config.get('grace_period_days', 3))
+        grace_period_spinbox = ttk.Spinbox(late_fee_frame, from_=0, to=14, textvariable=grace_period_var, width=10)
+        grace_period_spinbox.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Info section
+        info_frame = ttk.LabelFrame(settings_window, text="Information")
+        info_frame.pack(padx=20, pady=10, fill="both", expand=True)
+        
+        info_text = tk.Text(info_frame, height=6, wrap=tk.WORD)
+        info_text.pack(padx=5, pady=5, fill="both", expand=True)
+        info_text.insert("1.0", """Due Date: The day of the month when rent is due (1-31).
+
+Late Fees: Automatically applied after the grace period expires.
+- Grace period starts the day after the due date
+- Late fees are added as payment entries with method "Late Fee"
+- Only one late fee per month is applied automatically
+
+Notifications will warn tenants before due dates and remind about overdue payments.""")
+        info_text.config(state="disabled")
+        
+        # Buttons
+        button_frame = ttk.Frame(settings_window)
+        button_frame.pack(pady=10)
+        
+        def save_settings():
+            try:
+                # Validate due day
+                due_day = due_day_var.get()
+                if not 1 <= due_day <= 31:
+                    messagebox.showerror("Invalid Due Day", "Due day must be between 1 and 31.")
+                    return
+                
+                # Validate late fee amount
+                late_fee_amount = late_fee_amount_var.get()
+                if late_fee_amount < 0:
+                    messagebox.showerror("Invalid Late Fee", "Late fee amount cannot be negative.")
+                    return
+                
+                # Save settings
+                tenant_data['due_day'] = due_day
+                tenant_data['late_fee'] = {
+                    'enabled': late_fee_enabled_var.get(),
+                    'amount': late_fee_amount,
+                    'grace_period_days': grace_period_var.get()
+                }
+                
+                self.save_accounts()
+                self.refresh_dashboard()  # Force UI update to reflect changes
+                messagebox.showinfo("Settings Saved", f"Due date and late fee settings saved for {self.current_account}")
+                settings_window.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+        
+        def cancel_settings():
+            settings_window.destroy()
+        
+        ttk.Button(button_frame, text="Save Settings", command=save_settings).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel_settings).pack(side="left", padx=5)
+
+    def configure_notification_settings(self):
+        """Configure global notification settings"""
+        if not hasattr(self, 'notification_daemon'):
+            messagebox.showerror("Error", "Notification daemon not available.")
+            return
+        
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("🔔 Notification Settings")
+        settings_window.geometry("700x700")
+        settings_window.grab_set()
+        settings_window.transient(self.root)
+        
+        # Make window resizable
+        settings_window.resizable(True, True)
+        
+        # Create main canvas and scrollbar for scrolling
+        main_canvas = tk.Canvas(settings_window)
+        scrollbar = ttk.Scrollbar(settings_window, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = ttk.Frame(main_canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+        
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack canvas and scrollbar
+        main_canvas.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+        
+        # Get current settings
+        current_settings = self.notification_daemon.notification_settings
+        
+        # Header
+        header_frame = ttk.Frame(scrollable_frame)
+        header_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(header_frame, text="Notification Settings", 
+                 font=("Arial", 16, "bold")).pack()
+        ttk.Label(header_frame, text="Configure when and how rent notifications are sent", 
+                 font=("Arial", 10), foreground="gray").pack()
+        
+        # Test notification section
+        test_frame = ttk.LabelFrame(scrollable_frame, text="🧪 Test Notifications")
+        test_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(test_frame, text="Send a test notification to verify your system is working properly.", 
+                 font=("Arial", 10)).pack(pady=5)
+        
+        def send_test_notification():
+            """Send a test notification"""
+            try:
+                self.notification_daemon.send_test_notification()
+                messagebox.showinfo("Test Sent", "Test notification sent! Check your system notifications.")
+            except Exception as e:
+                messagebox.showerror("Test Failed", f"Failed to send test notification:\n{str(e)}")
+        
+        test_button_frame = ttk.Frame(test_frame)
+        test_button_frame.pack(pady=10)
+        
+        ttk.Button(test_button_frame, text="📢 Send Test Notification", 
+                  command=send_test_notification, 
+                  style="Accent.TButton").pack()
+        
+        # General settings
+        general_frame = ttk.LabelFrame(scrollable_frame, text="⚙️ General Settings")
+        general_frame.pack(fill="x", padx=20, pady=10)
+        
+        enabled_var = tk.BooleanVar(value=current_settings.get('enabled', True))
+        enabled_check = ttk.Checkbutton(general_frame, text="Enable all notifications", variable=enabled_var)
+        enabled_check.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=10)
+        
+        ttk.Label(general_frame, text="Check interval (minutes):", 
+                 font=("Arial", 10, "bold")).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        interval_var = tk.IntVar(value=current_settings.get('check_interval', 3600) // 60)
+        interval_frame = ttk.Frame(general_frame)
+        interval_frame.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        
+        interval_spinbox = ttk.Spinbox(interval_frame, from_=5, to=1440, textvariable=interval_var, width=8)
+        interval_spinbox.pack(side="left")
+        ttk.Label(interval_frame, text="(5-1440 minutes)", font=("Arial", 9), foreground="gray").pack(side="left", padx=5)
+        
+        # Timing settings with better layout
+        timing_frame = ttk.LabelFrame(scrollable_frame, text="⏰ Notification Timing")
+        timing_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Advance warnings
+        advance_label_frame = ttk.Frame(timing_frame)
+        advance_label_frame.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        ttk.Label(advance_label_frame, text="Advance warnings:", 
+                 font=("Arial", 10, "bold")).pack(side="left")
+        ttk.Label(advance_label_frame, text="Days before due date to send reminders", 
+                 font=("Arial", 9), foreground="gray").pack(side="left", padx=(10, 0))
+        
+        advance_var = tk.StringVar(value=", ".join(map(str, current_settings.get('advance_warning_days', [7, 3, 1]))))
+        advance_entry = ttk.Entry(timing_frame, textvariable=advance_var, width=30)
+        advance_entry.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        
+        ttk.Label(timing_frame, text="Example: 7, 3, 1 (warns 7, 3, and 1 days before)", 
+                 font=("Arial", 9), foreground="gray").grid(row=2, column=0, columnspan=2, sticky="w", padx=10)
+        
+        # Overdue reminders
+        overdue_label_frame = ttk.Frame(timing_frame)
+        overdue_label_frame.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        ttk.Label(overdue_label_frame, text="Overdue reminders:", 
+                 font=("Arial", 10, "bold")).pack(side="left")
+        ttk.Label(overdue_label_frame, text="Days after due date to send overdue notices", 
+                 font=("Arial", 9), foreground="gray").pack(side="left", padx=(10, 0))
+        
+        overdue_var = tk.StringVar(value=", ".join(map(str, current_settings.get('overdue_reminder_days', [1, 3, 7, 14]))))
+        overdue_entry = ttk.Entry(timing_frame, textvariable=overdue_var, width=30)
+        overdue_entry.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        
+        ttk.Label(timing_frame, text="Example: 1, 3, 7, 14 (reminds 1, 3, 7, and 14 days after)", 
+                 font=("Arial", 9), foreground="gray").grid(row=5, column=0, columnspan=2, sticky="w", padx=10)
+        
+        # Quiet hours with better formatting
+        quiet_frame = ttk.LabelFrame(scrollable_frame, text="🌙 Quiet Hours (No Notifications)")
+        quiet_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(quiet_frame, text="Set times when notifications should not be sent (useful for sleeping hours)", 
+                 font=("Arial", 10)).grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=5)
+        
+        ttk.Label(quiet_frame, text="Start time:", font=("Arial", 10, "bold")).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        quiet_start_var = tk.IntVar(value=current_settings.get('quiet_hours_start', 22))
+        quiet_start_spinbox = ttk.Spinbox(quiet_frame, from_=0, to=23, textvariable=quiet_start_var, width=8)
+        quiet_start_spinbox.grid(row=1, column=1, padx=5, pady=5)
+        ttk.Label(quiet_frame, text="(24-hour format, 22 = 10 PM)", font=("Arial", 9), foreground="gray").grid(row=1, column=2, sticky="w", padx=5)
+        
+        ttk.Label(quiet_frame, text="End time:", font=("Arial", 10, "bold")).grid(row=2, column=0, sticky="w", padx=10, pady=5)
+        quiet_end_var = tk.IntVar(value=current_settings.get('quiet_hours_end', 8))
+        quiet_end_spinbox = ttk.Spinbox(quiet_frame, from_=0, to=23, textvariable=quiet_end_var, width=8)
+        quiet_end_spinbox.grid(row=2, column=1, padx=5, pady=5)
+        ttk.Label(quiet_frame, text="(24-hour format, 8 = 8 AM)", font=("Arial", 9), foreground="gray").grid(row=2, column=2, sticky="w", padx=5)
+        
+        # Status display
+        status_frame = ttk.LabelFrame(scrollable_frame, text="📊 Current Status")
+        status_frame.pack(fill="x", padx=20, pady=10)
+        
+        status_text = tk.Text(status_frame, height=4, wrap=tk.WORD, state="disabled", font=("Arial", 9))
+        status_scrollbar = ttk.Scrollbar(status_frame, orient="vertical", command=status_text.yview)
+        status_text.configure(yscrollcommand=status_scrollbar.set)
+        
+        status_text.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        status_scrollbar.pack(side="right", fill="y", pady=10)
+        
+        # Update status display
+        def update_status_display():
+            status_text.config(state="normal")
+            status_text.delete(1.0, tk.END)
+            
+            daemon_status = "🟢 Running" if self.notification_daemon.running else "🔴 Stopped"
+            enabled_status = "🔔 Enabled" if current_settings.get('enabled', True) else "🔕 Disabled"
+            
+            status_info = f"""Daemon Status: {daemon_status}
+Notifications: {enabled_status}
+Check Interval: {current_settings.get('check_interval', 3600) // 60} minutes
+Quiet Hours: {current_settings.get('quiet_hours_start', 22)}:00 - {current_settings.get('quiet_hours_end', 8)}:00
+Last Check: {datetime.now().strftime('%I:%M %p')}"""
+            
+            status_text.insert(1.0, status_info)
+            status_text.config(state="disabled")
+        
+        update_status_display()
+        
+        # Buttons with better styling
+        button_frame = ttk.Frame(scrollable_frame)
+        button_frame.pack(pady=20)
+        
+        def save_notification_settings():
+            try:
+                # Parse advance warnings
+                advance_days = [int(x.strip()) for x in advance_var.get().split(",") if x.strip().isdigit()]
+                overdue_days = [int(x.strip()) for x in overdue_var.get().split(",") if x.strip().isdigit()]
+                
+                if not advance_days:
+                    advance_days = [7, 3, 1]  # Default fallback
+                if not overdue_days:
+                    overdue_days = [1, 3, 7, 14]  # Default fallback
+                
+                # Update settings
+                new_settings = {
+                    'enabled': enabled_var.get(),
+                    'check_interval': interval_var.get() * 60,  # Convert to seconds
+                    'advance_warning_days': advance_days,
+                    'overdue_reminder_days': overdue_days,
+                    'quiet_hours_start': quiet_start_var.get(),
+                    'quiet_hours_end': quiet_end_var.get(),
+                }
+                
+                self.notification_daemon.notification_settings.update(new_settings)
+                update_status_display()  # Refresh status
+                messagebox.showinfo("Settings Saved", 
+                                  "Notification settings have been updated successfully!\n\n"
+                                  "Changes will take effect on the next check cycle.")
+                settings_window.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save notification settings: {str(e)}")
+        
+        def reset_to_defaults():
+            """Reset all settings to defaults"""
+            if messagebox.askyesno("Reset Settings", "Reset all notification settings to defaults?"):
+                enabled_var.set(True)
+                interval_var.set(60)  # 1 hour
+                advance_var.set("7, 3, 1")
+                overdue_var.set("1, 3, 7, 14")
+                quiet_start_var.set(22)
+                quiet_end_var.set(8)
+        
+        def cancel_notification_settings():
+            settings_window.destroy()
+        
+        # Button layout
+        ttk.Button(button_frame, text="💾 Save Settings", command=save_notification_settings).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="🔄 Reset to Defaults", command=reset_to_defaults).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="❌ Cancel", command=cancel_notification_settings).pack(side="left", padx=5)
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        main_canvas.bind("<MouseWheel>", _on_mousewheel)
+        settings_window.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Focus on the test button initially
+        test_button_frame.focus_set()
+
+    def disable_notification_dates(self):
+        """Allow users to disable notifications for specific dates"""
+        if not self.current_account:
+            messagebox.showwarning("No Tenant Selected", "Please select a tenant first.")
+            return
+        
+        disable_window = tk.Toplevel(self.root)
+        disable_window.title(f"🚫 Disable Notification Dates - {self.current_account}")
+        disable_window.geometry("650x550")
+        disable_window.grab_set()
+        disable_window.transient(self.root)
+        disable_window.resizable(True, True)
+        
+        # Get current disabled dates
+        tenant_data = self.accounts[self.current_account]
+        disabled_dates = tenant_data.get('disabled_notification_dates', [])
+        
+        # Header
+        header_frame = ttk.Frame(disable_window)
+        header_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(header_frame, text=f"Disable Notification Dates for {self.current_account}", 
+                 font=("Arial", 14, "bold")).pack()
+        ttk.Label(header_frame, text="Select specific dates when notifications should not be sent", 
+                 font=("Arial", 10), foreground="gray").pack()
+        
+        # Main content frame with better layout
+        content_frame = ttk.Frame(disable_window)
+        content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Left side - Calendar
+        calendar_frame = ttk.LabelFrame(content_frame, text="📅 Select Dates to Disable")
+        calendar_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        
+        # Calendar widget
+        cal = Calendar(calendar_frame, selectmode='day', date_pattern='yyyy-mm-dd')
+        cal.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        # Right side - Disabled dates list with scroll
+        list_frame = ttk.LabelFrame(content_frame, text="🚫 Currently Disabled Dates")
+        list_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
+        
+        # Scrollable listbox
+        list_container = ttk.Frame(list_frame)
+        list_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        disabled_listbox = tk.Listbox(list_container, height=12)
+        list_scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=disabled_listbox.yview)
+        disabled_listbox.configure(yscrollcommand=list_scrollbar.set)
+        
+        disabled_listbox.pack(side="left", fill="both", expand=True)
+        list_scrollbar.pack(side="right", fill="y")
+        
+        # Populate disabled dates list
+        for date_str in sorted(disabled_dates):
+            disabled_listbox.insert(tk.END, date_str)
+        
+        # Instructions
+        instructions_frame = ttk.Frame(list_frame)
+        instructions_frame.pack(fill="x", padx=10, pady=5)
+        
+        instructions_text = tk.Text(instructions_frame, height=4, wrap=tk.WORD, font=("Arial", 9))
+        instructions_scrollbar = ttk.Scrollbar(instructions_frame, orient="vertical", command=instructions_text.yview)
+        instructions_text.configure(yscrollcommand=instructions_scrollbar.set)
+        
+        instructions_text.pack(side="left", fill="both", expand=True)
+        instructions_scrollbar.pack(side="right", fill="y")
+        
+        instructions_text.insert("1.0", """💡 Instructions:
+• Select a date on the calendar and click "Add Selected Date"
+• Select dates from the list and click "Remove Selected" to re-enable notifications
+• Useful for holidays, vacations, or temporary periods when tenant is away
+• Changes are saved automatically when you click "Save Changes" """)
+        instructions_text.config(state="disabled")
+        
+        # Buttons with enhanced functionality
+        button_frame = ttk.Frame(disable_window)
+        button_frame.pack(fill="x", padx=20, pady=10)
+        
+        def add_disabled_date():
+            selected_date = cal.get_date()
+            date_str = selected_date.strftime("%Y-%m-%d")
+            if date_str not in disabled_dates:
+                disabled_dates.append(date_str)
+                disabled_dates.sort()  # Keep sorted
+                disabled_listbox.delete(0, tk.END)
+                for d in disabled_dates:
+                    disabled_listbox.insert(tk.END, d)
+                messagebox.showinfo("Date Added", f"Notifications disabled for {date_str}")
+            else:
+                messagebox.showwarning("Already Disabled", f"Notifications are already disabled for {date_str}")
+        
+        def remove_disabled_date():
+            selection = disabled_listbox.curselection()
+            if selection:
+                index = selection[0]
+                date_str = disabled_listbox.get(index)
+                if date_str in disabled_dates:
+                    disabled_dates.remove(date_str)
+                disabled_listbox.delete(index)
+                messagebox.showinfo("Date Removed", f"Notifications re-enabled for {date_str}")
+            else:
+                messagebox.showwarning("No Selection", "Please select a date from the list to remove.")
+        
+        def clear_all_disabled():
+            if disabled_dates and messagebox.askyesno("Clear All", "Remove all disabled notification dates?"):
+                disabled_dates.clear()
+                disabled_listbox.delete(0, tk.END)
+                messagebox.showinfo("Cleared", "All disabled notification dates have been cleared.")
+        
+        def save_disabled_dates():
+            tenant_data['disabled_notification_dates'] = disabled_dates
+            self.save_accounts()
+            messagebox.showinfo("Settings Saved", 
+                              f"Notification disable dates saved for {self.current_account}\n\n"
+                              f"Total disabled dates: {len(disabled_dates)}")
+            disable_window.destroy()
+        
+        def cancel_disable_dates():
+            disable_window.destroy()
+        
+        # Button layout in two rows
+        button_row1 = ttk.Frame(button_frame)
+        button_row1.pack(pady=2)
+        button_row2 = ttk.Frame(button_frame)
+        button_row2.pack(pady=2)
+        
+        ttk.Button(button_row1, text="➕ Add Selected Date", command=add_disabled_date).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="➖ Remove Selected", command=remove_disabled_date).pack(side="left", padx=5)
+        ttk.Button(button_row1, text="🗑️ Clear All", command=clear_all_disabled).pack(side="left", padx=5)
+        
+        ttk.Button(button_row2, text="💾 Save Changes", command=save_disabled_dates).pack(side="left", padx=5)
+        ttk.Button(button_row2, text="❌ Cancel", command=cancel_disable_dates).pack(side="left", padx=5)
+        
+        # Focus on the calendar
+        cal.focus_set()
+
+    def open_rent_management(self):
+        """Open the enhanced rent management dialog"""
+        if not self.current_account:
+            messagebox.showwarning("No Account", "Please select an account first.")
+            return
+
+        rent_window = tk.Toplevel(self.root)
+        rent_window.title(f"💰 Rent Management - {self.current_account}")
+        rent_window.geometry("700x600")
+        rent_window.resizable(True, True)
+        
+        # Main header
+        header_frame = ttk.Frame(rent_window)
+        header_frame.pack(fill='x', padx=20, pady=10)
+        
+        ttk.Label(header_frame, text=f"Rent Management for {self.current_account}", 
+                 font=("Arial", 16, "bold")).pack()
+        ttk.Label(header_frame, text="Set global rent, yearly overrides, and monthly overrides", 
+                 font=("Arial", 10), foreground="gray").pack()
+
+        # Create notebook for tabbed interface
+        notebook = ttk.Notebook(rent_window)
+        notebook.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # === GLOBAL RENT TAB ===
+        global_frame = ttk.Frame(notebook)
+        notebook.add(global_frame, text="🏠 Global Rent")
+
+        # Global rent section
+        global_section = ttk.LabelFrame(global_frame, text="Default Monthly Rent")
+        global_section.pack(fill='x', padx=20, pady=20)
+
+        current_rent = self.accounts[self.current_account].get("rent", 1000.0)
+        
+        ttk.Label(global_section, text="This is the default rent amount used when no overrides are set.", 
+                 font=("Arial", 10)).pack(pady=5)
+        
+        rent_frame = ttk.Frame(global_section)
+        rent_frame.pack(pady=10)
+        
+        ttk.Label(rent_frame, text="Monthly Rent Amount: $", font=("Arial", 12)).pack(side="left")
+        global_rent_var = tk.DoubleVar(value=current_rent)
+        global_rent_entry = ttk.Entry(rent_frame, textvariable=global_rent_var, font=("Arial", 12), width=10)
+        global_rent_entry.pack(side="left", padx=5)
+
+        def save_global_rent():
+            new_rent = global_rent_var.get()
+            if new_rent <= 0:
+                messagebox.showerror("Invalid Amount", "Rent amount must be positive.")
+                return
+            
+            # Ask about back-propagation
+            result = messagebox.askyesnocancel(
+                "Apply Changes",
+                f"Set global rent to ${new_rent:.2f}?\n\n"
+                "🔄 YES: Apply to all months without specific overrides\n"
+                "⏭️ NO: Only apply to future calculations\n"
+                "❌ CANCEL: Don't save changes"
+            )
+            
+            if result is None:  # Cancel
+                return
+            
+            self.accounts[self.current_account]["rent"] = new_rent
+            
+            if result:  # Yes - back-propagate
+                # Clear monthly overrides that match the new global rent
+                monthly_rents = self.accounts[self.current_account].get("monthly_rents", {})
+                yearly_rents = self.accounts[self.current_account].get("yearly_rents", {})
+                
+                # Remove redundant overrides that match the new global rate
+                for year_str, year_data in list(monthly_rents.items()):
+                    for month in list(year_data.keys()):
+                        if abs(year_data[month] - new_rent) < 0.01:  # Close enough to be the same
+                            del year_data[month]
+                    if not year_data:  # Remove empty year
+                        del monthly_rents[year_str]
+                
+                for year_str in list(yearly_rents.keys()):
+                    if abs(yearly_rents[year_str] - new_rent) < 0.01:
+                        del yearly_rents[year_str]
+            
+            self.save_accounts()
+            self.refresh_dashboard()
+            messagebox.showinfo("✅ Success", f"Global rent updated to ${new_rent:.2f}")
+            rent_window.destroy()
+
+        button_frame = ttk.Frame(global_section)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="💾 Save Global Rent", command=save_global_rent).pack()
+
+        # === YEARLY RENT TAB ===
+        yearly_frame = ttk.Frame(notebook)
+        notebook.add(yearly_frame, text="📅 Yearly Overrides")
+
+        yearly_section = ttk.LabelFrame(yearly_frame, text="Year-Specific Rent Amounts")
+        yearly_section.pack(fill='both', expand=True, padx=20, pady=20)
+
+        ttk.Label(yearly_section, text="Set different rent amounts for entire years (overrides global rent).", 
+                 font=("Arial", 10)).pack(pady=5)
+
+        # Yearly rent list with better display
+        yearly_list_frame = ttk.Frame(yearly_section)
+        yearly_list_frame.pack(fill='both', expand=True, pady=10)
+
+        ttk.Label(yearly_list_frame, text="Current Yearly Overrides:", font=("Arial", 11, "bold")).pack(anchor='w')
+        yearly_listbox = tk.Listbox(yearly_list_frame, height=8, font=("Arial", 10))
+        yearly_listbox.pack(fill='both', expand=True, pady=5)
+
+        def refresh_yearly_list():
+            yearly_listbox.delete(0, tk.END)
+            yearly_rents = self.accounts[self.current_account].get("yearly_rents", {})
+            if yearly_rents:
+                for year, amount in sorted(yearly_rents.items()):
+                    yearly_listbox.insert(tk.END, f"📅 {year}: ${amount:.2f}/month")
+            else:
+                yearly_listbox.insert(tk.END, "No yearly overrides set")
+
+        # Yearly rent controls with better layout
+        yearly_controls = ttk.LabelFrame(yearly_section, text="Add New Yearly Override")
+        yearly_controls.pack(fill='x', pady=10)
+
+        yearly_input_frame = ttk.Frame(yearly_controls)
+        yearly_input_frame.pack(pady=10)
+
+        ttk.Label(yearly_input_frame, text="Year:").grid(row=0, column=0, padx=5, sticky='e')
+        year_var = tk.StringVar(value=str(datetime.now().year + 1))
+        year_entry = ttk.Entry(yearly_input_frame, textvariable=year_var, width=8)
+        year_entry.grid(row=0, column=1, padx=5)
+
+        ttk.Label(yearly_input_frame, text="Monthly Rent: $").grid(row=0, column=2, padx=5, sticky='e')
+        yearly_rent_var = tk.DoubleVar()
+        yearly_rent_entry = ttk.Entry(yearly_input_frame, textvariable=yearly_rent_var, width=10)
+        yearly_rent_entry.grid(row=0, column=3, padx=5)
+
+        def add_yearly_rent():
+            try:
+                year = int(year_var.get())
+                amount = yearly_rent_var.get()
+                if amount <= 0:
+                    messagebox.showerror("Invalid Amount", "Rent amount must be positive.")
+                    return
+                
+                if "yearly_rents" not in self.accounts[self.current_account]:
+                    self.accounts[self.current_account]["yearly_rents"] = {}
+                
+                self.accounts[self.current_account]["yearly_rents"][str(year)] = amount
+                self.save_accounts()
+                refresh_yearly_list()
+                year_var.set(str(year + 1))
+                yearly_rent_var.set(0)
+                messagebox.showinfo("✅ Success", f"Yearly rent for {year} set to ${amount:.2f}/month")
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid year and amount.")
+
+        def remove_yearly_rent():
+            selection = yearly_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a yearly override to remove.")
+                return
+            
+            item_text = yearly_listbox.get(selection[0])
+            if "No yearly overrides" in item_text:
+                return
+                
+            # Extract year from "📅 2025: $1200.00/month"
+            year = item_text.split(":")[0].replace("📅 ", "").strip()
+            
+            yearly_rents = self.accounts[self.current_account].get("yearly_rents", {})
+            if year in yearly_rents:
+                del yearly_rents[year]
+                self.save_accounts()
+                refresh_yearly_list()
+                messagebox.showinfo("✅ Success", f"Yearly override for {year} removed.")
+
+        yearly_buttons = ttk.Frame(yearly_controls)
+        yearly_buttons.pack(pady=10)
+        ttk.Button(yearly_buttons, text="➕ Add Override", command=add_yearly_rent).pack(side="left", padx=5)
+        ttk.Button(yearly_buttons, text="🗑️ Remove Selected", command=remove_yearly_rent).pack(side="left", padx=5)
+
+        # === MONTHLY RENT TAB ===
+        monthly_frame = ttk.Frame(notebook)
+        notebook.add(monthly_frame, text="📆 Monthly Overrides")
+
+        monthly_section = ttk.LabelFrame(monthly_frame, text="Month-Specific Rent Amounts")
+        monthly_section.pack(fill='both', expand=True, padx=20, pady=20)
+
+        ttk.Label(monthly_section, text="Set rent for specific months (overrides both global and yearly rent).", 
+                 font=("Arial", 10)).pack(pady=5)
+
+        # Monthly rent list with better display
+        monthly_list_frame = ttk.Frame(monthly_section)
+        monthly_list_frame.pack(fill='both', expand=True, pady=10)
+
+        ttk.Label(monthly_list_frame, text="Current Monthly Overrides:", font=("Arial", 11, "bold")).pack(anchor='w')
+        monthly_listbox = tk.Listbox(monthly_list_frame, height=10, font=("Arial", 10))
+        monthly_listbox.pack(fill='both', expand=True, pady=5)
+
+        def refresh_monthly_list():
+            monthly_listbox.delete(0, tk.END)
+            monthly_rents = self.accounts[self.current_account].get("monthly_rents", {})
+            if monthly_rents:
+                for year_str in sorted(monthly_rents.keys()):
+                    for month in MONTHS:
+                        if month in monthly_rents[year_str]:
+                            amount = monthly_rents[year_str][month]
+                            monthly_listbox.insert(tk.END, f"📆 {month} {year_str}: ${amount:.2f}")
+            else:
+                monthly_listbox.insert(tk.END, "No monthly overrides set")
+
+        # Monthly rent controls with better layout
+        monthly_controls = ttk.LabelFrame(monthly_section, text="Add New Monthly Override")
+        monthly_controls.pack(fill='x', pady=10)
+
+        monthly_input_frame = ttk.Frame(monthly_controls)
+        monthly_input_frame.pack(pady=10)
+
+        ttk.Label(monthly_input_frame, text="Year:").grid(row=0, column=0, padx=3, sticky='e')
+        month_year_var = tk.StringVar(value=str(datetime.now().year))
+        month_year_entry = ttk.Entry(monthly_input_frame, textvariable=month_year_var, width=8)
+        month_year_entry.grid(row=0, column=1, padx=3)
+
+        ttk.Label(monthly_input_frame, text="Month:").grid(row=0, column=2, padx=3, sticky='e')
+        month_var = tk.StringVar()
+        month_combo = ttk.Combobox(monthly_input_frame, textvariable=month_var, values=MONTHS, width=10, state="readonly")
+        month_combo.grid(row=0, column=3, padx=3)
+
+        ttk.Label(monthly_input_frame, text="Rent: $").grid(row=0, column=4, padx=3, sticky='e')
+        monthly_rent_var = tk.DoubleVar()
+        monthly_rent_entry = ttk.Entry(monthly_input_frame, textvariable=monthly_rent_var, width=10)
+        monthly_rent_entry.grid(row=0, column=5, padx=3)
+
+        def add_monthly_rent():
+            try:
+                year = int(month_year_var.get())
+                month = month_var.get()
+                amount = monthly_rent_var.get()
+                
+                if not month:
+                    messagebox.showerror("Invalid Input", "Please select a month.")
+                    return
+                if amount <= 0:
+                    messagebox.showerror("Invalid Amount", "Rent amount must be positive.")
+                    return
+                
+                if "monthly_rents" not in self.accounts[self.current_account]:
+                    self.accounts[self.current_account]["monthly_rents"] = {}
+                
+                year_str = str(year)
+                if year_str not in self.accounts[self.current_account]["monthly_rents"]:
+                    self.accounts[self.current_account]["monthly_rents"][year_str] = {}
+                
+                self.accounts[self.current_account]["monthly_rents"][year_str][month] = amount
+                self.save_accounts()
+                refresh_monthly_list()
+                monthly_rent_var.set(0)
+                month_var.set("")
+                messagebox.showinfo("✅ Success", f"Monthly rent for {month} {year} set to ${amount:.2f}")
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid year and amount.")
+
+        def remove_monthly_rent():
+            selection = monthly_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a monthly override to remove.")
+                return
+            
+            item_text = monthly_listbox.get(selection[0])
+            if "No monthly overrides" in item_text:
+                return
+                
+            # Parse "📆 July 2025: $1500.00"
+            parts = item_text.replace("📆 ", "").split(":")
+            month_year = parts[0].strip()
+            month, year = month_year.rsplit(" ", 1)
+            
+            monthly_rents = self.accounts[self.current_account].get("monthly_rents", {})
+            if year in monthly_rents and month in monthly_rents[year]:
+                del monthly_rents[year][month]
+                if not monthly_rents[year]:  # Remove empty year
+                    del monthly_rents[year]
+                self.save_accounts()
+                refresh_monthly_list()
+                messagebox.showinfo("✅ Success", f"Monthly override for {month} {year} removed.")
+
+        monthly_buttons = ttk.Frame(monthly_controls)
+        monthly_buttons.pack(pady=10)
+        ttk.Button(monthly_buttons, text="➕ Add Override", command=add_monthly_rent).pack(side="left", padx=5)
+        ttk.Button(monthly_buttons, text="🗑️ Remove Selected", command=remove_monthly_rent).pack(side="left", padx=5)
+
+        # === SUMMARY TAB ===
+        summary_frame = ttk.Frame(notebook)
+        notebook.add(summary_frame, text="📊 Summary")
+
+        summary_section = ttk.LabelFrame(summary_frame, text="Rent Override Summary")
+        summary_section.pack(fill='both', expand=True, padx=20, pady=20)
+
+        def refresh_summary():
+            # Clear previous summary
+            for widget in summary_section.winfo_children():
+                if isinstance(widget, ttk.Label) and widget.winfo_class() != 'TLabel':
+                    continue
+                if hasattr(widget, 'pack_info') and widget.pack_info():
+                    widget.destroy()
+
+            summary_text = tk.Text(summary_section, height=20, wrap=tk.WORD, font=("Arial", 10))
+            summary_text.pack(fill='both', expand=True, padx=10, pady=10)
+
+            # Build summary content
+            content = f"RENT SUMMARY FOR {self.current_account.upper()}\n"
+            content += "=" * 50 + "\n\n"
+
+            # Global rent
+            global_rent = self.accounts[self.current_account].get("rent", 1000.0)
+            content += f"🏠 Global Default Rent: ${global_rent:.2f}/month\n\n"
+
+            # Yearly overrides
+            yearly_rents = self.accounts[self.current_account].get("yearly_rents", {})
+            if yearly_rents:
+                content += "📅 YEARLY OVERRIDES:\n"
+                for year, amount in sorted(yearly_rents.items()):
+                    content += f"   • {year}: ${amount:.2f}/month\n"
+                content += "\n"
+            else:
+                content += "📅 No yearly overrides set\n\n"
+
+            # Monthly overrides
+            monthly_rents = self.accounts[self.current_account].get("monthly_rents", {})
+            if monthly_rents:
+                content += "📆 MONTHLY OVERRIDES:\n"
+                for year_str in sorted(monthly_rents.keys()):
+                    content += f"   {year_str}:\n"
+                    year_data = monthly_rents[year_str]
+                    for month in MONTHS:
+                        if month in year_data:
+                            content += f"      • {month}: ${year_data[month]:.2f}\n"
+                content += "\n"
+            else:
+                content += "📆 No monthly overrides set\n\n"
+
+            # Priority explanation
+            content += "PRIORITY ORDER:\n"
+            content += "1. Monthly Override (highest priority)\n"
+            content += "2. Yearly Override\n"
+            content += "3. Global Default (lowest priority)\n\n"
+
+            # Current month example
+            current_month = datetime.now().strftime("%B")
+            current_year = str(datetime.now().year)
+            current_rent = self.get_rent_for_month(self.current_account, current_month, current_year)
+            content += f"EXAMPLE - Current Month ({current_month} {current_year}):\n"
+            content += f"Effective Rent: ${current_rent:.2f}/month\n"
+
+            if current_rent != global_rent:
+                content += f"(Override active - would be ${global_rent:.2f} without overrides)\n"
+            else:
+                content += "(Using global default rent)\n"
+
+            summary_text.insert("1.0", content)
+            summary_text.config(state="disabled")
+
+        refresh_button = ttk.Button(summary_section, text="🔄 Refresh Summary", command=refresh_summary)
+        refresh_button.pack(pady=5)
+
+        # Initialize all lists
+        refresh_yearly_list()
+        refresh_monthly_list()
+        refresh_summary()
+
+        # Set focus to global rent entry
+        global_rent_entry.focus()
+        global_rent_entry.select_range(0, tk.END)
+
+def launch_app():
+    print("DEBUG: launch_app called")
+    app = PaymentTrackerApp(root)
+    # Load all tenants on startup
+    app.load_all_tenants_on_startup()
+
+
+root = tk.Tk()
+LoginManager(root, launch_app)
+root.mainloop()
