@@ -1,0 +1,498 @@
+[
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000126,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\OneDrive\\Documents\\GitHub\\PythonLibraries\\OtterForge"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\OneDrive\\Documents\\GitHub\\PythonLibraries\\OtterForge\\tmp_cli_app.py"
+    ],
+    "finished_at": "2026-03-16T01:19:37.285337+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "",
+    "started_at": "2026-03-16T01:19:37.285211+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000157,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-6\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-6\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:20:08.901998+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:20:08.901841+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 9.9e-05,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-7\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-7\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:20:20.095762+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:20:20.095663+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.00014,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-8\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-8\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:20:58.898330+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:20:58.898190+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.00015,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-9\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-9\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:54:59.273298+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:54:59.273148+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000136,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-10\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-10\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:55:57.357324+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:55:57.357188+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000142,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-11\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-11\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T01:57:00.705540+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T01:57:00.705398+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000128,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-12\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-12\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:16:59.682634+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:16:59.682506+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000137,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-13\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-13\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:19:17.576814+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:19:17.576677+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000148,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-14\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-14\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:38:30.111359+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:38:30.111211+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000114,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-15\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-15\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:51:21.109945+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:51:21.109831+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 9.8e-05,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-16\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-16\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:55:42.823407+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:55:42.823309+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 9.2e-05,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-17\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-17\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T02:55:52.509814+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T02:55:52.509722+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000104,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-18\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-18\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T03:10:21.696293+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T03:10:21.696189+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000137,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-19\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-19\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T03:10:49.139703+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T03:10:49.139566+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 9.9e-05,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-20\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "pyinstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-20\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-16T03:12:55.153694+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-16T03:12:55.153595+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
+  }
+]

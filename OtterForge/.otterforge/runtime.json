@@ -1,0 +1,32 @@
+{
+  "json_data_dir": "C:\\Users\\brayd\\OneDrive\\Documents\\GitHub\\PythonLibraries\\OtterForge\\.otterforge",
+  "mcp": {
+    "enabled": false,
+    "exposed_tools": [
+      "scan_project",
+      "list_builders",
+      "inspect_builder",
+      "list_obfuscators",
+      "inspect_obfuscator",
+      "list_modules",
+      "doctor_toolchain",
+      "list_language_packs",
+      "show_manifest",
+      "list_compiler_configs",
+      "show_compiler_config",
+      "list_profiles",
+      "show_profile",
+      "create_organization_plan",
+      "list_artifacts",
+      "get_build_history",
+      "load_memory",
+      "get_memory_backend",
+      "get_mcp_status",
+      "list_mcp_tools"
+    ],
+    "read_only": true,
+    "transport": "stdio"
+  },
+  "memory_backend": "json",
+  "sql_database_path": "C:\\Users\\brayd\\OneDrive\\Documents\\GitHub\\PythonLibraries\\OtterForge\\.otterforge\\otterforge.db"
+}
