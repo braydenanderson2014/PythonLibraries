@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 
 from otterforge.builders.base import ToolAdapter
 from otterforge.models.build_request import BuildRequest
@@ -13,20 +13,24 @@ class PyInstallerAdapter(ToolAdapter):
         return "pyinstaller"
 
     def is_available(self) -> bool:
-        return shutil.which("pyinstaller") is not None
+        result = subprocess.run(
+            [sys.executable, "-m", "PyInstaller", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
     def get_version(self) -> str | None:
-        if not self.is_available():
-            return None
         result = subprocess.run(
-            ["pyinstaller", "--version"],
+            [sys.executable, "-m", "PyInstaller", "--version"],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode != 0:
             return None
-        return result.stdout.strip()
+        return result.stdout.strip() or result.stderr.strip()
 
     def get_supported_common_options(self) -> list[str]:
         return [
@@ -48,7 +52,7 @@ class PyInstallerAdapter(ToolAdapter):
 
     def build_command(self, build_request: BuildRequest) -> list[str]:
         self.validate_request(build_request)
-        command = ["pyinstaller"]
+        command = [sys.executable, "-m", "PyInstaller"]
 
         command.append("--onefile" if build_request.mode == "onefile" else "--onedir")
         command.append("--console" if build_request.console_mode else "--noconsole")

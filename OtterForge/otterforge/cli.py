@@ -184,6 +184,27 @@ def build_parser() -> argparse.ArgumentParser:
     toolchain_pack_install.add_argument("--os", dest="os_name")
     toolchain_pack_install.add_argument("--execute", action="store_true")
     toolchain_pack_install.add_argument("--continue-on-error", action="store_true")
+    toolchain_pack_add = toolchain_packs_subparsers.add_parser("add")
+    toolchain_pack_add.add_argument("pack_id")
+    toolchain_pack_add.add_argument("--name", required=True)
+    toolchain_pack_add.add_argument("--description", default="")
+    toolchain_pack_add.add_argument(
+        "--managers-json",
+        required=True,
+        help="JSON object like {\"windows\": {\"winget\": [\"winget install ...\"]}}",
+    )
+    toolchain_pack_add.add_argument(
+        "--imports-json",
+        default="[]",
+        help="JSON array of dependency entries (package_name/import_name/ecosystem)",
+    )
+    toolchain_pack_add.add_argument(
+        "--detectors-json",
+        default="{}",
+        help="JSON object like {\"windows\": [\"python --version\"]}",
+    )
+    toolchain_pack_remove = toolchain_packs_subparsers.add_parser("remove")
+    toolchain_pack_remove.add_argument("pack_id")
 
     toolchain_packages = toolchain_subparsers.add_parser("packages")
     toolchain_packages_subparsers = toolchain_packages.add_subparsers(
@@ -711,6 +732,24 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                     )
                 )
+                return 0
+            if args.toolchain_packs_command == "add":
+                managers = json.loads(args.managers_json)
+                imports = json.loads(args.imports_json)
+                detectors = json.loads(args.detectors_json)
+                _print_json(
+                    api.add_language_pack(
+                        pack_id=args.pack_id,
+                        name=args.name,
+                        description=args.description,
+                        managers=managers,
+                        third_party_imports=imports,
+                        detectors=detectors,
+                    )
+                )
+                return 0
+            if args.toolchain_packs_command == "remove":
+                _print_json(api.remove_language_pack(args.pack_id))
                 return 0
         if args.toolchain_command == "packages":
             if args.toolchain_packages_command == "managers":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 
 from otterforge.builders.base import ToolAdapter
 from otterforge.models.build_request import BuildRequest
@@ -13,11 +13,8 @@ class NuitkaAdapter(ToolAdapter):
         return "nuitka"
 
     def is_available(self) -> bool:
-        python_exe = shutil.which("python")
-        if python_exe is None:
-            return False
         result = subprocess.run(
-            [python_exe, "-m", "nuitka", "--version"],
+            [sys.executable, "-m", "nuitka", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -25,11 +22,8 @@ class NuitkaAdapter(ToolAdapter):
         return result.returncode == 0
 
     def get_version(self) -> str | None:
-        python_exe = shutil.which("python")
-        if python_exe is None:
-            return None
         result = subprocess.run(
-            [python_exe, "-m", "nuitka", "--version"],
+            [sys.executable, "-m", "nuitka", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -60,7 +54,7 @@ class NuitkaAdapter(ToolAdapter):
 
     def build_command(self, build_request: BuildRequest) -> list[str]:
         self.validate_request(build_request)
-        command = ["python", "-m", "nuitka", "--standalone"]
+        command = [sys.executable, "-m", "nuitka", "--standalone"]
 
         if build_request.mode == "onefile":
             command.append("--onefile")

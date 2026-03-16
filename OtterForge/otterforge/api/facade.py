@@ -43,6 +43,8 @@ from otterforge.services.ci_generator import CIGenerator
 
 
 class OtterForgeAPI:
+    CUSTOM_LANGUAGE_PACKS_SETTING = "custom_language_packs"
+
     def __init__(self, project_root: Path | str | None = None) -> None:
         self.backend_manager = MemoryBackendManager(project_root)
         self.mcp_server = MCPServer(self.backend_manager)
@@ -528,8 +530,79 @@ class OtterForgeAPI:
             "missing": report["missing"],
         }
 
+    def _get_custom_language_packs(self) -> dict[str, dict[str, Any]]:
+        state = self.backend_manager.read_memory()
+        raw = state.get("user_settings", {}).get(self.CUSTOM_LANGUAGE_PACKS_SETTING, {})
+        if not isinstance(raw, dict):
+            return {}
+
+        normalized: dict[str, dict[str, Any]] = {}
+        for pack_id, payload in raw.items():
+            normalized_id = str(pack_id).strip().lower()
+            if not normalized_id:
+                continue
+            if isinstance(payload, dict):
+                normalized[normalized_id] = dict(payload)
+        return normalized
+
+    def _save_custom_language_packs(self, custom_packs: dict[str, dict[str, Any]]) -> None:
+        state = self.backend_manager.read_memory()
+        user_settings = state.get("user_settings", {})
+        if not isinstance(user_settings, dict):
+            user_settings = {}
+            state["user_settings"] = user_settings
+        user_settings[self.CUSTOM_LANGUAGE_PACKS_SETTING] = custom_packs
+        self.save_memory(state)
+
+    def add_language_pack(
+        self,
+        pack_id: str,
+        name: str,
+        description: str,
+        managers: dict[str, dict[str, list[str]]],
+        third_party_imports: list[dict[str, Any]] | None = None,
+        detectors: dict[str, list[Any]] | None = None,
+    ) -> dict[str, Any]:
+        normalized_pack = pack_id.strip().lower()
+        if not normalized_pack:
+            raise ValueError("pack_id cannot be empty")
+        if not name.strip():
+            raise ValueError("name cannot be empty")
+        if not isinstance(managers, dict) or not managers:
+            raise ValueError("managers must be a non-empty dictionary")
+
+        custom_packs = self._get_custom_language_packs()
+        custom_packs[normalized_pack] = {
+            "name": name.strip(),
+            "description": description.strip(),
+            "managers": managers,
+            "third_party_imports": third_party_imports or [],
+            "detectors": detectors or {},
+        }
+        self._save_custom_language_packs(custom_packs)
+
+        packs = self.list_language_packs().get("packs", [])
+        for item in packs:
+            if str(item.get("pack_id", "")).strip().lower() == normalized_pack:
+                return item
+        raise KeyError(f"Failed to persist language pack '{normalized_pack}'")
+
+    def remove_language_pack(self, pack_id: str) -> dict[str, Any]:
+        normalized_pack = pack_id.strip().lower()
+        if not normalized_pack:
+            raise ValueError("pack_id cannot be empty")
+
+        custom_packs = self._get_custom_language_packs()
+        removed = custom_packs.pop(normalized_pack, None)
+        if removed is None:
+            raise KeyError(f"Custom language pack '{pack_id}' not found")
+        self._save_custom_language_packs(custom_packs)
+        return {"removed": normalized_pack}
+
     def list_language_packs(self) -> dict[str, Any]:
-        packs = self.toolchain_service.list_language_packs()
+        packs = self.toolchain_service.list_language_packs(
+            custom_packs=self._get_custom_language_packs(),
+        )
         return {
             "count": len(packs),
             "packs": packs,
@@ -558,9 +631,17 @@ class OtterForgeAPI:
                 )
             )
 
-        language_pack_modules = self.toolchain_service.list_language_pack_modules(os_name=os_name)
+        builder_modules = self.toolchain_service.list_tool_modules(
+            tools=self.list_builders(),
+            os_name=os_name,
+            tool_kind="builder",
+        )
+        language_pack_modules = self.toolchain_service.list_language_pack_modules(
+            os_name=os_name,
+            custom_packs=self._get_custom_language_packs(),
+        )
         modules = sorted(
-            [*package_modules, *language_pack_modules],
+            [*package_modules, *builder_modules, *language_pack_modules],
             key=lambda entry: (str(entry.get("module_kind", "")), str(entry.get("name", "")).lower()),
         )
 
@@ -579,31 +660,86 @@ class OtterForgeAPI:
         os_name: str | None = None,
         limit: int = 25,
     ) -> dict[str, Any]:
+        query_clean = query.strip()
         package_result = self.search_packages(query=query, manager=manager, os_name=os_name, limit=limit)
         modules: list[dict[str, Any]] = []
+        seen_module_ids: set[str] = set()
         ecosystem = "python" if package_result.get("manager") in {"pip", "uv"} else None
         for item in package_result.get("results", []):
             name = str(item.get("name", "")).strip()
             if not name:
                 continue
-            modules.append(
-                self.toolchain_service.build_package_module_entry(
-                    package_name=name,
-                    os_name=os_name,
-                    source="search",
-                    preferred_manager=str(package_result.get("manager") or "").strip() or None,
-                    ecosystem=ecosystem,
-                    installed=None,
-                    installed_version=None,
-                    metadata={"line": item.get("line")},
-                )
+            module = self.toolchain_service.build_package_module_entry(
+                package_name=name,
+                os_name=os_name,
+                source="search",
+                preferred_manager=str(package_result.get("manager") or "").strip() or None,
+                ecosystem=ecosystem,
+                installed=None,
+                installed_version=None,
+                metadata={"line": item.get("line")},
             )
+            module_id = str(module.get("module_id", "")).strip()
+            if module_id and module_id not in seen_module_ids:
+                seen_module_ids.add(module_id)
+                modules.append(module)
+
+        # If query is a GitHub repo URL, offer it directly as an installable module.
+        if "github.com/" in query_clean.lower():
+            try:
+                module = self.toolchain_service.build_github_repo_module_entry(repo_url=query_clean)
+            except Exception:
+                module = None
+            if module is not None:
+                module_id = str(module.get("module_id", "")).strip()
+                if module_id and module_id not in seen_module_ids:
+                    seen_module_ids.add(module_id)
+                    modules.append(module)
+
+        for module in self.toolchain_service.search_known_tool_modules(
+            query=query,
+            tools=self.list_builders(),
+            os_name=os_name,
+            tool_kind="builder",
+        ):
+            module_id = str(module.get("module_id", "")).strip()
+            if module_id and module_id not in seen_module_ids:
+                seen_module_ids.add(module_id)
+                modules.append(module)
 
         return {
             **package_result,
             "module_count": len(modules),
             "modules": modules,
         }
+
+    def build_github_repo_module(
+        self,
+        repo_url: str,
+        destination_root: str | None = None,
+        branch: str | None = None,
+    ) -> dict[str, Any]:
+        return self.toolchain_service.build_github_repo_module_entry(
+            repo_url=repo_url,
+            destination_root=destination_root,
+            branch=branch,
+        )
+
+    def install_github_repo(
+        self,
+        repo_url: str,
+        destination_root: str | None = None,
+        branch: str | None = None,
+        existing_policy: str = "error",
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        return self.toolchain_service.install_github_repo(
+            repo_url=repo_url,
+            destination_root=destination_root,
+            branch=branch,
+            existing_policy=existing_policy,
+            execute=execute,
+        )
 
     def install_language_pack(
         self,
@@ -619,6 +755,7 @@ class OtterForgeAPI:
             os_name=os_name,
             execute=execute,
             continue_on_error=continue_on_error,
+            custom_packs=self._get_custom_language_packs(),
         )
 
     def list_package_managers(self, os_name: str | None = None) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 
 from otterforge.builders.base import ToolAdapter
 from otterforge.models.build_request import BuildRequest
@@ -13,13 +13,8 @@ class CxFreezeAdapter(ToolAdapter):
         return "cxfreeze"
 
     def is_available(self) -> bool:
-        if shutil.which("cxfreeze") is not None:
-            return True
-        python_exe = shutil.which("python")
-        if python_exe is None:
-            return False
         result = subprocess.run(
-            [python_exe, "-m", "cx_Freeze", "--version"],
+            [sys.executable, "-m", "cx_Freeze", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -27,21 +22,8 @@ class CxFreezeAdapter(ToolAdapter):
         return result.returncode == 0
 
     def get_version(self) -> str | None:
-        if shutil.which("cxfreeze") is not None:
-            result = subprocess.run(
-                ["cxfreeze", "--version"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip() or result.stderr.strip()
-
-        python_exe = shutil.which("python")
-        if python_exe is None:
-            return None
         result = subprocess.run(
-            [python_exe, "-m", "cx_Freeze", "--version"],
+            [sys.executable, "-m", "cx_Freeze", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -68,7 +50,7 @@ class CxFreezeAdapter(ToolAdapter):
 
     def build_command(self, build_request: BuildRequest) -> list[str]:
         self.validate_request(build_request)
-        command = ["cxfreeze", str(build_request.entry_script)]
+        command = [sys.executable, "-m", "cx_Freeze", str(build_request.entry_script)]
 
         if build_request.executable_name:
             command.extend(["--target-name", build_request.executable_name])

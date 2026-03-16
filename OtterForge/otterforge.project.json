@@ -1,0 +1,1202 @@
+{
+  "assets": {
+    "icons": [],
+    "splash": []
+  },
+  "documentation": {
+    "files": [
+      "D:\\PythonLibraries\\OtterForge\\README.md",
+      "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\SOURCES.txt",
+      "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\dependency_links.txt",
+      "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\entry_points.txt",
+      "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\requires.txt",
+      "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\top_level.txt",
+      "D:\\PythonLibraries\\OtterForge\\plan.txt"
+    ]
+  },
+  "entry_points": [
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\__main__.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\cli.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_asset_pipeline.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_hook_runner.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_mcp_server.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_memory_migrator.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_module_service_dependency_checker.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_notification_service.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_plugin_loader.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_project_organizer.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_project_scanner.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_storage.py"
+    },
+    {
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_toolchain_package_browser.py"
+    }
+  ],
+  "layout": {
+    "scope": "projects"
+  },
+  "project": {
+    "root": "D:\\PythonLibraries\\OtterForge"
+  },
+  "scan_catalog": [
+    {
+      "confidence": 0.5,
+      "extension": "",
+      "name": ".gitignore",
+      "path": "D:\\PythonLibraries\\OtterForge\\.gitignore",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".md",
+      "name": "README.md",
+      "path": "D:\\PythonLibraries\\OtterForge\\README.md",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.5,
+      "extension": ".bat",
+      "name": "install_windows.bat",
+      "path": "D:\\PythonLibraries\\OtterForge\\install_windows.bat",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.5,
+      "extension": ".ps1",
+      "name": "install_windows.ps1",
+      "path": "D:\\PythonLibraries\\OtterForge\\install_windows.ps1",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.5,
+      "extension": ".bat",
+      "name": "launch_ui.bat",
+      "path": "D:\\PythonLibraries\\OtterForge\\launch_ui.bat",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.5,
+      "extension": "",
+      "name": "PKG-INFO",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\PKG-INFO",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "SOURCES.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\SOURCES.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "dependency_links.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\dependency_links.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "entry_points.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\entry_points.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "requires.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\requires.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "top_level.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge.egg-info\\top_level.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "__main__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\__main__.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\api\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "facade.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\api\\facade.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "base.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\base.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "briefcase.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\briefcase.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "c_builder.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\c_builder.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "cpp_builder.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\cpp_builder.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "cxfreeze.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\cxfreeze.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "go_builder.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\go_builder.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "nuitka.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\nuitka.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "py2app.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\py2app.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "py2exe.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\py2exe.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "pyinstaller.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\pyinstaller.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "rust_builder.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\rust_builder.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "shiv.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\shiv.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "zipapp_builder.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\builders\\zipapp_builder.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "cli.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\cli.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "appimage.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\appimage.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "base.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\base.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "inno_setup.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\inno_setup.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "nsis.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\nsis.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "pkgbuild.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\pkgbuild.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "wix.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\installers\\wix.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\manifest\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\mcp\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "policy.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\mcp\\policy.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "server.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\mcp\\server.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "tool_registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\mcp\\tool_registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "build_request.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\build_request.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "build_result.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\build_result.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "installer_request.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\installer_request.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "installer_result.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\installer_result.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "obfuscation_request.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\obfuscation_request.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "obfuscation_result.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\obfuscation_result.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "organization_plan.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\organization_plan.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "package_request.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\package_request.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "package_result.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\package_result.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "profile.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\profile.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "project_schema.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\project_schema.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "scan_result.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\models\\scan_result.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "base.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\base.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "cythonize.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\cythonize.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "garble.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\garble.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "javascript_obfuscator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\javascript_obfuscator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "native_strip.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\native_strip.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "nuitka.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\nuitka.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "obfuscar.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\obfuscar.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "proguard.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\proguard.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "pyarmor.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\pyarmor.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "pyminifier.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\pyminifier.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\obfuscators\\registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "base.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\base.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "build_packager.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\build_packager.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "hatch_packager.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\hatch_packager.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "poetry_packager.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\poetry_packager.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "setuptools_packager.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\packagers\\setuptools_packager.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\plugins\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "loader.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\plugins\\loader.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "registry.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\plugins\\registry.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "asset_pipeline.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\asset_pipeline.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "build_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\build_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "checksum_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\checksum_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "ci_generator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\ci_generator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "command_translator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\command_translator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "compiler_config_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\compiler_config_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "container_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\container_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "dependency_auditor.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\dependency_auditor.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "hook_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\hook_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "installer_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\installer_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "manifest_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\manifest_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "matrix_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\matrix_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "memory_backend_manager.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\memory_backend_manager.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "memory_migrator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\memory_migrator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "module_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\module_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "notification_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\notification_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "obfuscation_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\obfuscation_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "organization_manifest.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\organization_manifest.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "package_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\package_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "profile_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\profile_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "project_organizer.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\project_organizer.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "project_scanner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\project_scanner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "sandbox_launcher.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\sandbox_launcher.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "schema_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\schema_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "signing_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\signing_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "size_analyzer.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\size_analyzer.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_runner_gate.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\test_runner_gate.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "toolchain_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\toolchain_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "version_resolver.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\services\\version_resolver.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\storage\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "json_store.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\storage\\json_store.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "memory_store.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\storage\\memory_store.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "sql_store.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\storage\\sql_store.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\ui\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "main_window.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\ui\\main_window.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "__init__.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\utils\\__init__.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "paths.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\otterforge\\utils\\paths.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".txt",
+      "name": "plan.txt",
+      "path": "D:\\PythonLibraries\\OtterForge\\plan.txt",
+      "role": "documentation",
+      "suggested_target_folder": "docs"
+    },
+    {
+      "confidence": 0.5,
+      "extension": ".toml",
+      "name": "pyproject.toml",
+      "path": "D:\\PythonLibraries\\OtterForge\\pyproject.toml",
+      "role": "other",
+      "suggested_target_folder": "misc"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_asset_pipeline.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_asset_pipeline.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_checksum_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_checksum_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_ci_generator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_ci_generator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_cli_smoke.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_cli_smoke.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_command_translator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_command_translator.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_container_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_container_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_dependency_auditor.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_dependency_auditor.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_hook_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_hook_runner.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_matrix_runner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_matrix_runner.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_mcp_server.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_mcp_server.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_memory_migrator.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_memory_migrator.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_module_service_dependency_checker.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_module_service_dependency_checker.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_notification_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_notification_service.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_plugin_loader.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_plugin_loader.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_project_organizer.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_project_organizer.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_project_scanner.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_project_scanner.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_sandbox_launcher.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_sandbox_launcher.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_signing_service.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_signing_service.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_size_analyzer.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_size_analyzer.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_storage.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_storage.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_test_runner_gate.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_test_runner_gate.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.9,
+      "extension": ".py",
+      "name": "test_toolchain_package_browser.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_toolchain_package_browser.py",
+      "role": "entry-point",
+      "suggested_target_folder": "src"
+    },
+    {
+      "confidence": 0.8,
+      "extension": ".py",
+      "name": "test_version_resolver.py",
+      "path": "D:\\PythonLibraries\\OtterForge\\tests\\test_version_resolver.py",
+      "role": "source",
+      "suggested_target_folder": "src"
+    }
+  ]
+}

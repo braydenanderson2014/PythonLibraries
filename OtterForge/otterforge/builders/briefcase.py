@@ -7,8 +7,8 @@ bundle.  It operates on projects that have a ``pyproject.toml`` with a
 """
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 
 from otterforge.builders.base import ToolAdapter
 from otterforge.models.build_request import BuildRequest
@@ -29,13 +29,17 @@ class BriefcaseAdapter(ToolAdapter):
         return ["app_bundle", "installer"]
 
     def is_available(self) -> bool:
-        return shutil.which("briefcase") is not None
+        result = subprocess.run(
+            [sys.executable, "-m", "briefcase", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
     def get_version(self) -> str | None:
-        if not self.is_available():
-            return None
         result = subprocess.run(
-            ["briefcase", "--version"],
+            [sys.executable, "-m", "briefcase", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -70,7 +74,7 @@ class BriefcaseAdapter(ToolAdapter):
         if platform in ("current", "auto", ""):
             platform = ""  # omit → briefcase infers host platform
 
-        command = ["briefcase", subcommand]
+        command = [sys.executable, "-m", "briefcase", subcommand]
         if platform:
             command.append(platform)
         command.extend(build_request.raw_builder_args)

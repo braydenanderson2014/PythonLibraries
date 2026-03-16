@@ -10,8 +10,8 @@ CLI invocation pattern::
 """
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 
 from otterforge.builders.base import ToolAdapter
 from otterforge.models.build_request import BuildRequest
@@ -32,13 +32,17 @@ class ShivAdapter(ToolAdapter):
         return ["pyz"]
 
     def is_available(self) -> bool:
-        return shutil.which("shiv") is not None
+        result = subprocess.run(
+            [sys.executable, "-m", "shiv", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
     def get_version(self) -> str | None:
-        if not self.is_available():
-            return None
         result = subprocess.run(
-            ["shiv", "--version"],
+            [sys.executable, "-m", "shiv", "--version"],
             capture_output=True,
             text=True,
             check=False,
@@ -68,7 +72,7 @@ class ShivAdapter(ToolAdapter):
         name = build_request.executable_name or "app"
         output_file = output_dir / f"{name}.pyz"
 
-        command = ["shiv", "-o", str(output_file)]
+        command = [sys.executable, "-m", "shiv", "-o", str(output_file)]
 
         # entry_script stores the module:callable string for --entry or -e
         entry = str(build_request.entry_script)

@@ -12,16 +12,24 @@ Current foundation includes:
 
 ## Development
 
+Set up a local Windows environment with the installer:
+
+```powershell
+.\install_windows.bat
+```
+
+This creates `.venv` in the project root, upgrades packaging tools, and installs OtterForge with the `full` extra set.
+
 Run the CLI with:
 
 ```powershell
-python -m otterforge --help
+.\.venv\Scripts\python.exe -m otterforge --help
 ```
 
 Launch the UI with:
 
 ```powershell
-python -m otterforge ui
+.\.venv\Scripts\python.exe -m otterforge ui
 ```
 Or on Windows, use the batch launcher from the project root:
 
@@ -92,6 +100,6 @@ python -m otterforge mcp read-only off
 python -m otterforge mcp call run_obfuscation --arg project_path=. --arg source_path=.\main.py --arg dry_run=true
 ```
 
-If PyQt6 is not installed, the UI command will explain how to install it.
+If dependencies are missing, run `.\install_windows.bat` to rebuild the local environment.
 
 The UI now includes a Toolchain tab to view toolchain status, list module dependencies, and plan or run language-pack installs.

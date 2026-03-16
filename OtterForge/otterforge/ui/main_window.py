@@ -655,15 +655,15 @@ if PYQT_AVAILABLE:
             container = QWidget()
             layout = QVBoxLayout(container)
 
-            toolchain_group = QGroupBox("Toolchain Doctor")
+            toolchain_group = QGroupBox("Environment Check")
             toolchain_layout = QFormLayout(toolchain_group)
             toolchain_buttons = QHBoxLayout()
 
-            refresh_toolchain_button = QPushButton("Refresh Report")
+            refresh_toolchain_button = QPushButton("Refresh Status")
             refresh_toolchain_button.clicked.connect(self._refresh_toolchain)
             toolchain_buttons.addWidget(refresh_toolchain_button)
 
-            doctor_toolchain_button = QPushButton("Run Doctor Check")
+            doctor_toolchain_button = QPushButton("Check Missing Tools")
             doctor_toolchain_button.setToolTip(
                 "Check which required tools are available and show install hints for missing ones."
             )
@@ -672,7 +672,7 @@ if PYQT_AVAILABLE:
             toolchain_layout.addRow(toolchain_buttons)
             layout.addWidget(toolchain_group)
 
-            dependency_group = QGroupBox("Unified Module Manager")
+            dependency_group = QGroupBox("Package Installer")
             packs_layout = QFormLayout(dependency_group)
 
             self.modules_path_input = QLineEdit(".")
@@ -693,38 +693,41 @@ if PYQT_AVAILABLE:
             self.module_os_selector.currentIndexChanged.connect(self._refresh_unified_module_catalog)
 
             dep_buttons = QHBoxLayout()
-            list_modules_button = QPushButton("Refresh Module Inventory")
+            list_modules_button = QPushButton("Refresh Module List")
             list_modules_button.clicked.connect(self._refresh_unified_module_catalog)
             dep_buttons.addWidget(list_modules_button)
-            load_missing_button = QPushButton("Load Missing Into Typed Box")
+            load_missing_button = QPushButton("Load Missing Into Package List")
             load_missing_button.clicked.connect(self._load_missing_dependencies_into_package_fields)
             dep_buttons.addWidget(load_missing_button)
-            packs_layout.addRow("Operating System:", self.module_os_selector)
+            packs_layout.addRow("Target OS:", self.module_os_selector)
             packs_layout.addRow(dep_buttons)
 
             self.module_inventory_list = QListWidget()
             self.module_inventory_list.setMinimumHeight(130)
             self.module_inventory_list.itemSelectionChanged.connect(self._on_selected_module_changed)
-            packs_layout.addRow("Modules:", self.module_inventory_list)
+            packs_layout.addRow("Available Modules:", self.module_inventory_list)
 
             self.module_candidate_selector = QComboBox()
             self.module_candidate_selector.setToolTip(
                 "Install candidate for selected module (e.g. pip/uv for Python packages)."
             )
-            packs_layout.addRow("Install Candidate:", self.module_candidate_selector)
+            packs_layout.addRow("Preferred Installer:", self.module_candidate_selector)
 
-            self.pack_os_selector = QComboBox()
-            self.pack_os_selector.addItems(["auto", "windows", "linux", "macos"])
-            self.pack_os_selector.currentIndexChanged.connect(self._sync_module_os_selector)
-            self.pack_os_selector.currentIndexChanged.connect(self._refresh_unified_module_catalog)
-            self.pack_os_selector.currentIndexChanged.connect(self._refresh_module_search_managers)
+            # Keep backward-compatible alias used by install methods.
+            self.pack_os_selector = self.module_os_selector
             self.pack_continue_on_error_checkbox = QCheckBox("Continue installing even if a step fails")
+            self.pack_continue_on_error_checkbox.setToolTip(
+                "Useful for installing many packages at once when one might fail."
+            )
 
-            packs_layout.addRow("OS Alias:", self.pack_os_selector)
+            self.toolchain_preview_only_checkbox = QCheckBox("Preview commands only (dry run)")
+            self.toolchain_preview_only_checkbox.setChecked(False)
+
+            packs_layout.addRow(self.toolchain_preview_only_checkbox)
             packs_layout.addRow(self.pack_continue_on_error_checkbox)
 
             self.package_query_input = QLineEdit()
-            self.package_query_input.setPlaceholderText("requests, cmake, openssl, node, ...")
+            self.package_query_input.setPlaceholderText("pyinstaller, requests, cmake, openssl, node, ...")
             self.package_query_input.setToolTip(
                 "Search and add package modules to the unified module inventory."
             )
@@ -736,7 +739,7 @@ if PYQT_AVAILABLE:
             )
 
             self.package_name_input = QLineEdit()
-            self.package_name_input.setPlaceholderText("Package name to install")
+            self.package_name_input.setPlaceholderText("Package name")
             self.package_name_input.setToolTip("Use a search result or type a package name manually.")
 
             self.dependency_bulk_input = QTextEdit()
@@ -745,10 +748,36 @@ if PYQT_AVAILABLE:
             )
             self.dependency_bulk_input.setFixedHeight(70)
 
-            packs_layout.addRow("Search Query:", self.package_query_input)
-            packs_layout.addRow("Package Manager:", self.package_browser_manager_selector)
-            packs_layout.addRow("Package Name:", self.package_name_input)
-            packs_layout.addRow("Typed Packages:", self.dependency_bulk_input)
+            self.github_repo_url_input = QLineEdit()
+            self.github_repo_url_input.setPlaceholderText("https://github.com/owner/repo")
+            self.github_repo_url_input.setToolTip(
+                "Paste a GitHub repository URL to import it as an installable module."
+            )
+
+            self.github_install_root_input = QLineEdit(str(Path.home() / "OtterForgeRepos"))
+            self.github_install_root_input.setToolTip(
+                "Target root folder for cloning GitHub repositories."
+            )
+            github_root_row = QHBoxLayout()
+            github_root_row.addWidget(self.github_install_root_input)
+            self.browse_github_root_button = QPushButton("Browse...")
+            self.browse_github_root_button.setFixedWidth(72)
+            self.browse_github_root_button.clicked.connect(lambda: self._browse_dir(self.github_install_root_input))
+            github_root_row.addWidget(self.browse_github_root_button)
+
+            self.github_existing_policy_selector = QComboBox()
+            self.github_existing_policy_selector.addItem("Clone only (fail if folder exists)", "error")
+            self.github_existing_policy_selector.addItem("Pull if folder exists", "pull")
+            self.github_existing_policy_selector.addItem("Clone or Pull automatically", "clone_or_pull")
+            self.github_existing_policy_selector.setCurrentIndex(2)
+
+            packs_layout.addRow("Find Package:", self.package_query_input)
+            packs_layout.addRow("Search With:", self.package_browser_manager_selector)
+            packs_layout.addRow("Selected Package:", self.package_name_input)
+            packs_layout.addRow("Package List:", self.dependency_bulk_input)
+            packs_layout.addRow("GitHub Repo URL:", self.github_repo_url_input)
+            packs_layout.addRow("GitHub Install Root:", github_root_row)
+            packs_layout.addRow("GitHub Existing Folder:", self.github_existing_policy_selector)
 
             package_buttons = QHBoxLayout()
             refresh_pkg_managers_button = QPushButton("Refresh Managers")
@@ -759,38 +788,39 @@ if PYQT_AVAILABLE:
             search_packages_button.clicked.connect(self._search_packages_from_toolchain_tab)
             package_buttons.addWidget(search_packages_button)
 
-            plan_pkg_install_button = QPushButton("Plan Install  (dry-run)")
-            plan_pkg_install_button.clicked.connect(lambda: self._install_package_from_toolchain_tab(False))
-            package_buttons.addWidget(plan_pkg_install_button)
+            self.import_github_button = QPushButton("Import GitHub Repo")
+            self.import_github_button.clicked.connect(self._import_github_repo_from_toolchain_tab)
+            package_buttons.addWidget(self.import_github_button)
 
-            run_pkg_install_button = QPushButton("Run Install")
-            run_pkg_install_button.clicked.connect(lambda: self._install_package_from_toolchain_tab(True))
-            package_buttons.addWidget(run_pkg_install_button)
+            self.install_pkg_button = QPushButton("Install Selected")
+            self.install_pkg_button.clicked.connect(
+                lambda: self._install_package_from_toolchain_tab(self._toolchain_should_execute())
+            )
+            package_buttons.addWidget(self.install_pkg_button)
 
-            plan_pkg_uninstall_button = QPushButton("Plan Uninstall  (dry-run)")
-            plan_pkg_uninstall_button.clicked.connect(lambda: self._uninstall_package_from_toolchain_tab(False))
-            package_buttons.addWidget(plan_pkg_uninstall_button)
-
-            run_pkg_uninstall_button = QPushButton("Run Uninstall")
-            run_pkg_uninstall_button.clicked.connect(lambda: self._uninstall_package_from_toolchain_tab(True))
-            package_buttons.addWidget(run_pkg_uninstall_button)
+            self.uninstall_pkg_button = QPushButton("Uninstall Selected")
+            self.uninstall_pkg_button.clicked.connect(
+                lambda: self._uninstall_package_from_toolchain_tab(self._toolchain_should_execute())
+            )
+            package_buttons.addWidget(self.uninstall_pkg_button)
 
             packs_layout.addRow(package_buttons)
 
             typed_buttons = QHBoxLayout()
-            plan_typed_install_button = QPushButton("Plan Typed Install")
-            plan_typed_install_button.clicked.connect(lambda: self._install_typed_dependencies_from_toolchain_tab(False))
-            typed_buttons.addWidget(plan_typed_install_button)
-
-            run_typed_install_button = QPushButton("Run Typed Install")
-            run_typed_install_button.clicked.connect(lambda: self._install_typed_dependencies_from_toolchain_tab(True))
-            typed_buttons.addWidget(run_typed_install_button)
+            self.install_typed_button = QPushButton("Install Package List")
+            self.install_typed_button.clicked.connect(
+                lambda: self._install_typed_dependencies_from_toolchain_tab(self._toolchain_should_execute())
+            )
+            typed_buttons.addWidget(self.install_typed_button)
             packs_layout.addRow(typed_buttons)
             layout.addWidget(dependency_group)
 
+            self.toolchain_preview_only_checkbox.toggled.connect(self._update_toolchain_action_labels)
+            self._update_toolchain_action_labels()
+
             self.toolchain_output = QTextEdit()
             self.toolchain_output.setReadOnly(True)
-            self.toolchain_output.setPlaceholderText("Toolchain report will appear here...")
+            self.toolchain_output.setPlaceholderText("Environment and package results will appear here...")
             layout.addWidget(self.toolchain_output)
             return container
 
@@ -800,7 +830,7 @@ if PYQT_AVAILABLE:
             container = QWidget()
             layout = QVBoxLayout(container)
 
-            create_group = QGroupBox("Create Build Profile")
+            create_group = QGroupBox("Create or Edit Build Profile")
             create_layout = QFormLayout(create_group)
             self.profile_name_input = QLineEdit()
             self.profile_name_input.setPlaceholderText("e.g. windows-release")
@@ -816,9 +846,25 @@ if PYQT_AVAILABLE:
             create_layout.addRow("Description:", self.profile_description_input)
             create_layout.addRow("Settings (JSON):", self.profile_settings_input)
 
-            create_button = QPushButton("Create Profile")
+            create_buttons = QHBoxLayout()
+            create_button = QPushButton("Save As New")
+            create_button.setToolTip("Create a new profile using the values in this form.")
             create_button.clicked.connect(self._create_profile)
-            create_layout.addRow(create_button)
+            create_buttons.addWidget(create_button)
+
+            update_button = QPushButton("Save Changes to Selected")
+            update_button.setToolTip("Overwrite the selected profile with the values in this form.")
+            update_button.clicked.connect(self._update_selected_profile)
+            create_buttons.addWidget(update_button)
+
+            capture_button = QPushButton("Use Current Build Settings")
+            capture_button.setToolTip(
+                "Copy current Build tab options into the JSON settings editor so you can save them as a profile."
+            )
+            capture_button.clicked.connect(self._capture_build_settings_into_profile_editor)
+            create_buttons.addWidget(capture_button)
+
+            create_layout.addRow(create_buttons)
             layout.addWidget(create_group)
 
             query_group = QGroupBox("Browse Profiles")
@@ -834,6 +880,20 @@ if PYQT_AVAILABLE:
             show_profile_button = QPushButton("Show Selected")
             show_profile_button.clicked.connect(self._show_profile)
             query_buttons.addWidget(show_profile_button)
+
+            load_editor_button = QPushButton("Load Into Editor")
+            load_editor_button.setToolTip(
+                "Load selected profile values into the form above for editing."
+            )
+            load_editor_button.clicked.connect(self._load_selected_profile_into_editor)
+            query_buttons.addWidget(load_editor_button)
+
+            apply_build_button = QPushButton("Apply to Build Tab")
+            apply_build_button.setToolTip(
+                "Apply selected profile settings to the Build tab controls."
+            )
+            apply_build_button.clicked.connect(self._apply_selected_profile_to_build_tab)
+            query_buttons.addWidget(apply_build_button)
             query_layout.addRow(query_buttons)
             layout.addWidget(query_group)
 
@@ -868,12 +928,12 @@ if PYQT_AVAILABLE:
             container_form.addRow("Docker Image:", self.container_image_input)
 
             container_buttons = QHBoxLayout()
-            save_container_cfg = QPushButton("Save Container Config")
-            save_container_cfg.clicked.connect(self._save_container_config)
-            container_buttons.addWidget(save_container_cfg)
-            load_container_cfg = QPushButton("Load Config")
-            load_container_cfg.clicked.connect(self._load_container_config)
-            container_buttons.addWidget(load_container_cfg)
+            self.save_container_cfg_button = QPushButton("Save Container Config")
+            self.save_container_cfg_button.clicked.connect(self._save_container_config)
+            container_buttons.addWidget(self.save_container_cfg_button)
+            self.load_container_cfg_button = QPushButton("Load Config")
+            self.load_container_cfg_button.clicked.connect(self._load_container_config)
+            container_buttons.addWidget(self.load_container_cfg_button)
             container_form.addRow(container_buttons)
             layout.addWidget(container_group)
 
@@ -1585,8 +1645,24 @@ if PYQT_AVAILABLE:
 
             current_name = self.builder_selector.currentData() or self.builder_selector.currentText()
             self.builder_selector.clear()
+            current_os = "windows" if sys.platform.startswith("win") else ("macos" if sys.platform == "darwin" else "linux")
             for builder in builders:
-                status = "available" if builder["available"] else "not installed"
+                available = bool(builder.get("available", False))
+                version = str(builder.get("version") or "").strip()
+                if version:
+                    version = version.splitlines()[0].strip()
+                platforms = [str(item).strip().lower() for item in builder.get("platforms", [])]
+                supported_here = not platforms or current_os in platforms
+
+                if not supported_here:
+                    status = f"not supported on {current_os}"
+                elif available and version:
+                    status = f"installed ({version})"
+                elif available:
+                    status = "installed"
+                else:
+                    status = "not installed"
+
                 text = f"{builder['name']}  ({status})"
                 self.builder_selector.addItem(text, builder["name"])
 
@@ -1921,6 +1997,23 @@ if PYQT_AVAILABLE:
             os_name = self.module_os_selector.currentText().strip().lower()
             return None if os_name == "auto" else os_name
 
+        def _toolchain_should_execute(self) -> bool:
+            if hasattr(self, "toolchain_preview_only_checkbox"):
+                return not self.toolchain_preview_only_checkbox.isChecked()
+            return True
+
+        def _update_toolchain_action_labels(self) -> None:
+            is_preview = (
+                hasattr(self, "toolchain_preview_only_checkbox")
+                and self.toolchain_preview_only_checkbox.isChecked()
+            )
+            if hasattr(self, "install_pkg_button"):
+                self.install_pkg_button.setText("Preview Install" if is_preview else "Install Selected")
+            if hasattr(self, "uninstall_pkg_button"):
+                self.uninstall_pkg_button.setText("Preview Uninstall" if is_preview else "Uninstall Selected")
+            if hasattr(self, "install_typed_button"):
+                self.install_typed_button.setText("Preview Package List" if is_preview else "Install Package List")
+
         def _sync_module_os_selector(self, _index: int | None = None) -> None:
             os_name = self.pack_os_selector.currentText().strip().lower()
             if self.module_os_selector.currentText().strip().lower() != os_name:
@@ -1940,16 +2033,30 @@ if PYQT_AVAILABLE:
             if current_manager is None:
                 current_manager = self.package_browser_manager_selector.currentText().strip().lower()
 
+            self._manager_capabilities_by_name: dict[str, dict[str, Any]] = {}
+            self._manager_availability_by_name: dict[str, bool] = {}
+
             self.package_browser_manager_selector.clear()
             first_available = ""
             for item in payload.get("managers", []):
                 manager_name = str(item.get("manager", "")).strip()
                 available = bool(item.get("available", False))
+                capabilities = item.get("capabilities", {}) if isinstance(item.get("capabilities"), dict) else {}
                 if not manager_name:
                     continue
-                label = manager_name if available else f"{manager_name}  (not found on PATH)"
+                self._manager_capabilities_by_name[manager_name] = capabilities
+                self._manager_availability_by_name[manager_name] = available
+
+                is_package_ops = bool(capabilities.get("supports_package_ops", False))
+                if not is_package_ops:
+                    label = f"{manager_name}  (integration only)"
+                elif available:
+                    label = manager_name
+                else:
+                    label = f"{manager_name}  (not found on PATH)"
+
                 self.package_browser_manager_selector.addItem(label, manager_name)
-                if available and not first_available:
+                if available and is_package_ops and not first_available:
                     first_available = manager_name
 
             if current_manager:
@@ -1959,6 +2066,40 @@ if PYQT_AVAILABLE:
                         break
             elif first_available:
                 self.package_browser_manager_selector.setCurrentText(first_available)
+
+            self._refresh_integration_feature_states()
+
+        def _manager_supports_package_ops(self, manager_name: str | None) -> bool:
+            if not manager_name:
+                return False
+            capabilities = getattr(self, "_manager_capabilities_by_name", {}).get(manager_name, {})
+            return bool(capabilities.get("supports_package_ops", False))
+
+        def _integration_available(self, manager_name: str) -> bool:
+            return bool(getattr(self, "_manager_availability_by_name", {}).get(manager_name, False))
+
+        def _refresh_integration_feature_states(self) -> None:
+            git_available = self._integration_available("git")
+            docker_available = self._integration_available("docker")
+
+            for attr_name in [
+                "github_repo_url_input",
+                "github_install_root_input",
+                "browse_github_root_button",
+                "github_existing_policy_selector",
+                "import_github_button",
+            ]:
+                if hasattr(self, attr_name):
+                    getattr(self, attr_name).setEnabled(git_available)
+
+            if hasattr(self, "container_build_checkbox"):
+                if not docker_available:
+                    self.container_build_checkbox.setChecked(False)
+                self.container_build_checkbox.setEnabled(docker_available)
+            if hasattr(self, "save_container_cfg_button"):
+                self.save_container_cfg_button.setEnabled(docker_available)
+            if hasattr(self, "load_container_cfg_button"):
+                self.load_container_cfg_button.setEnabled(docker_available)
 
         def _upsert_modules(self, modules: list[dict[str, Any]]) -> None:
             for module in modules:
@@ -1981,7 +2122,14 @@ if PYQT_AVAILABLE:
             elif module.get("installed") is False:
                 status = "missing"
 
-            prefix = "[LANG]" if kind == "language_pack" else "[PKG]"
+            if kind == "language_pack":
+                prefix = "[LANG]"
+            elif kind == "builder_tool":
+                prefix = "[TOOL]"
+            elif kind == "github_repo":
+                prefix = "[GIT]"
+            else:
+                prefix = "[PKG]"
             tags = ", ".join(part for part in [source, status] if part)
             return f"{prefix} {name}{f'  ({tags})' if tags else ''}"
 
@@ -2026,7 +2174,7 @@ if PYQT_AVAILABLE:
             existing_search_modules = {
                 module_id: module
                 for module_id, module in self.module_catalog.items()
-                if str(module.get("source", "")) == "search"
+                if str(module.get("source", "")) in {"search", "github"}
             }
             self.module_catalog = {}
             self._upsert_modules(payload.get("modules", []))
@@ -2098,6 +2246,10 @@ if PYQT_AVAILABLE:
             module = self._selected_module()
             self.module_candidate_selector.clear()
             if module is None:
+                if hasattr(self, "install_pkg_button"):
+                    self.install_pkg_button.setEnabled(True)
+                if hasattr(self, "uninstall_pkg_button"):
+                    self.uninstall_pkg_button.setEnabled(True)
                 return
 
             package_name = str(module.get("package_name") or module.get("name") or "").strip()
@@ -2117,6 +2269,16 @@ if PYQT_AVAILABLE:
 
             if first_available_index >= 0:
                 self.module_candidate_selector.setCurrentIndex(first_available_index)
+
+            if hasattr(self, "install_pkg_button"):
+                if str(module.get("module_kind")) == "github_repo" and not self._integration_available("git"):
+                    self.install_pkg_button.setEnabled(False)
+                else:
+                    self.install_pkg_button.setEnabled(True)
+            if hasattr(self, "uninstall_pkg_button"):
+                self.uninstall_pkg_button.setEnabled(
+                    str(module.get("module_kind")) not in {"language_pack", "github_repo"}
+                )
 
         def _sync_selected_package_name(self) -> None:
             self._on_selected_module_changed()
@@ -2139,6 +2301,15 @@ if PYQT_AVAILABLE:
             manager = self.package_browser_manager_selector.currentData()
             if manager is None:
                 manager = self.package_browser_manager_selector.currentText().strip().split(" ", 1)[0]
+            manager = str(manager).strip() or None
+
+            if manager and not self._manager_supports_package_ops(manager):
+                QMessageBox.warning(
+                    self,
+                    "OtterForge",
+                    f"Manager '{manager}' is integration-only. Choose a package manager like pip/uv/npm/winget.",
+                )
+                return
 
             selected_os = self._selected_os_name()
 
@@ -2147,7 +2318,7 @@ if PYQT_AVAILABLE:
                     "Searching module candidates...",
                     lambda: self.api.search_unified_modules(
                         query=query,
-                        manager=str(manager) if manager else None,
+                        manager=manager,
                         os_name=selected_os,
                         limit=25,
                     ),
@@ -2170,6 +2341,40 @@ if PYQT_AVAILABLE:
             found_count = len(modules)
             self.statusBar().showMessage(f"Module search complete ({found_count} result(s))", 3000)
 
+        def _import_github_repo_from_toolchain_tab(self) -> None:
+            if not self._integration_available("git"):
+                QMessageBox.warning(
+                    self,
+                    "OtterForge",
+                    "Git is not available on PATH. Install Git before importing repositories.",
+                )
+                return
+
+            repo_url = self.github_repo_url_input.text().strip()
+            if not repo_url:
+                QMessageBox.warning(self, "OtterForge", "Paste a GitHub repository URL first.")
+                return
+
+            destination_root = self.github_install_root_input.text().strip() or None
+
+            try:
+                module = self._run_with_busy(
+                    "Importing GitHub repository...",
+                    lambda: self.api.build_github_repo_module(
+                        repo_url=repo_url,
+                        destination_root=destination_root,
+                    ),
+                )
+            except Exception as exc:
+                self._show_error("Import GitHub Repository Failed", exc)
+                return
+
+            self._upsert_modules([module])
+            preferred_module = str(module.get("module_id", ""))
+            self._render_module_inventory(preferred_module_id=preferred_module)
+            self._show_payload(self.toolchain_output, {"imported_module": module})
+            self.statusBar().showMessage("GitHub repository imported into module list", 3000)
+
         def _install_package_from_toolchain_tab(self, execute: bool) -> None:
             module = self._selected_module()
             package_name = self.package_name_input.text().strip()
@@ -2183,13 +2388,17 @@ if PYQT_AVAILABLE:
                 if fallback is None:
                     fallback = self.package_browser_manager_selector.currentText().strip().split(" ", 1)[0]
                 manager = str(fallback).strip() or None
+            if manager and not self._manager_supports_package_ops(manager):
+                manager = None
+            if manager and not self._manager_supports_package_ops(manager):
+                manager = None
 
             selected_os = self._selected_os_name()
 
             if execute:
                 confirmation = QMessageBox.warning(
                     self,
-                    "Run Package Install",
+                    "Install Package",
                     "This will run install command(s) on your machine. Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -2202,7 +2411,7 @@ if PYQT_AVAILABLE:
                     if not pack_id:
                         QMessageBox.warning(self, "OtterForge", "Selected language pack is missing its pack ID.")
                         return
-                    message = "Installing language pack..." if execute else "Preparing language pack install plan..."
+                    message = "Installing language pack..." if execute else "Previewing language pack install..."
                     result = self._run_with_busy(
                         message,
                         lambda: self.api.install_language_pack(
@@ -2213,9 +2422,38 @@ if PYQT_AVAILABLE:
                             continue_on_error=self.pack_continue_on_error_checkbox.isChecked(),
                         ),
                     )
+                elif module is not None and str(module.get("module_kind")) == "github_repo":
+                    if not self._integration_available("git"):
+                        QMessageBox.warning(
+                            self,
+                            "OtterForge",
+                            "Git is not available on PATH. Install Git first.",
+                        )
+                        return
+                    metadata = dict(module.get("metadata", {}))
+                    repo_url = str(metadata.get("repo_url") or self.github_repo_url_input.text() or "").strip()
+                    destination_root = self.github_install_root_input.text().strip() or str(
+                        metadata.get("destination_root") or ""
+                    ).strip()
+                    branch = str(metadata.get("branch") or "").strip() or None
+                    existing_policy = str(self.github_existing_policy_selector.currentData() or "clone_or_pull")
+                    if not repo_url:
+                        QMessageBox.warning(self, "OtterForge", "Selected GitHub module is missing repository URL.")
+                        return
+                    message = "Cloning GitHub repository..." if execute else "Previewing GitHub clone..."
+                    result = self._run_with_busy(
+                        message,
+                        lambda: self.api.install_github_repo(
+                            repo_url=repo_url,
+                            destination_root=destination_root or None,
+                            branch=branch,
+                            existing_policy=existing_policy,
+                            execute=execute,
+                        ),
+                    )
                 else:
                     target_name = package_name or str(module.get("package_name") or module.get("name") or "").strip()
-                    message = "Installing module package..." if execute else "Preparing module install plan..."
+                    message = "Installing module package..." if execute else "Previewing module install..."
                     result = self._run_with_busy(
                         message,
                         lambda: self.api.install_package(
@@ -2230,8 +2468,15 @@ if PYQT_AVAILABLE:
                 return
 
             self._show_payload(self.toolchain_output, result)
-            action = "executed" if execute else "planned"
+            action = "applied" if execute else "previewed"
             self.statusBar().showMessage(f"Module install {action}", 3000)
+            if not execute:
+                self.statusBar().showMessage(
+                    "Preview mode is on. Uncheck 'Preview commands only' to actually install.",
+                    5000,
+                )
+            if execute and isinstance(result, dict):
+                self._notify_path_registration(result.get("path_registration"))
             self._refresh_unified_module_catalog()
 
         def _uninstall_package_from_toolchain_tab(self, execute: bool) -> None:
@@ -2249,6 +2494,14 @@ if PYQT_AVAILABLE:
                 )
                 return
 
+            if module is not None and str(module.get("module_kind")) == "github_repo":
+                QMessageBox.warning(
+                    self,
+                    "Uninstall Not Supported",
+                    "GitHub repositories support clone/pull operations only from this tab.",
+                )
+                return
+
             manager = self._selected_candidate_manager()
             if not manager:
                 fallback = self.package_browser_manager_selector.currentData()
@@ -2261,7 +2514,7 @@ if PYQT_AVAILABLE:
             if execute:
                 confirmation = QMessageBox.warning(
                     self,
-                    "Run Package Uninstall",
+                    "Uninstall Package",
                     "This will run uninstall command(s) on your machine. Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -2269,7 +2522,7 @@ if PYQT_AVAILABLE:
                     return
 
             try:
-                message = "Uninstalling package..." if execute else "Preparing package uninstall plan..."
+                message = "Uninstalling package..." if execute else "Previewing package uninstall..."
                 target_name = package_name
                 if not target_name and module is not None:
                     target_name = str(module.get("package_name") or module.get("name") or "").strip()
@@ -2287,8 +2540,13 @@ if PYQT_AVAILABLE:
                 return
 
             self._show_payload(self.toolchain_output, result)
-            action = "executed" if execute else "planned"
+            action = "applied" if execute else "previewed"
             self.statusBar().showMessage(f"Module uninstall {action}", 3000)
+            if not execute:
+                self.statusBar().showMessage(
+                    "Preview mode is on. Uncheck 'Preview commands only' to actually uninstall.",
+                    5000,
+                )
             self._refresh_unified_module_catalog()
 
         def _install_typed_dependencies_from_toolchain_tab(self, execute: bool) -> None:
@@ -2312,13 +2570,15 @@ if PYQT_AVAILABLE:
                 manager = self.package_browser_manager_selector.currentData()
                 if manager is None:
                     manager = self.package_browser_manager_selector.currentText().strip().split(" ", 1)[0]
+            if manager and not self._manager_supports_package_ops(str(manager)):
+                manager = None
 
             selected_os = self._selected_os_name()
 
             if execute:
                 confirmation = QMessageBox.warning(
                     self,
-                    "Run Typed Dependency Install",
+                    "Install Package List",
                     f"This will run install commands for {len(candidates)} package(s). Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -2326,7 +2586,7 @@ if PYQT_AVAILABLE:
                     return
 
             results: list[dict[str, Any]] = []
-            action_label = "Installing typed dependencies..." if execute else "Preparing typed dependency plans..."
+            action_label = "Installing package list..." if execute else "Previewing package list install..."
             self._set_busy_state(True, action_label)
             try:
                 for package_name in candidates:
@@ -2355,13 +2615,48 @@ if PYQT_AVAILABLE:
                 "results": results,
             }
             self._show_payload(self.toolchain_output, payload)
-            action = "executed" if execute else "planned"
-            self.statusBar().showMessage(f"Typed dependency install {action} ({len(candidates)} package(s))", 3000)
+            action = "applied" if execute else "previewed"
+            self.statusBar().showMessage(f"Package list install {action} ({len(candidates)} package(s))", 3000)
+            if not execute:
+                self.statusBar().showMessage(
+                    "Preview mode is on. Uncheck 'Preview commands only' to actually install packages.",
+                    5000,
+                )
+            if execute:
+                # Notify if any individual result registered a new PATH entry
+                any_registered = any(
+                    isinstance(r, dict) and
+                    isinstance(r.get("path_registration"), dict) and
+                    r["path_registration"].get("registered")
+                    for r in results
+                )
+                if any_registered:
+                    first_dir = next(
+                        r["path_registration"]["scripts_dir"]
+                        for r in results
+                        if isinstance(r, dict)
+                        and isinstance(r.get("path_registration"), dict)
+                        and r["path_registration"].get("registered")
+                    )
+                    self._notify_path_registration({"registered": True, "scripts_dir": first_dir})
             self._refresh_unified_module_catalog()
 
         def _install_language_pack_from_toolchain_tab(self, execute: bool) -> None:
             # Backward-compatible alias now routed through the unified module install flow.
             self._install_package_from_toolchain_tab(execute)
+
+        def _notify_path_registration(self, path_reg: dict | None) -> None:
+            """Show an informational dialog when the scripts dir was added to PATH."""
+            if not path_reg or not path_reg.get("registered"):
+                return
+            scripts_dir = path_reg.get("scripts_dir", "")
+            QMessageBox.information(
+                self,
+                "PATH Updated",
+                f"The installed command(s) were registered to your user PATH:\n\n"
+                f"{scripts_dir}\n\n"
+                "Restart any open terminals for the change to take effect.",
+            )
 
         # ------------------------------------------------------------------ #
         # Profiles                                                             #
@@ -2395,10 +2690,24 @@ if PYQT_AVAILABLE:
             if not profile_name:
                 QMessageBox.warning(self, "OtterForge", "Profile name is required.")
                 return
+
             try:
-                settings = json.loads(self.profile_settings_input.toPlainText().strip() or "{}")
-            except json.JSONDecodeError as exc:
-                QMessageBox.warning(self, "Invalid JSON", str(exc))
+                self.api.show_profile(profile_name)
+            except KeyError:
+                pass
+            except Exception as exc:
+                self._show_error("Create Profile Failed", exc)
+                return
+            else:
+                QMessageBox.warning(
+                    self,
+                    "OtterForge",
+                    "A profile with this name already exists. Use 'Save Changes to Selected' to update it.",
+                )
+                return
+
+            settings = self._profile_settings_from_editor()
+            if settings is None:
                 return
             try:
                 profile = self.api.create_profile(
@@ -2413,6 +2722,171 @@ if PYQT_AVAILABLE:
             self.profile_selector.setCurrentText(profile_name)
             self._show_payload(self.profile_output, profile)
             self.statusBar().showMessage(f"Profile '{profile_name}' created", 3000)
+
+        def _update_selected_profile(self) -> None:
+            profile_name = self.profile_selector.currentText().strip()
+            if not profile_name:
+                QMessageBox.warning(self, "OtterForge", "Select a profile first.")
+                return
+
+            settings = self._profile_settings_from_editor()
+            if settings is None:
+                return
+
+            description = self.profile_description_input.text().strip()
+            if not description:
+                try:
+                    existing = self.api.show_profile(profile_name)
+                    description = str(existing.get("description", ""))
+                except Exception:
+                    description = ""
+
+            try:
+                profile = self.api.create_profile(
+                    profile_name,
+                    settings=settings,
+                    description=description,
+                )
+            except Exception as exc:
+                self._show_error("Update Profile Failed", exc)
+                return
+
+            self.profile_name_input.setText(profile_name)
+            self._refresh_profiles_selector()
+            self.profile_selector.setCurrentText(profile_name)
+            self._show_payload(self.profile_output, profile)
+            self.statusBar().showMessage(f"Profile '{profile_name}' updated", 3000)
+
+        def _profile_settings_from_editor(self) -> dict[str, Any] | None:
+            try:
+                settings = json.loads(self.profile_settings_input.toPlainText().strip() or "{}")
+            except json.JSONDecodeError as exc:
+                QMessageBox.warning(self, "Invalid JSON", str(exc))
+                return None
+
+            if not isinstance(settings, dict):
+                QMessageBox.warning(self, "OtterForge", "Profile settings must be a JSON object.")
+                return None
+            return settings
+
+        def _collect_current_build_settings(self) -> dict[str, Any]:
+            args_text = self.extra_builder_args_input.text().strip()
+            raw_builder_args = shlex.split(args_text) if args_text else []
+
+            return {
+                "project_path": self.project_path_input.text().strip() or ".",
+                "builder_name": self._selected_builder_name(),
+                "entry_script": self.entry_script_input.text().strip() or None,
+                "executable_name": self.executable_name_input.text().strip() or None,
+                "mode": self.build_mode_selector.currentText(),
+                "console_mode": self.console_mode_checkbox.isChecked(),
+                "icon_path": self.icon_path_input.text().strip() or None,
+                "output_dir": self.output_dir_input.text().strip() or None,
+                "compiler_config_name": self.compiler_config_name_input.text().strip() or None,
+                "clean": self.clean_build_checkbox.isChecked(),
+                "dry_run": self.dry_run_checkbox.isChecked(),
+                "raw_builder_args": raw_builder_args,
+                "container": self.container_build_checkbox.isChecked(),
+            }
+
+        def _capture_build_settings_into_profile_editor(self) -> None:
+            settings = self._collect_current_build_settings()
+            self.profile_settings_input.setPlainText(self._format_payload(settings))
+            self.statusBar().showMessage("Loaded current Build tab settings into profile editor", 3000)
+
+        def _load_selected_profile_into_editor(self) -> None:
+            profile_name = self.profile_selector.currentText().strip()
+            if not profile_name:
+                QMessageBox.warning(self, "OtterForge", "Select a profile first.")
+                return
+            try:
+                profile = self.api.show_profile(profile_name)
+            except Exception as exc:
+                self._show_error("Load Profile Failed", exc)
+                return
+
+            self.profile_name_input.setText(str(profile.get("name", profile_name)))
+            self.profile_description_input.setText(str(profile.get("description", "")))
+            self.profile_settings_input.setPlainText(self._format_payload(profile.get("settings", {})))
+            self._show_payload(self.profile_output, profile)
+            self.statusBar().showMessage(f"Profile '{profile_name}' loaded into editor", 3000)
+
+        def _set_builder_selection(self, builder_name: str) -> None:
+            needle = builder_name.strip().lower()
+            if not needle:
+                return
+
+            for index in range(self.builder_selector.count()):
+                data = str(self.builder_selector.itemData(index) or "").strip().lower()
+                label = str(self.builder_selector.itemText(index)).split(" ", 1)[0].strip().lower()
+                if needle in {data, label}:
+                    self.builder_selector.setCurrentIndex(index)
+                    return
+
+        def _apply_profile_settings_to_build_tab(self, settings: dict[str, Any]) -> None:
+            if "project_path" in settings:
+                self.project_path_input.setText(str(settings.get("project_path") or "."))
+
+            builder_name = str(settings.get("builder_name") or "").strip()
+            if builder_name:
+                self._set_builder_selection(builder_name)
+
+            if "entry_script" in settings:
+                self.entry_script_input.setText(str(settings.get("entry_script") or ""))
+            if "executable_name" in settings:
+                self.executable_name_input.setText(str(settings.get("executable_name") or ""))
+            if "mode" in settings:
+                mode = str(settings.get("mode") or "").strip()
+                if mode:
+                    self.build_mode_selector.setCurrentText(mode)
+
+            if "console_mode" in settings:
+                self.console_mode_checkbox.setChecked(bool(settings.get("console_mode")))
+
+            if "icon_path" in settings:
+                self.icon_path_input.setText(str(settings.get("icon_path") or ""))
+            if "output_dir" in settings:
+                self.output_dir_input.setText(str(settings.get("output_dir") or ""))
+            if "compiler_config_name" in settings:
+                self.compiler_config_name_input.setText(str(settings.get("compiler_config_name") or ""))
+            if "clean" in settings:
+                self.clean_build_checkbox.setChecked(bool(settings.get("clean")))
+            if "dry_run" in settings:
+                self.dry_run_checkbox.setChecked(bool(settings.get("dry_run")))
+            if "container" in settings:
+                self.container_build_checkbox.setChecked(bool(settings.get("container")))
+
+            if "raw_builder_args" in settings:
+                args = settings.get("raw_builder_args")
+                if isinstance(args, list):
+                    self.extra_builder_args_input.setText(shlex.join(str(arg) for arg in args))
+                elif isinstance(args, str):
+                    self.extra_builder_args_input.setText(args)
+                else:
+                    self.extra_builder_args_input.setText("")
+
+            self._validate_build_inputs()
+
+        def _apply_selected_profile_to_build_tab(self) -> None:
+            profile_name = self.profile_selector.currentText().strip()
+            if not profile_name:
+                QMessageBox.warning(self, "OtterForge", "Select a profile first.")
+                return
+            try:
+                profile = self.api.show_profile(profile_name)
+            except Exception as exc:
+                self._show_error("Apply Profile Failed", exc)
+                return
+
+            settings = profile.get("settings", {})
+            if not isinstance(settings, dict):
+                QMessageBox.warning(self, "OtterForge", "Selected profile settings are invalid.")
+                return
+
+            self._apply_profile_settings_to_build_tab(settings)
+            self.tabs.setCurrentIndex(1)
+            self._show_payload(self.profile_output, profile)
+            self.statusBar().showMessage(f"Applied profile '{profile_name}' to Build tab", 3500)
 
         def _show_profile(self) -> None:
             profile_name = self.profile_selector.currentText().strip()
@@ -2431,6 +2905,9 @@ if PYQT_AVAILABLE:
         # ------------------------------------------------------------------ #
 
         def _save_container_config(self) -> None:
+            if not self._integration_available("docker"):
+                QMessageBox.warning(self, "OtterForge", "Docker is not available on PATH.")
+                return
             project_path = self.container_project_input.text().strip() or "."
             image = self.container_image_input.text().strip()
             if not image:
@@ -2446,6 +2923,9 @@ if PYQT_AVAILABLE:
             self.statusBar().showMessage("Container config saved", 3000)
 
         def _load_container_config(self) -> None:
+            if not self._integration_available("docker"):
+                QMessageBox.warning(self, "OtterForge", "Docker is not available on PATH.")
+                return
             project_path = self.container_project_input.text().strip() or "."
             try:
                 cfg = self.api.get_container_config(project_path)

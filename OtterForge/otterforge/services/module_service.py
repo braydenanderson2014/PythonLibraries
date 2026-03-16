@@ -11,6 +11,12 @@ from typing import Any
 
 IGNORED_PARTS = {".git", ".otterforge", "__pycache__", ".pytest_cache", ".venv", "venv"}
 
+IMPORT_DISTRIBUTION_ALIASES = {
+    "PIL": "Pillow",
+    "yaml": "PyYAML",
+    "cv2": "opencv-python",
+}
+
 
 class ModuleService:
     def list_modules(self, path: str | Path = ".") -> dict[str, Any]:
@@ -102,6 +108,7 @@ class ModuleService:
         records: dict[str, set[str]] = {}
         files_scanned = 0
         stdlib = set(getattr(sys, "stdlib_module_names", set()))
+        local_modules = self._discover_local_modules(root)
 
         for candidate in root.rglob("*.py"):
             if any(part in IGNORED_PARTS for part in candidate.parts):
@@ -134,6 +141,8 @@ class ModuleService:
                 continue
             if name in stdlib or name in {"typing", "pathlib", "dataclasses"}:
                 continue
+            if name in local_modules:
+                continue
             inferred.append(
                 {
                     "name": name,
@@ -147,6 +156,19 @@ class ModuleService:
             "inferred": inferred_sorted,
             "inferred_modules": [item["name"] for item in inferred_sorted],
         }
+
+    def _discover_local_modules(self, root: Path) -> set[str]:
+        names: set[str] = set()
+
+        for candidate in root.rglob("*.py"):
+            if any(part in IGNORED_PARTS for part in candidate.parts):
+                continue
+            if candidate.name == "__init__.py":
+                names.add(candidate.parent.name)
+            else:
+                names.add(candidate.stem)
+
+        return {name for name in names if name}
 
     def _build_dependency_inventory(
         self,
@@ -184,6 +206,13 @@ class ModuleService:
         return match.group(0).replace("-", "_")
 
     def _detect_installed_version(self, package_name: str) -> str | None:
+        alias_name = IMPORT_DISTRIBUTION_ALIASES.get(package_name)
+        if alias_name:
+            try:
+                return importlib.metadata.version(alias_name)
+            except importlib.metadata.PackageNotFoundError:
+                pass
+
         normalized = package_name.replace("_", "-")
         try:
             return importlib.metadata.version(normalized)

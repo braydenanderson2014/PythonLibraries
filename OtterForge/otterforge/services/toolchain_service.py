@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+from importlib import metadata as importlib_metadata
+from pathlib import Path
 from typing import Any
 
 
@@ -100,6 +105,11 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     "c_cpp": {
         "name": "C/C++ Toolchain",
         "description": "Compilers, linkers, and debuggers for C/C++ workflows.",
+        "detectors": {
+            "windows": ["clang --version", "gcc --version", "cl"],
+            "linux": ["gcc --version", "clang --version"],
+            "macos": ["clang --version", "gcc --version"],
+        },
         "managers": {
             "windows": {
                 "winget": [
@@ -131,6 +141,11 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     "java": {
         "name": "Java SDK",
         "description": "JDK toolchain for Java build and obfuscation workflows.",
+        "detectors": {
+            "windows": ["java -version"],
+            "linux": ["java -version"],
+            "macos": ["java -version"],
+        },
         "managers": {
             "windows": {
                 "winget": ["winget install -e --id Microsoft.OpenJDK.21"],
@@ -151,6 +166,11 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     "dotnet": {
         "name": ".NET SDK",
         "description": "Runtime and SDK tools for .NET applications and obfuscation.",
+        "detectors": {
+            "windows": ["dotnet --version"],
+            "linux": ["dotnet --version"],
+            "macos": ["dotnet --version"],
+        },
         "managers": {
             "windows": {
                 "winget": ["winget install -e --id Microsoft.DotNet.SDK.8"],
@@ -171,6 +191,11 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     "nodejs": {
         "name": "Node.js + npm",
         "description": "Node runtime and npm for JavaScript toolchains.",
+        "detectors": {
+            "windows": ["node --version", "npm --version"],
+            "linux": ["node --version", "npm --version"],
+            "macos": ["node --version", "npm --version"],
+        },
         "managers": {
             "windows": {
                 "winget": ["winget install -e --id OpenJS.NodeJS.LTS"],
@@ -191,6 +216,11 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     "go": {
         "name": "Go SDK",
         "description": "Go compiler and tools for Go build/obfuscation.",
+        "detectors": {
+            "windows": ["go version"],
+            "linux": ["go version"],
+            "macos": ["go version"],
+        },
         "managers": {
             "windows": {
                 "winget": ["winget install -e --id GoLang.Go"],
@@ -212,13 +242,247 @@ LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
 
 
 PACKAGE_MANAGERS_BY_OS: dict[str, list[str]] = {
-    "windows": ["winget", "choco", "uv", "pip", "npm"],
-    "linux": ["apt", "dnf", "brew", "uv", "pip", "npm"],
-    "macos": ["brew", "uv", "pip", "npm"],
+    "windows": ["winget", "choco", "uv", "pip", "npm", "git", "docker"],
+    "linux": ["apt", "dnf", "brew", "uv", "pip", "npm", "git", "docker"],
+    "macos": ["brew", "uv", "pip", "npm", "git", "docker"],
+}
+
+
+TOOL_PACKAGE_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "pyinstaller": {
+        "tool_kind": "builder",
+        "name": "PyInstaller",
+        "package_name": "pyinstaller",
+        "ecosystem": "python",
+        "supported_os": ["windows", "linux", "macos"],
+        "description": "Build standalone Python executables with PyInstaller.",
+    },
+    "nuitka": {
+        "tool_kind": "builder",
+        "name": "Nuitka",
+        "package_name": "nuitka",
+        "ecosystem": "python",
+        "supported_os": ["windows", "linux", "macos"],
+        "description": "Compile Python applications with Nuitka.",
+    },
+    "cxfreeze": {
+        "tool_kind": "builder",
+        "name": "cx_Freeze",
+        "package_name": "cx_Freeze",
+        "ecosystem": "python",
+        "supported_os": ["windows", "linux", "macos"],
+        "description": "Freeze Python applications with cx_Freeze.",
+        "aliases": ["cx-freeze", "cx_freeze"],
+    },
+    "briefcase": {
+        "tool_kind": "builder",
+        "name": "Briefcase",
+        "package_name": "briefcase",
+        "ecosystem": "python",
+        "supported_os": ["windows", "linux", "macos"],
+        "description": "Package Python apps as native applications with Briefcase.",
+    },
+    "shiv": {
+        "tool_kind": "builder",
+        "name": "shiv",
+        "package_name": "shiv",
+        "ecosystem": "python",
+        "supported_os": ["windows", "linux", "macos"],
+        "description": "Create zipapp-style Python executables with shiv.",
+    },
+    "py2exe": {
+        "tool_kind": "builder",
+        "name": "py2exe",
+        "package_name": "py2exe",
+        "ecosystem": "python",
+        "supported_os": ["windows"],
+        "description": "Build Windows executables from Python applications with py2exe.",
+    },
+    "py2app": {
+        "tool_kind": "builder",
+        "name": "py2app",
+        "package_name": "py2app",
+        "ecosystem": "python",
+        "supported_os": ["macos"],
+        "description": "Build macOS app bundles from Python applications with py2app.",
+    },
 }
 
 
 class ToolchainService:
+    GITHUB_URL_RE = re.compile(
+        r"^https?://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?(?:/)?$",
+        re.IGNORECASE,
+    )
+
+    def _merged_language_packs(
+        self,
+        custom_packs: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        merged = {pack_id: dict(meta) for pack_id, meta in LANGUAGE_PACKS.items()}
+        for pack_id, meta in (custom_packs or {}).items():
+            normalized_pack = str(pack_id).strip().lower()
+            if not normalized_pack:
+                continue
+            if not isinstance(meta, dict):
+                continue
+            merged[normalized_pack] = dict(meta)
+        return merged
+
+    def _detect_language_pack_installation(
+        self,
+        pack_meta: dict[str, Any],
+        normalized_os: str,
+    ) -> tuple[bool | None, str | None]:
+        detectors_by_os = pack_meta.get("detectors", {})
+        if not isinstance(detectors_by_os, dict):
+            return None, None
+
+        detectors = detectors_by_os.get(normalized_os, [])
+        if not isinstance(detectors, list) or not detectors:
+            return None, None
+
+        for detector in detectors:
+            command: list[str]
+            if isinstance(detector, str):
+                command = shlex.split(detector)
+            elif isinstance(detector, dict):
+                raw_command = detector.get("command", [])
+                if isinstance(raw_command, str):
+                    command = shlex.split(raw_command)
+                elif isinstance(raw_command, list):
+                    command = [str(item) for item in raw_command if str(item).strip()]
+                else:
+                    continue
+            else:
+                continue
+
+            if not command:
+                continue
+
+            executable = command[0]
+            if shutil.which(executable) is None:
+                continue
+
+            try:
+                process = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+            except Exception:
+                continue
+
+            if process.returncode != 0:
+                continue
+
+            version_line = ""
+            for stream in [process.stdout, process.stderr]:
+                if stream:
+                    version_line = stream.splitlines()[0].strip()
+                    if version_line:
+                        break
+
+            return True, (version_line or None)
+
+        return False, None
+
+    def _normalize_language_pack_imports(self, pack_meta: dict[str, Any]) -> list[dict[str, Any]]:
+        entries = pack_meta.get("third_party_imports", [])
+        if not isinstance(entries, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                package_name = entry.strip()
+                if not package_name:
+                    continue
+                normalized.append(
+                    {
+                        "import_name": package_name,
+                        "package_name": package_name,
+                        "ecosystem": "python",
+                        "manager": None,
+                        "description": "",
+                    }
+                )
+                continue
+
+            if not isinstance(entry, dict):
+                continue
+
+            package_name = str(entry.get("package_name", "")).strip()
+            import_name = str(entry.get("import_name", package_name)).strip()
+            if not package_name:
+                continue
+
+            normalized.append(
+                {
+                    "import_name": import_name or package_name,
+                    "package_name": package_name,
+                    "ecosystem": str(entry.get("ecosystem", "python")).strip().lower() or "python",
+                    "manager": str(entry.get("manager", "")).strip().lower() or None,
+                    "description": str(entry.get("description", "")).strip(),
+                }
+            )
+
+        return normalized
+
+    def _build_language_pack_dependency_modules(
+        self,
+        pack_id: str,
+        pack_meta: dict[str, Any],
+        normalized_os: str,
+    ) -> list[dict[str, Any]]:
+        modules: list[dict[str, Any]] = []
+        for dep in self._normalize_language_pack_imports(pack_meta):
+            package_name = str(dep.get("package_name", "")).strip()
+            if not package_name:
+                continue
+
+            ecosystem = str(dep.get("ecosystem", "python")).strip().lower() or None
+            preferred_manager = dep.get("manager")
+
+            installed = None
+            installed_version = None
+            if ecosystem == "python":
+                installed_version = self._python_package_version(package_name)
+                installed = installed_version is not None
+
+            try:
+                install_candidates = self.list_install_candidates_for_package(
+                    package_name=package_name,
+                    os_name=normalized_os,
+                    preferred_manager=str(preferred_manager) if preferred_manager else None,
+                    ecosystem=ecosystem,
+                )
+            except Exception:
+                install_candidates = []
+
+            modules.append(
+                {
+                    "module_id": f"language-pack-dependency:{pack_id}:{package_name.lower()}",
+                    "module_kind": "language_pack_dependency",
+                    "name": package_name,
+                    "package_name": package_name,
+                    "description": str(dep.get("description", "")).strip(),
+                    "source": "language_pack_dependency",
+                    "installed": installed,
+                    "installed_version": installed_version,
+                    "install_candidates": install_candidates,
+                    "metadata": {
+                        "pack_id": pack_id,
+                        "import_name": dep.get("import_name"),
+                        "ecosystem": ecosystem,
+                    },
+                }
+            )
+
+        return modules
+
     def build_toolchain_report(
         self,
         builders: list[dict[str, Any]],
@@ -276,19 +540,36 @@ class ToolchainService:
             }
         }
 
-    def list_language_packs(self) -> list[dict[str, Any]]:
+    def list_language_packs(
+        self,
+        custom_packs: dict[str, dict[str, Any]] | None = None,
+        os_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        normalized_os = self._normalize_os_name(os_name)
         packs: list[dict[str, Any]] = []
-        for pack_id, meta in LANGUAGE_PACKS.items():
+        merged = self._merged_language_packs(custom_packs)
+        custom_pack_ids = {str(item).strip().lower() for item in (custom_packs or {}).keys()}
+        for pack_id, meta in merged.items():
+            managers = meta.get("managers", {})
+            if not isinstance(managers, dict):
+                managers = {}
             managers_by_os = {
                 os_name: sorted(os_managers.keys())
-                for os_name, os_managers in meta["managers"].items()
+                for os_name, os_managers in managers.items()
+                if isinstance(os_managers, dict)
             }
+            installed, installed_version = self._detect_language_pack_installation(meta, normalized_os)
+            third_party_imports = self._normalize_language_pack_imports(meta)
             packs.append(
                 {
                     "pack_id": pack_id,
                     "name": meta["name"],
                     "description": meta["description"],
                     "managers": managers_by_os,
+                    "installed": installed,
+                    "installed_version": installed_version,
+                    "third_party_imports": third_party_imports,
+                    "source": "custom" if pack_id in custom_pack_ids else "builtin",
                 }
             )
         return sorted(packs, key=lambda item: str(item["pack_id"]))
@@ -298,13 +579,15 @@ class ToolchainService:
         pack_id: str,
         manager: str | None = None,
         os_name: str | None = None,
+        custom_packs: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         normalized_pack = pack_id.strip().lower()
-        if normalized_pack not in LANGUAGE_PACKS:
+        merged = self._merged_language_packs(custom_packs)
+        if normalized_pack not in merged:
             raise KeyError(f"Unknown language pack: {pack_id}")
 
         normalized_os = self._normalize_os_name(os_name)
-        pack = LANGUAGE_PACKS[normalized_pack]
+        pack = merged[normalized_pack]
         per_os_managers = pack["managers"].get(normalized_os, {})
         if not per_os_managers:
             raise ValueError(f"Language pack '{pack_id}' has no manager entries for OS '{normalized_os}'")
@@ -334,8 +617,14 @@ class ToolchainService:
         os_name: str | None = None,
         execute: bool = False,
         continue_on_error: bool = False,
+        custom_packs: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        plan = self.plan_language_pack_install(pack_id=pack_id, manager=manager, os_name=os_name)
+        plan = self.plan_language_pack_install(
+            pack_id=pack_id,
+            manager=manager,
+            os_name=os_name,
+            custom_packs=custom_packs,
+        )
         if not execute:
             return {
                 **plan,
@@ -374,11 +663,18 @@ class ToolchainService:
     # Package browser                                                      #
     # ------------------------------------------------------------------ #
 
-    def list_language_pack_modules(self, os_name: str | None = None) -> list[dict[str, Any]]:
+    def list_language_pack_modules(
+        self,
+        os_name: str | None = None,
+        custom_packs: dict[str, dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         normalized_os = self._normalize_os_name(os_name)
         modules: list[dict[str, Any]] = []
 
-        for pack_id, meta in sorted(LANGUAGE_PACKS.items(), key=lambda item: item[0]):
+        merged = self._merged_language_packs(custom_packs)
+        custom_pack_ids = set((custom_packs or {}).keys())
+
+        for pack_id, meta in sorted(merged.items(), key=lambda item: item[0]):
             per_os_managers = dict(meta.get("managers", {})).get(normalized_os, {})
             install_candidates: list[dict[str, Any]] = []
             for manager_name, commands in sorted(per_os_managers.items()):
@@ -391,6 +687,9 @@ class ToolchainService:
                     }
                 )
 
+            installed, installed_version = self._detect_language_pack_installation(meta, normalized_os)
+            third_party_imports = self._normalize_language_pack_imports(meta)
+
             modules.append(
                 {
                     "module_id": f"language-pack:{pack_id}",
@@ -400,12 +699,112 @@ class ToolchainService:
                     "pack_id": pack_id,
                     "description": str(meta.get("description", "")),
                     "source": "language_pack",
-                    "installed": None,
-                    "installed_version": None,
+                    "installed": installed,
+                    "installed_version": installed_version,
                     "install_candidates": install_candidates,
+                    "metadata": {
+                        "pack_source": "custom" if pack_id in custom_pack_ids else "builtin",
+                        "third_party_import_count": len(third_party_imports),
+                        "third_party_imports": third_party_imports,
+                    },
                 }
             )
 
+            modules.extend(
+                self._build_language_pack_dependency_modules(
+                    pack_id=pack_id,
+                    pack_meta=meta,
+                    normalized_os=normalized_os,
+                )
+            )
+
+        return modules
+
+    def list_tool_modules(
+        self,
+        tools: list[dict[str, Any]],
+        os_name: str | None = None,
+        tool_kind: str = "builder",
+    ) -> list[dict[str, Any]]:
+        normalized_os = self._normalize_os_name(os_name)
+        modules: list[dict[str, Any]] = []
+
+        for tool in tools:
+            tool_id = str(tool.get("name", "")).strip().lower()
+            if not tool_id:
+                continue
+
+            definition = TOOL_PACKAGE_DEFINITIONS.get(tool_id)
+            if definition is None:
+                continue
+            if str(definition.get("tool_kind", "")).strip().lower() != tool_kind:
+                continue
+
+            supported_os = [str(item).strip().lower() for item in definition.get("supported_os", [])]
+            if supported_os and normalized_os not in supported_os:
+                continue
+
+            package_name = str(definition.get("package_name", tool_id)).strip()
+            ecosystem = str(definition.get("ecosystem", "")).strip() or None
+            install_candidates = self.list_install_candidates_for_package(
+                package_name=package_name,
+                os_name=normalized_os,
+                ecosystem=ecosystem,
+            )
+
+            python_installed_version = None
+            if ecosystem == "python":
+                python_installed_version = self._python_package_version(package_name)
+
+            installed = bool(tool.get("available", False))
+            installed_version = str(tool.get("version")) if tool.get("version") else None
+            if python_installed_version:
+                installed = True
+                installed_version = python_installed_version
+
+            modules.append(
+                {
+                    "module_id": f"{tool_kind}:{tool_id}",
+                    "module_kind": f"{tool_kind}_tool",
+                    "name": str(definition.get("name", tool.get("name", tool_id))),
+                    "package_name": package_name,
+                    "tool_id": tool_id,
+                    "description": str(definition.get("description", "")),
+                    "source": tool_kind,
+                    "installed": installed,
+                    "installed_version": installed_version,
+                    "install_candidates": install_candidates,
+                    "metadata": {
+                        "tool_kind": tool_kind,
+                        "language_family": tool.get("language_family"),
+                        "platforms": list(tool.get("platforms", [])),
+                    },
+                }
+            )
+
+        return modules
+
+    def search_known_tool_modules(
+        self,
+        query: str,
+        tools: list[dict[str, Any]],
+        os_name: str | None = None,
+        tool_kind: str = "builder",
+    ) -> list[dict[str, Any]]:
+        needle = query.strip().lower()
+        if not needle:
+            return []
+
+        modules: list[dict[str, Any]] = []
+        for module in self.list_tool_modules(tools=tools, os_name=os_name, tool_kind=tool_kind):
+            haystacks = [
+                str(module.get("tool_id", "")).lower(),
+                str(module.get("name", "")).lower(),
+                str(module.get("package_name", "")).lower(),
+                str(module.get("description", "")).lower(),
+            ]
+            if any(needle in haystack for haystack in haystacks):
+                modules.append(module)
         return modules
 
     def build_package_module_entry(
@@ -443,6 +842,160 @@ class ToolchainService:
             "metadata": metadata or {},
         }
 
+    def _parse_github_repo_url(self, repo_url: str) -> tuple[str, str, str]:
+        cleaned = repo_url.strip()
+        match = self.GITHUB_URL_RE.match(cleaned)
+        if not match:
+            raise ValueError("GitHub URL must look like https://github.com/owner/repo")
+
+        owner = str(match.group("owner")).strip()
+        repo = str(match.group("repo")).strip()
+        canonical_url = f"https://github.com/{owner}/{repo}.git"
+        return owner, repo, canonical_url
+
+    def build_github_repo_module_entry(
+        self,
+        repo_url: str,
+        destination_root: str | None = None,
+        branch: str | None = None,
+    ) -> dict[str, Any]:
+        owner, repo, canonical_url = self._parse_github_repo_url(repo_url)
+        root = Path(destination_root).expanduser().resolve() if destination_root else (Path.home() / "OtterForgeRepos")
+        target_dir = (root / owner / repo).resolve()
+
+        return {
+            "module_id": f"github_repo:{owner.lower()}/{repo.lower()}",
+            "module_kind": "github_repo",
+            "name": f"{owner}/{repo}",
+            "package_name": f"{owner}/{repo}",
+            "description": "GitHub repository source checkout",
+            "source": "github",
+            "installed": target_dir.exists(),
+            "installed_version": None,
+            "install_candidates": [
+                {
+                    "manager": "git",
+                    "available": shutil.which("git") is not None,
+                    "supports_uninstall": False,
+                    "install_command": self._github_clone_command(canonical_url, str(target_dir), branch=branch),
+                    "uninstall_command": [],
+                }
+            ],
+            "metadata": {
+                "repo_url": canonical_url,
+                "owner": owner,
+                "repo": repo,
+                "branch": (branch or "").strip() or None,
+                "destination_root": str(root),
+                "target_dir": str(target_dir),
+            },
+        }
+
+    def _github_clone_command(self, repo_url: str, target_dir: str, branch: str | None = None) -> list[str]:
+        command = ["git", "clone", "--depth", "1"]
+        clean_branch = (branch or "").strip()
+        if clean_branch:
+            command.extend(["--branch", clean_branch])
+        command.extend([repo_url, target_dir])
+        return command
+
+    def install_github_repo(
+        self,
+        repo_url: str,
+        destination_root: str | None = None,
+        branch: str | None = None,
+        existing_policy: str = "error",
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        module = self.build_github_repo_module_entry(
+            repo_url=repo_url,
+            destination_root=destination_root,
+            branch=branch,
+        )
+        metadata = dict(module.get("metadata", {}))
+        target_dir = str(metadata.get("target_dir", "")).strip()
+        canonical_url = str(metadata.get("repo_url", "")).strip()
+        clean_branch = str(metadata.get("branch") or "").strip() or None
+        clean_policy = (existing_policy or "error").strip().lower()
+        if clean_policy not in {"error", "pull", "clone_or_pull"}:
+            raise ValueError("existing_policy must be one of: error, pull, clone_or_pull")
+        command = self._github_clone_command(canonical_url, target_dir, branch=clean_branch)
+
+        plan = {
+            "repo_url": canonical_url,
+            "destination_root": metadata.get("destination_root"),
+            "target_dir": target_dir,
+            "branch": clean_branch,
+            "existing_policy": clean_policy,
+            "manager": "git",
+            "command": command,
+            "installed": bool(module.get("installed")),
+        }
+
+        if not execute:
+            return {
+                **plan,
+                "executed": False,
+                "message": "GitHub clone plan generated. Re-run with execute=true to clone.",
+            }
+
+        if shutil.which("git") is None:
+            return {
+                **plan,
+                "executed": True,
+                "success": False,
+                "returncode": 127,
+                "stdout": "",
+                "stderr": "git executable was not found on PATH.",
+            }
+
+        target_path = Path(target_dir)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            if clean_policy in {"pull", "clone_or_pull"}:
+                pull_command = ["git", "-C", str(target_path), "pull", "--ff-only"]
+                process = subprocess.run(
+                    pull_command,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                return {
+                    **plan,
+                    "command": pull_command,
+                    "executed": True,
+                    "success": process.returncode == 0,
+                    "returncode": process.returncode,
+                    "stdout": process.stdout,
+                    "stderr": process.stderr,
+                    "operation": "pull",
+                }
+            return {
+                **plan,
+                "executed": True,
+                "success": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": f"Target directory already exists: {target_dir}",
+                "operation": "clone",
+            }
+
+        process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            **plan,
+            "executed": True,
+            "success": process.returncode == 0,
+            "returncode": process.returncode,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+            "operation": "clone",
+        }
+
     def list_install_candidates_for_package(
         self,
         package_name: str,
@@ -450,13 +1003,17 @@ class ToolchainService:
         preferred_manager: str | None = None,
         ecosystem: str | None = None,
     ) -> list[dict[str, Any]]:
-        normalized_package = package_name.strip()
+        normalized_package = self._resolve_package_name(package_name.strip(), ecosystem=ecosystem)
         if not normalized_package:
             raise ValueError("Package name cannot be empty.")
 
         normalized_os = self._normalize_os_name(os_name)
-        supported = list(PACKAGE_MANAGERS_BY_OS.get(normalized_os, []))
-        python_managers = [manager for manager in ["uv", "pip"] if manager in supported]
+        supported = [
+            manager
+            for manager in PACKAGE_MANAGERS_BY_OS.get(normalized_os, [])
+            if self._manager_capabilities(manager).get("supports_package_ops", False)
+        ]
+        python_managers = [manager for manager in ["pip", "uv"] if manager in supported]
 
         if ecosystem == "python":
             base_order = python_managers or supported
@@ -490,15 +1047,25 @@ class ToolchainService:
 
         return candidates
 
+    def _python_package_version(self, package_name: str) -> str | None:
+        try:
+            return importlib_metadata.version(package_name)
+        except importlib_metadata.PackageNotFoundError:
+            return None
+        except Exception:
+            return None
+
     def list_package_managers(self, os_name: str | None = None) -> dict[str, Any]:
         normalized_os = self._normalize_os_name(os_name)
         managers: list[dict[str, Any]] = []
         for manager in PACKAGE_MANAGERS_BY_OS.get(normalized_os, []):
+            capabilities = self._manager_capabilities(manager)
             managers.append(
                 {
                     "manager": manager,
                     "available": self._is_package_manager_available(manager),
                     "command": self._manager_binary(manager),
+                    "capabilities": capabilities,
                 }
             )
         return {
@@ -549,8 +1116,9 @@ class ToolchainService:
         manager: str | None = None,
         os_name: str | None = None,
         execute: bool = False,
+        ecosystem: str | None = None,
     ) -> dict[str, Any]:
-        cleaned_package = package_name.strip()
+        cleaned_package = self._resolve_package_name(package_name.strip(), ecosystem=ecosystem)
         if not cleaned_package:
             raise ValueError("Package name cannot be empty.")
 
@@ -580,7 +1148,7 @@ class ToolchainService:
             check=False,
         )
 
-        return {
+        result: dict[str, Any] = {
             **plan,
             "executed": True,
             "success": process.returncode == 0,
@@ -589,14 +1157,20 @@ class ToolchainService:
             "stderr": process.stderr,
         }
 
+        if result["success"] and selected_manager in {"pip", "uv"}:
+            result["path_registration"] = self._try_register_scripts_to_path()
+
+        return result
+
     def uninstall_package(
         self,
         package_name: str,
         manager: str | None = None,
         os_name: str | None = None,
         execute: bool = False,
+        ecosystem: str | None = None,
     ) -> dict[str, Any]:
-        cleaned_package = package_name.strip()
+        cleaned_package = self._resolve_package_name(package_name.strip(), ecosystem=ecosystem)
         if not cleaned_package:
             raise ValueError("Package name cannot be empty.")
 
@@ -644,6 +1218,17 @@ class ToolchainService:
             return "uv"
         return manager
 
+    def _manager_capabilities(self, manager: str) -> dict[str, Any]:
+        package_ops = manager in {"winget", "choco", "apt", "dnf", "brew", "pip", "uv", "npm"}
+        return {
+            "supports_package_search": package_ops,
+            "supports_package_install": package_ops,
+            "supports_package_uninstall": package_ops,
+            "supports_package_ops": package_ops,
+            "supports_github": manager == "git",
+            "supports_container": manager == "docker",
+        }
+
     def _is_package_manager_available(self, manager: str) -> bool:
         if manager == "pip":
             return True
@@ -661,10 +1246,17 @@ class ToolchainService:
                 raise ValueError(
                     f"Manager '{chosen}' is not supported on {normalized_os}. Supported: {', '.join(supported)}"
                 )
+            if not self._manager_capabilities(chosen).get("supports_package_ops", False):
+                raise ValueError(
+                    f"Manager '{chosen}' is available for integrations but does not support package search/install."
+                )
             return chosen
 
         for candidate in supported:
-            if self._is_package_manager_available(candidate):
+            if (
+                self._manager_capabilities(candidate).get("supports_package_ops", False)
+                and self._is_package_manager_available(candidate)
+            ):
                 return candidate
 
         if not supported:
@@ -729,6 +1321,24 @@ class ToolchainService:
             return ["npm", "uninstall", "-g", package_name]
         raise ValueError(f"Unsupported package manager for uninstall: {manager}")
 
+    def _resolve_package_name(self, package_name: str, ecosystem: str | None = None) -> str:
+        cleaned = package_name.strip()
+        if not cleaned:
+            return cleaned
+
+        if ecosystem not in {None, "", "python"}:
+            return cleaned
+
+        normalized = cleaned.lower().replace("-", "").replace("_", "")
+        for tool_id, definition in TOOL_PACKAGE_DEFINITIONS.items():
+            candidates = [tool_id, str(definition.get("package_name", "")), *definition.get("aliases", [])]
+            for candidate in candidates:
+                candidate_key = str(candidate).strip().lower().replace("-", "").replace("_", "")
+                if candidate_key == normalized:
+                    return str(definition.get("package_name", cleaned))
+
+        return cleaned
+
     def _parse_package_search_output(self, manager: str, output: str, limit: int) -> list[dict[str, str]]:
         results: list[dict[str, str]] = []
         seen: set[str] = set()
@@ -784,3 +1394,89 @@ class ToolchainService:
         if value.startswith("linux"):
             return "linux"
         raise ValueError(f"Unsupported OS value: {os_name or value}")
+
+    # ------------------------------------------------------------------ #
+    # PATH registration helpers                                            #
+    # ------------------------------------------------------------------ #
+
+    def _get_python_scripts_dir(self) -> str:
+        """Return the Scripts (Windows) or bin (Unix) directory for sys.executable."""
+        return str(Path(sys.executable).parent.resolve())
+
+    def _is_scripts_dir_in_path(self, scripts_dir: str) -> bool:
+        """Return True if scripts_dir is already in the persistent user PATH."""
+        if sys.platform == "win32":
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ)
+                try:
+                    current_path, _ = winreg.QueryValueEx(key, "Path")
+                except FileNotFoundError:
+                    current_path = ""
+                finally:
+                    winreg.CloseKey(key)
+                return any(
+                    p.lower() == scripts_dir.lower()
+                    for p in current_path.split(";") if p
+                )
+            except Exception:
+                return False
+        else:
+            return any(
+                p == scripts_dir
+                for p in os.environ.get("PATH", "").split(":")
+            )
+
+    def _add_scripts_dir_to_path(self, scripts_dir: str) -> bool:
+        """Persistently add scripts_dir to the user PATH. Returns True on success."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                import winreg
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    "Environment",
+                    0,
+                    winreg.KEY_READ | winreg.KEY_WRITE,
+                )
+                try:
+                    try:
+                        current_path, reg_type = winreg.QueryValueEx(key, "Path")
+                    except FileNotFoundError:
+                        current_path = ""
+                        reg_type = winreg.REG_EXPAND_SZ
+                    dirs = [
+                        d for d in current_path.split(";")
+                        if d and d.lower() != scripts_dir.lower()
+                    ]
+                    dirs.append(scripts_dir)
+                    winreg.SetValueEx(key, "Path", 0, reg_type, ";".join(dirs))
+                finally:
+                    winreg.CloseKey(key)
+                # Broadcast WM_SETTINGCHANGE so Explorer/shell picks up the new PATH
+                ctypes.windll.user32.SendMessageTimeoutW(
+                    0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, None
+                )
+                return True
+            except Exception:
+                return False
+        else:
+            profile = Path.home() / ".profile"
+            export_line = f'\nexport PATH="{scripts_dir}:$PATH"  # added by OtterForge\n'
+            try:
+                content = profile.read_text() if profile.exists() else ""
+                if scripts_dir not in content:
+                    with open(profile, "a") as fh:
+                        fh.write(export_line)
+                    return True
+                return False
+            except Exception:
+                return False
+
+    def _try_register_scripts_to_path(self) -> dict[str, Any]:
+        """Add the current Python's scripts dir to the persistent user PATH if missing."""
+        scripts_dir = self._get_python_scripts_dir()
+        if self._is_scripts_dir_in_path(scripts_dir):
+            return {"scripts_dir": scripts_dir, "already_in_path": True, "registered": False}
+        registered = self._add_scripts_dir_to_path(scripts_dir)
+        return {"scripts_dir": scripts_dir, "already_in_path": False, "registered": registered}
