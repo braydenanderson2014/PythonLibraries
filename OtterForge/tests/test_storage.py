@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from otterforge.api.facade import OtterForgeAPI
 from otterforge.services.memory_backend_manager import MemoryBackendManager
@@ -1024,9 +1025,10 @@ dev = ["pytest>=8"]
             project_root = Path(temp_dir)
             api = OtterForgeAPI(project_root=project_root)
 
-            container_cfg = api.set_container_config(project_root, image="python:3.12-slim")
-            self.assertEqual(container_cfg["image"], "python:3.12-slim")
-            self.assertEqual(api.get_container_config(project_root)["image"], "python:3.12-slim")
+            with patch.object(api.toolchain_service, "is_integration_tool_available", return_value=True):
+                container_cfg = api.set_container_config(project_root, image="python:3.12-slim")
+                self.assertEqual(container_cfg["image"], "python:3.12-slim")
+                self.assertEqual(api.get_container_config(project_root)["image"], "python:3.12-slim")
 
             signing_cfg = api.set_signing_config(
                 project_root,

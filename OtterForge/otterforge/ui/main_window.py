@@ -2014,6 +2014,79 @@ if PYQT_AVAILABLE:
             if hasattr(self, "install_typed_button"):
                 self.install_typed_button.setText("Preview Package List" if is_preview else "Install Package List")
 
+        def _install_uv_from_toolchain_tab(self, execute: bool) -> None:
+            if execute:
+                confirmation = QMessageBox.warning(
+                    self,
+                    "Install uv",
+                    "This will download and run the uv installer on your machine. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if confirmation != QMessageBox.StandardButton.Yes:
+                    return
+
+            try:
+                result = self._run_with_busy(
+                    "Installing uv..." if execute else "Previewing uv installation...",
+                    lambda: self.api.install_uv(os_name=self._selected_os_name(), execute=execute),
+                )
+            except Exception as exc:
+                self._show_error("Install uv Failed", exc)
+                return
+
+            self._show_payload(self.toolchain_output, {"uv_install": result})
+            action = "applied" if execute else "previewed"
+            self.statusBar().showMessage(f"uv installation {action}", 3000)
+            if not execute:
+                self.statusBar().showMessage(
+                    "Preview mode is on. Uncheck 'Preview commands only' to actually install uv.",
+                    5000,
+                )
+            if execute and isinstance(result, dict):
+                self._notify_path_registration(result.get("path_registration"))
+            self._refresh_module_search_managers()
+
+        def _install_integration_tool_from_toolchain_tab(self, tool_id: str, execute: bool) -> None:
+            clean_tool_id = str(tool_id).strip().lower()
+            display_name = "Git" if clean_tool_id == "git" else "Docker"
+
+            if execute:
+                confirmation = QMessageBox.warning(
+                    self,
+                    f"Install {display_name}",
+                    f"This will run the {display_name} installer command on your machine. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if confirmation != QMessageBox.StandardButton.Yes:
+                    return
+
+            try:
+                result = self._run_with_busy(
+                    f"Installing {display_name}..." if execute else f"Previewing {display_name} installation...",
+                    lambda: self.api.install_integration_tool(
+                        tool_id=clean_tool_id,
+                        os_name=self._selected_os_name(),
+                        execute=execute,
+                    ),
+                )
+            except Exception as exc:
+                self._show_error(f"Install {display_name} Failed", exc)
+                return
+
+            self._show_payload(self.toolchain_output, {"integration_install": result})
+            action = "applied" if execute else "previewed"
+            self.statusBar().showMessage(f"{display_name} installation {action}", 3000)
+            if not execute:
+                self.statusBar().showMessage(
+                    f"Preview mode is on. Uncheck 'Preview commands only' to actually install {display_name}.",
+                    5000,
+                )
+            if execute and isinstance(result, dict):
+                self._notify_path_registration(result.get("path_registration"))
+            self._refresh_toolchain()
+            self._refresh_module_search_managers()
+            self._refresh_unified_module_catalog()
+
         def _sync_module_os_selector(self, _index: int | None = None) -> None:
             os_name = self.pack_os_selector.currentText().strip().lower()
             if self.module_os_selector.currentText().strip().lower() != os_name:
@@ -2126,6 +2199,8 @@ if PYQT_AVAILABLE:
                 prefix = "[LANG]"
             elif kind == "builder_tool":
                 prefix = "[TOOL]"
+            elif kind == "integration_tool":
+                prefix = "[INT]"
             elif kind == "github_repo":
                 prefix = "[GIT]"
             else:
@@ -2277,7 +2352,7 @@ if PYQT_AVAILABLE:
                     self.install_pkg_button.setEnabled(True)
             if hasattr(self, "uninstall_pkg_button"):
                 self.uninstall_pkg_button.setEnabled(
-                    str(module.get("module_kind")) not in {"language_pack", "github_repo"}
+                    str(module.get("module_kind")) not in {"language_pack", "github_repo", "integration_tool"}
                 )
 
         def _sync_selected_package_name(self) -> None:
@@ -2451,6 +2526,31 @@ if PYQT_AVAILABLE:
                             execute=execute,
                         ),
                     )
+                elif module is not None and str(module.get("module_kind")) == "integration_tool":
+                    tool_id = str(module.get("tool_id") or module.get("package_name") or "").strip().lower()
+                    if not tool_id:
+                        QMessageBox.warning(self, "OtterForge", "Selected integration tool is missing tool ID.")
+                        return
+                    if tool_id == "uv":
+                        message = "Installing uv..." if execute else "Previewing uv installation..."
+                        result = self._run_with_busy(
+                            message,
+                            lambda: self.api.install_uv(
+                                os_name=selected_os,
+                                execute=execute,
+                            ),
+                        )
+                    else:
+                        message = "Installing integration tool..." if execute else "Previewing integration tool install..."
+                        result = self._run_with_busy(
+                            message,
+                            lambda: self.api.install_integration_tool(
+                                tool_id=tool_id,
+                                manager=manager,
+                                os_name=selected_os,
+                                execute=execute,
+                            ),
+                        )
                 else:
                     target_name = package_name or str(module.get("package_name") or module.get("name") or "").strip()
                     message = "Installing module package..." if execute else "Previewing module install..."
@@ -2478,6 +2578,7 @@ if PYQT_AVAILABLE:
             if execute and isinstance(result, dict):
                 self._notify_path_registration(result.get("path_registration"))
             self._refresh_unified_module_catalog()
+            self._refresh_module_search_managers()
 
         def _uninstall_package_from_toolchain_tab(self, execute: bool) -> None:
             module = self._selected_module()
@@ -2499,6 +2600,14 @@ if PYQT_AVAILABLE:
                     self,
                     "Uninstall Not Supported",
                     "GitHub repositories support clone/pull operations only from this tab.",
+                )
+                return
+
+            if module is not None and str(module.get("module_kind")) == "integration_tool":
+                QMessageBox.warning(
+                    self,
+                    "Uninstall Not Supported",
+                    "Integration tools currently support install planning/execution only.",
                 )
                 return
 
@@ -2587,9 +2696,15 @@ if PYQT_AVAILABLE:
 
             results: list[dict[str, Any]] = []
             action_label = "Installing package list..." if execute else "Previewing package list install..."
-            self._set_busy_state(True, action_label)
+            total = len(candidates)
+            self._busy_label.setText(action_label)
+            self._busy_progress.setRange(0, total)
+            self._busy_progress.setValue(0)
+            self._busy_progress.setVisible(True)
+            self.statusBar().showMessage(f"{action_label} (0/{total})")
+            QApplication.processEvents()
             try:
-                for package_name in candidates:
+                for index, package_name in enumerate(candidates, start=1):
                     try:
                         result = self.api.install_package(
                             package_name=package_name,
@@ -2605,6 +2720,10 @@ if PYQT_AVAILABLE:
                             "error": str(exc),
                         }
                     results.append(result)
+
+                    self._busy_progress.setValue(index)
+                    self._busy_label.setText(f"{action_label} ({index}/{total})")
+                    self.statusBar().showMessage(f"{action_label} ({index}/{total})")
                     QApplication.processEvents()
             finally:
                 self._set_busy_state(False)
@@ -2649,7 +2768,7 @@ if PYQT_AVAILABLE:
             """Show an informational dialog when the scripts dir was added to PATH."""
             if not path_reg or not path_reg.get("registered"):
                 return
-            scripts_dir = path_reg.get("scripts_dir", "")
+            scripts_dir = path_reg.get("scripts_dir") or path_reg.get("path") or ""
             QMessageBox.information(
                 self,
                 "PATH Updated",

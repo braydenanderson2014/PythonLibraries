@@ -126,6 +126,26 @@ class OtterForgeAPI:
                 continue_on_error=bool(args.get("continue_on_error", False)),
             ),
         )
+        self.mcp_server.register_tool_handler(
+            "install_uv",
+            lambda args: self.install_uv(
+                os_name=args.get("os_name"),
+                execute=bool(args.get("execute", False)),
+            ),
+        )
+        self.mcp_server.register_tool_handler(
+            "list_integration_tools",
+            lambda args: self.list_integration_tools(os_name=args.get("os_name")),
+        )
+        self.mcp_server.register_tool_handler(
+            "install_integration_tool",
+            lambda args: self.install_integration_tool(
+                tool_id=str(args["tool_id"]),
+                manager=args.get("manager"),
+                os_name=args.get("os_name"),
+                execute=bool(args.get("execute", False)),
+            ),
+        )
         self.mcp_server.register_tool_handler("show_manifest", lambda args: self.show_manifest())
         self.mcp_server.register_tool_handler("refresh_manifest", lambda args: self.refresh_manifest())
         self.mcp_server.register_tool_handler(
@@ -521,7 +541,12 @@ class OtterForgeAPI:
     def list_toolchain(self) -> dict[str, Any]:
         builders = self.list_builders()
         obfuscators = self.list_obfuscators()
-        return self.toolchain_service.build_toolchain_report(builders, obfuscators)
+        integrations = self.toolchain_service.list_integration_tools()
+        return self.toolchain_service.build_toolchain_report(
+            builders,
+            obfuscators,
+            integration_tools=integrations,
+        )
 
     def doctor_toolchain(self) -> dict[str, Any]:
         report = self.list_toolchain()
@@ -640,8 +665,9 @@ class OtterForgeAPI:
             os_name=os_name,
             custom_packs=self._get_custom_language_packs(),
         )
+        integration_modules = self.toolchain_service.list_integration_modules(os_name=os_name)
         modules = sorted(
-            [*package_modules, *builder_modules, *language_pack_modules],
+            [*package_modules, *builder_modules, *language_pack_modules, *integration_modules],
             key=lambda entry: (str(entry.get("module_kind", "")), str(entry.get("name", "")).lower()),
         )
 
@@ -684,8 +710,8 @@ class OtterForgeAPI:
                 seen_module_ids.add(module_id)
                 modules.append(module)
 
-        # If query is a GitHub repo URL, offer it directly as an installable module.
-        if "github.com/" in query_clean.lower():
+        # If query is a GitHub repo URL, only offer install when git is available.
+        if "github.com/" in query_clean.lower() and self.toolchain_service.is_integration_tool_available("git"):
             try:
                 module = self.toolchain_service.build_github_repo_module_entry(repo_url=query_clean)
             except Exception:
@@ -707,6 +733,20 @@ class OtterForgeAPI:
                 seen_module_ids.add(module_id)
                 modules.append(module)
 
+        needle = query_clean.lower()
+        for module in self.toolchain_service.list_integration_modules(os_name=os_name):
+            haystacks = [
+                str(module.get("tool_id", "")).lower(),
+                str(module.get("name", "")).lower(),
+                str(module.get("description", "")).lower(),
+            ]
+            if not any(needle in haystack for haystack in haystacks):
+                continue
+            module_id = str(module.get("module_id", "")).strip()
+            if module_id and module_id not in seen_module_ids:
+                seen_module_ids.add(module_id)
+                modules.append(module)
+
         return {
             **package_result,
             "module_count": len(modules),
@@ -719,6 +759,8 @@ class OtterForgeAPI:
         destination_root: str | None = None,
         branch: str | None = None,
     ) -> dict[str, Any]:
+        if not self.toolchain_service.is_integration_tool_available("git"):
+            raise RuntimeError("Git is not available on PATH. Install Git before using GitHub repository features.")
         return self.toolchain_service.build_github_repo_module_entry(
             repo_url=repo_url,
             destination_root=destination_root,
@@ -756,6 +798,35 @@ class OtterForgeAPI:
             execute=execute,
             continue_on_error=continue_on_error,
             custom_packs=self._get_custom_language_packs(),
+        )
+
+    def install_uv(
+        self,
+        os_name: str | None = None,
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        return self.toolchain_service.install_uv(os_name=os_name, execute=execute)
+
+    def list_integration_tools(self, os_name: str | None = None) -> dict[str, Any]:
+        tools = self.toolchain_service.list_integration_tools(os_name=os_name)
+        return {
+            "os": os_name,
+            "count": len(tools),
+            "tools": tools,
+        }
+
+    def install_integration_tool(
+        self,
+        tool_id: str,
+        manager: str | None = None,
+        os_name: str | None = None,
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        return self.toolchain_service.install_integration_tool(
+            tool_id=tool_id,
+            manager=manager,
+            os_name=os_name,
+            execute=execute,
         )
 
     def list_package_managers(self, os_name: str | None = None) -> dict[str, Any]:
@@ -1312,6 +1383,11 @@ class OtterForgeAPI:
         image: str | None = None,
         output_dir: str = "dist",
     ) -> dict[str, Any]:
+        if not self.toolchain_service.is_integration_tool_available("docker"):
+            return {
+                "success": False,
+                "error": "Docker is not available on PATH. Install Docker before running container builds.",
+            }
         state = self.backend_manager.read_memory()
         return self.container_runner.run_build(
             project_path,
@@ -1322,12 +1398,20 @@ class OtterForgeAPI:
         )
 
     def set_container_config(self, project_path: str | Path, image: str) -> dict[str, Any]:
+        if not self.toolchain_service.is_integration_tool_available("docker"):
+            return {
+                "error": "Docker is not available on PATH. Install Docker before configuring container builds.",
+            }
         state = self.backend_manager.read_memory()
         cfg = self.container_runner.set_config(state, project_path, image=image)
         self.save_memory(state)
         return cfg
 
     def get_container_config(self, project_path: str | Path) -> dict[str, Any]:
+        if not self.toolchain_service.is_integration_tool_available("docker"):
+            return {
+                "error": "Docker is not available on PATH. Install Docker before using container features.",
+            }
         state = self.backend_manager.read_memory()
         return self.container_runner.get_config(state, project_path)
 

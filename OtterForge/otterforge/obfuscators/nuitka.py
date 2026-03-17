@@ -15,29 +15,44 @@ class NuitkaObfuscatorAdapter(ObfuscatorAdapter):
 
     def _base_command(self) -> list[str]:
         if shutil.which("nuitka") is not None:
-            return ["nuitka"]
+            try:
+                probe = subprocess.run(
+                    ["nuitka", "--version"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if probe.returncode == 0:
+                    return ["nuitka"]
+            except (FileNotFoundError, OSError):
+                pass
         return [sys.executable, "-m", "nuitka"]
 
     def is_available(self) -> bool:
-        if shutil.which("nuitka") is not None:
-            return True
-        probe = subprocess.run(
-            [sys.executable, "-m", "nuitka", "--version"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        command = self._base_command()
+        try:
+            probe = subprocess.run(
+                [*command, "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (FileNotFoundError, OSError):
+            return False
         return probe.returncode == 0
 
     def get_version(self) -> str | None:
         if not self.is_available():
             return None
-        result = subprocess.run(
-            [*self._base_command(), "--version"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [*self._base_command(), "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (FileNotFoundError, OSError):
+            return None
         if result.returncode != 0:
             return None
         return result.stdout.strip() or result.stderr.strip()

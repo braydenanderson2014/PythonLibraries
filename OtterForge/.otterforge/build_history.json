@@ -494,5 +494,38 @@
     "stdout": "",
     "success": true,
     "target_platform": "current"
+  },
+  {
+    "artifact_paths": [],
+    "builder_name": "pyinstaller",
+    "duration_seconds": 0.000201,
+    "environment_snapshot": {
+      "cwd": "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-21\\test_build_dry_run_smoke0"
+    },
+    "exit_code": 0,
+    "final_command": [
+      "C:\\Users\\brayd\\OneDrive\\Documents\\GitHub\\PythonLibraries\\.venv\\Scripts\\python.exe",
+      "-m",
+      "PyInstaller",
+      "--onefile",
+      "--console",
+      "C:\\Users\\brayd\\AppData\\Local\\Temp\\pytest-of-brayd\\pytest-21\\test_build_dry_run_smoke0\\app.py"
+    ],
+    "finished_at": "2026-03-17T01:43:45.516642+00:00",
+    "hook_results": {
+      "post_build": [],
+      "post_success": [],
+      "pre_build": []
+    },
+    "notification": {
+      "reason": "Notifications disabled",
+      "skipped": true
+    },
+    "project_name": "test_build_dry_run_smoke0",
+    "started_at": "2026-03-17T01:43:45.516441+00:00",
+    "stderr": "",
+    "stdout": "",
+    "success": true,
+    "target_platform": "current"
   }
 ]

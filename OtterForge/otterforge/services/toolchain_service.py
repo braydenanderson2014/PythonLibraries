@@ -98,6 +98,29 @@ TOOL_INSTALL_HINTS: dict[str, dict[str, Any]] = {
             "cross_platform": ["dotnet tool install --global Obfuscar.GlobalTool"],
         }
     },
+    "git": {
+        "managers": {
+            "windows": ["winget install -e --id Git.Git", "choco install git -y"],
+            "linux": ["sudo apt-get install -y git", "sudo dnf install -y git"],
+            "macos": ["brew install git"],
+        }
+    },
+    "docker": {
+        "managers": {
+            "windows": ["winget install -e --id Docker.DockerDesktop", "choco install docker-desktop -y"],
+            "linux": ["sudo apt-get install -y docker.io", "sudo dnf install -y docker"],
+            "macos": ["brew install --cask docker"],
+        }
+    },
+    "uv": {
+        "managers": {
+            "windows": [
+                "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://astral.sh/uv/install.ps1 | iex\""
+            ],
+            "linux": ["curl -LsSf https://astral.sh/uv/install.sh | sh"],
+            "macos": ["curl -LsSf https://astral.sh/uv/install.sh | sh"],
+        }
+    },
 }
 
 
@@ -309,6 +332,75 @@ TOOL_PACKAGE_DEFINITIONS: dict[str, dict[str, Any]] = {
 }
 
 
+INTEGRATION_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "uv": {
+        "name": "uv",
+        "description": "Fast Python package manager used for Python dependency installs.",
+        "binary": "uv",
+        "version_command": ["uv", "--version"],
+        "supported_os": ["windows", "linux", "macos"],
+        "managers": {
+            "windows": {
+                "powershell": [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    "irm https://astral.sh/uv/install.ps1 | iex",
+                ],
+            },
+            "linux": {
+                "sh": ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+            },
+            "macos": {
+                "sh": ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+            },
+        },
+    },
+    "git": {
+        "name": "Git / GitHub",
+        "description": "Required for GitHub repository clone/import workflows and git-based operations.",
+        "binary": "git",
+        "version_command": ["git", "--version"],
+        "supported_os": ["windows", "linux", "macos"],
+        "managers": {
+            "windows": {
+                "winget": ["winget", "install", "-e", "--id", "Git.Git"],
+                "choco": ["choco", "install", "git", "-y"],
+            },
+            "linux": {
+                "apt": ["sudo", "apt-get", "install", "-y", "git"],
+                "dnf": ["sudo", "dnf", "install", "-y", "git"],
+            },
+            "macos": {
+                "brew": ["brew", "install", "git"],
+            },
+        },
+    },
+    "docker": {
+        "name": "Docker",
+        "description": "Required for containerized build workflows.",
+        "binary": "docker",
+        "version_command": ["docker", "--version"],
+        "supported_os": ["windows", "linux", "macos"],
+        "managers": {
+            "windows": {
+                "winget": ["winget", "install", "-e", "--id", "Docker.DockerDesktop"],
+                "choco": ["choco", "install", "docker-desktop", "-y"],
+            },
+            "linux": {
+                "apt": ["sudo", "apt-get", "install", "-y", "docker.io"],
+                "dnf": ["sudo", "dnf", "install", "-y", "docker"],
+            },
+            "macos": {
+                "brew": ["brew", "install", "--cask", "docker"],
+            },
+        },
+    },
+}
+
+
 class ToolchainService:
     GITHUB_URL_RE = re.compile(
         r"^https?://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?(?:/)?$",
@@ -487,6 +579,7 @@ class ToolchainService:
         self,
         builders: list[dict[str, Any]],
         obfuscators: list[dict[str, Any]],
+        integration_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
 
@@ -513,6 +606,19 @@ class ToolchainService:
                     "version": obfuscator.get("version"),
                     "platforms": list(obfuscator.get("platforms", [])),
                     "install": self._hint_for(str(obfuscator["name"])),
+                }
+            )
+
+        for integration_tool in integration_tools or []:
+            tools.append(
+                {
+                    "tool_id": str(integration_tool["tool_id"]),
+                    "category": "integration",
+                    "language_family": str(integration_tool.get("language_family", "integration")),
+                    "available": bool(integration_tool.get("available", False)),
+                    "version": integration_tool.get("version"),
+                    "platforms": list(integration_tool.get("platforms", [])),
+                    "install": integration_tool.get("install") or self._hint_for(str(integration_tool["tool_id"])),
                 }
             )
 
@@ -662,6 +768,218 @@ class ToolchainService:
     # ------------------------------------------------------------------ #
     # Package browser                                                      #
     # ------------------------------------------------------------------ #
+
+    def is_integration_tool_available(self, tool_id: str) -> bool:
+        definition = INTEGRATION_TOOL_DEFINITIONS.get(tool_id.strip().lower())
+        if definition is None:
+            raise KeyError(f"Unknown integration tool: {tool_id}")
+        binary = str(definition.get("binary", "")).strip()
+        return bool(binary and shutil.which(binary) is not None)
+
+    def _integration_tool_version(self, tool_id: str) -> str | None:
+        definition = INTEGRATION_TOOL_DEFINITIONS.get(tool_id.strip().lower())
+        if definition is None:
+            return None
+
+        binary = str(definition.get("binary", "")).strip()
+        version_command = list(definition.get("version_command", []))
+        if not binary or not version_command or shutil.which(binary) is None:
+            return None
+
+        try:
+            result = subprocess.run(
+                version_command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except Exception:
+            return None
+
+        if result.returncode != 0:
+            return None
+        output = result.stdout.strip() or result.stderr.strip()
+        return output.splitlines()[0] if output else None
+
+    def list_integration_tools(self, os_name: str | None = None) -> list[dict[str, Any]]:
+        normalized_os = self._normalize_os_name(os_name)
+        tools: list[dict[str, Any]] = []
+
+        for tool_id, definition in sorted(INTEGRATION_TOOL_DEFINITIONS.items()):
+            supported_os = [str(item).strip().lower() for item in definition.get("supported_os", [])]
+            if supported_os and normalized_os not in supported_os:
+                continue
+
+            tools.append(
+                {
+                    "tool_id": tool_id,
+                    "category": "integration",
+                    "language_family": "integration",
+                    "available": self.is_integration_tool_available(tool_id),
+                    "version": self._integration_tool_version(tool_id),
+                    "platforms": supported_os,
+                    "install": self._hint_for(tool_id),
+                    "description": str(definition.get("description", "")),
+                }
+            )
+
+        return tools
+
+    def list_integration_modules(self, os_name: str | None = None) -> list[dict[str, Any]]:
+        normalized_os = self._normalize_os_name(os_name)
+        modules: list[dict[str, Any]] = []
+
+        for tool_id, definition in sorted(INTEGRATION_TOOL_DEFINITIONS.items()):
+            supported_os = [str(item).strip().lower() for item in definition.get("supported_os", [])]
+            if supported_os and normalized_os not in supported_os:
+                continue
+
+            managers_for_os = definition.get("managers", {}).get(normalized_os, {})
+            install_candidates: list[dict[str, Any]] = []
+            for manager_name, command in sorted(managers_for_os.items()):
+                install_candidates.append(
+                    {
+                        "manager": manager_name,
+                        "available": self._is_package_manager_available(manager_name),
+                        "supports_uninstall": False,
+                        "install_command": list(command),
+                        "uninstall_command": [],
+                    }
+                )
+
+            modules.append(
+                {
+                    "module_id": f"integration:{tool_id}",
+                    "module_kind": "integration_tool",
+                    "name": str(definition.get("name", tool_id)),
+                    "package_name": tool_id,
+                    "tool_id": tool_id,
+                    "description": str(definition.get("description", "")),
+                    "source": "integration",
+                    "installed": self.is_integration_tool_available(tool_id),
+                    "installed_version": self._integration_tool_version(tool_id),
+                    "install_candidates": install_candidates,
+                    "metadata": {
+                        "binary": definition.get("binary"),
+                    },
+                }
+            )
+
+        return modules
+
+    def install_integration_tool(
+        self,
+        tool_id: str,
+        manager: str | None = None,
+        os_name: str | None = None,
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        normalized_tool = tool_id.strip().lower()
+        definition = INTEGRATION_TOOL_DEFINITIONS.get(normalized_tool)
+        if definition is None:
+            raise KeyError(f"Unknown integration tool: {tool_id}")
+
+        normalized_os = self._normalize_os_name(os_name)
+
+        # uv uses dedicated bootstrap logic to support PATH registration.
+        if normalized_tool == "uv":
+            result = self.install_uv(os_name=normalized_os, execute=execute)
+            return {
+                **result,
+                "tool_id": "uv",
+                "name": str(definition.get("name", "uv")),
+                "manager": "bootstrap",
+                "manager_available": True,
+                "installed_before": bool(result.get("already_available", False)),
+            }
+
+        managers_for_os = definition.get("managers", {}).get(normalized_os, {})
+        if not managers_for_os:
+            raise ValueError(
+                f"Integration tool '{tool_id}' has no installer entries for OS '{normalized_os}'"
+            )
+
+        if manager:
+            selected_manager = manager.strip().lower()
+            if selected_manager not in managers_for_os:
+                supported = ", ".join(sorted(managers_for_os.keys()))
+                raise ValueError(
+                    f"Integration tool '{tool_id}' does not support manager '{selected_manager}' on {normalized_os}. "
+                    f"Supported: {supported}"
+                )
+        else:
+            available_managers = [
+                manager_name
+                for manager_name in sorted(managers_for_os.keys())
+                if self._is_package_manager_available(manager_name)
+            ]
+            selected_manager = available_managers[0] if available_managers else sorted(managers_for_os.keys())[0]
+
+        command = list(managers_for_os[selected_manager])
+        manager_available = self._is_package_manager_available(selected_manager)
+        binary_name = str(definition.get("binary", "")).strip()
+
+        plan = {
+            "tool_id": normalized_tool,
+            "name": str(definition.get("name", normalized_tool)),
+            "os": normalized_os,
+            "manager": selected_manager,
+            "manager_available": manager_available,
+            "command": command,
+            "installed_before": bool(binary_name and shutil.which(binary_name) is not None),
+        }
+
+        if not execute:
+            return {
+                **plan,
+                "executed": False,
+                "message": "Install plan generated. Re-run with execute=true to install this integration tool.",
+            }
+
+        if not manager_available:
+            return {
+                **plan,
+                "executed": True,
+                "success": False,
+                "returncode": 127,
+                "stdout": "",
+                "stderr": f"Package manager '{selected_manager}' is not available on PATH.",
+            }
+
+        try:
+            process = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            return {
+                **plan,
+                "executed": True,
+                "success": False,
+                "returncode": 127,
+                "stdout": "",
+                "stderr": str(exc),
+            }
+
+        discovered_binary = shutil.which(binary_name) if binary_name else None
+        path_registration = None
+        if process.returncode == 0 and discovered_binary:
+            path_registration = self._try_register_directory_to_path(str(Path(discovered_binary).parent))
+
+        return {
+            **plan,
+            "executed": True,
+            "success": process.returncode == 0,
+            "returncode": process.returncode,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+            "binary": discovered_binary,
+            "installed_after": bool(discovered_binary),
+            "path_registration": path_registration,
+        }
 
     def list_language_pack_modules(
         self,
@@ -1209,6 +1527,92 @@ class ToolchainService:
             "stderr": process.stderr,
         }
 
+    def install_uv(
+        self,
+        os_name: str | None = None,
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        normalized_os = self._normalize_os_name(os_name)
+        command = self._uv_bootstrap_command(normalized_os)
+        already_available = shutil.which("uv") is not None
+
+        plan = {
+            "os": normalized_os,
+            "command": command,
+            "already_available": already_available,
+            "path_registration": None,
+        }
+
+        if not execute:
+            return {
+                **plan,
+                "executed": False,
+                "message": "uv install plan generated. Re-run with execute=true to install and register PATH.",
+            }
+
+        try:
+            process = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            return {
+                **plan,
+                "executed": True,
+                "success": False,
+                "returncode": 127,
+                "stdout": "",
+                "stderr": str(exc),
+            }
+
+        uv_binary = self._locate_uv_binary()
+        path_registration = None
+        if process.returncode == 0 and uv_binary:
+            path_registration = self._try_register_directory_to_path(str(Path(uv_binary).parent))
+
+        return {
+            **plan,
+            "executed": True,
+            "success": process.returncode == 0,
+            "returncode": process.returncode,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+            "uv_binary": uv_binary,
+            "path_registration": path_registration,
+        }
+
+    def _uv_bootstrap_command(self, normalized_os: str) -> list[str]:
+        if normalized_os == "windows":
+            return [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "irm https://astral.sh/uv/install.ps1 | iex",
+            ]
+        return ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]
+
+    def _locate_uv_binary(self) -> str | None:
+        discovered = shutil.which("uv")
+        if discovered:
+            return discovered
+
+        candidates = [
+            Path.home() / ".local" / "bin" / ("uv.exe" if sys.platform == "win32" else "uv"),
+            Path.home() / ".cargo" / "bin" / ("uv.exe" if sys.platform == "win32" else "uv"),
+            Path(self._get_python_scripts_dir()) / ("uv.exe" if sys.platform == "win32" else "uv"),
+        ]
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    return str(candidate)
+            except Exception:
+                continue
+        return None
+
     def _manager_binary(self, manager: str) -> str:
         if manager == "apt":
             return "apt-cache"
@@ -1403,8 +1807,22 @@ class ToolchainService:
         """Return the Scripts (Windows) or bin (Unix) directory for sys.executable."""
         return str(Path(sys.executable).parent.resolve())
 
+    def _normalize_path_entry(self, value: str) -> str:
+        cleaned = str(value or "").strip().strip('"')
+        if not cleaned:
+            return ""
+        expanded = os.path.expandvars(os.path.expanduser(cleaned))
+        return os.path.normcase(os.path.normpath(expanded))
+
     def _is_scripts_dir_in_path(self, scripts_dir: str) -> bool:
         """Return True if scripts_dir is already in the persistent user PATH."""
+        return self._is_directory_in_path(scripts_dir)
+
+    def _is_directory_in_path(self, directory: str) -> bool:
+        target = self._normalize_path_entry(directory)
+        if not target:
+            return False
+
         if sys.platform == "win32":
             try:
                 import winreg
@@ -1416,19 +1834,27 @@ class ToolchainService:
                 finally:
                     winreg.CloseKey(key)
                 return any(
-                    p.lower() == scripts_dir.lower()
+                    self._normalize_path_entry(p) == target
                     for p in current_path.split(";") if p
                 )
             except Exception:
                 return False
         else:
             return any(
-                p == scripts_dir
+                self._normalize_path_entry(p) == target
                 for p in os.environ.get("PATH", "").split(":")
             )
 
     def _add_scripts_dir_to_path(self, scripts_dir: str) -> bool:
         """Persistently add scripts_dir to the user PATH. Returns True on success."""
+        return self._add_directory_to_path(scripts_dir)
+
+    def _add_directory_to_path(self, directory: str) -> bool:
+        target_dir = str(Path(directory).expanduser())
+        normalized_target = self._normalize_path_entry(target_dir)
+        if not normalized_target:
+            return False
+
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -1447,9 +1873,9 @@ class ToolchainService:
                         reg_type = winreg.REG_EXPAND_SZ
                     dirs = [
                         d for d in current_path.split(";")
-                        if d and d.lower() != scripts_dir.lower()
+                        if d and self._normalize_path_entry(d) != normalized_target
                     ]
-                    dirs.append(scripts_dir)
+                    dirs.append(target_dir)
                     winreg.SetValueEx(key, "Path", 0, reg_type, ";".join(dirs))
                 finally:
                     winreg.CloseKey(key)
@@ -1462,10 +1888,10 @@ class ToolchainService:
                 return False
         else:
             profile = Path.home() / ".profile"
-            export_line = f'\nexport PATH="{scripts_dir}:$PATH"  # added by OtterForge\n'
+            export_line = f'\nexport PATH="{target_dir}:$PATH"  # added by OtterForge\n'
             try:
                 content = profile.read_text() if profile.exists() else ""
-                if scripts_dir not in content:
+                if target_dir not in content:
                     with open(profile, "a") as fh:
                         fh.write(export_line)
                     return True
@@ -1476,7 +1902,17 @@ class ToolchainService:
     def _try_register_scripts_to_path(self) -> dict[str, Any]:
         """Add the current Python's scripts dir to the persistent user PATH if missing."""
         scripts_dir = self._get_python_scripts_dir()
-        if self._is_scripts_dir_in_path(scripts_dir):
-            return {"scripts_dir": scripts_dir, "already_in_path": True, "registered": False}
-        registered = self._add_scripts_dir_to_path(scripts_dir)
-        return {"scripts_dir": scripts_dir, "already_in_path": False, "registered": registered}
+        registration = self._try_register_directory_to_path(scripts_dir)
+        return {
+            "scripts_dir": scripts_dir,
+            "already_in_path": registration["already_in_path"],
+            "registered": registration["registered"],
+            "path": registration["path"],
+        }
+
+    def _try_register_directory_to_path(self, directory: str) -> dict[str, Any]:
+        target_dir = str(Path(directory).expanduser())
+        if self._is_directory_in_path(target_dir):
+            return {"path": target_dir, "already_in_path": True, "registered": False}
+        registered = self._add_directory_to_path(target_dir)
+        return {"path": target_dir, "already_in_path": False, "registered": registered}

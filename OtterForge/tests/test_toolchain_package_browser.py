@@ -25,6 +25,41 @@ class ToolchainPackageBrowserTests(unittest.TestCase):
         self.assertFalse(bool(by_name["git"].get("capabilities", {}).get("supports_package_ops", True)))
         self.assertFalse(bool(by_name["docker"].get("capabilities", {}).get("supports_package_ops", True)))
 
+    def test_list_integration_tools_contains_uv_git_and_docker(self) -> None:
+        tools = self.service.list_integration_tools(os_name="windows")
+        ids = {str(item.get("tool_id")) for item in tools}
+        self.assertIn("uv", ids)
+        self.assertIn("git", ids)
+        self.assertIn("docker", ids)
+
+    def test_install_integration_tool_plan_mode_no_execute(self) -> None:
+        result = self.service.install_integration_tool(
+            tool_id="git",
+            manager="winget",
+            os_name="windows",
+            execute=False,
+        )
+        self.assertFalse(result["executed"])
+        self.assertEqual(result["tool_id"], "git")
+        self.assertEqual(result["manager"], "winget")
+        self.assertIn("command", result)
+
+    @patch.object(ToolchainService, "_is_package_manager_available")
+    def test_install_integration_tool_auto_picks_available_manager(self, manager_available_mock) -> None:
+        def side_effect(name: str) -> bool:
+            return name == "winget"
+
+        manager_available_mock.side_effect = side_effect
+
+        result = self.service.install_integration_tool(
+            tool_id="git",
+            manager=None,
+            os_name="windows",
+            execute=False,
+        )
+
+        self.assertEqual(result["manager"], "winget")
+
     def test_search_packages_empty_query_raises(self) -> None:
         with self.assertRaises(ValueError):
             self.service.search_packages("  ", manager="pip", os_name="windows")
@@ -152,6 +187,33 @@ class ToolchainPackageBrowserTests(unittest.TestCase):
         )
         self.assertEqual(result["manager"], "uv")
         self.assertEqual(result["command"][:3], ["uv", "pip", "install"])
+
+    def test_install_uv_plan_mode_no_execute(self) -> None:
+        result = self.service.install_uv(os_name="windows", execute=False)
+        self.assertFalse(result["executed"])
+        self.assertEqual(result["os"], "windows")
+        self.assertEqual(result["command"][:4], ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass"])
+
+    @patch.object(ToolchainService, "_try_register_directory_to_path")
+    @patch.object(ToolchainService, "_locate_uv_binary")
+    @patch("subprocess.run")
+    def test_install_uv_executes_and_registers_path(self, run_mock, locate_mock, register_mock) -> None:
+        run_mock.return_value.returncode = 0
+        run_mock.return_value.stdout = "installed"
+        run_mock.return_value.stderr = ""
+        locate_mock.return_value = "C:/Users/test/.local/bin/uv.exe"
+        register_mock.return_value = {
+            "path": "C:/Users/test/.local/bin",
+            "already_in_path": False,
+            "registered": True,
+        }
+
+        result = self.service.install_uv(os_name="windows", execute=True)
+
+        self.assertTrue(result["executed"])
+        self.assertTrue(result["success"])
+        self.assertEqual(result["uv_binary"], "C:/Users/test/.local/bin/uv.exe")
+        self.assertTrue(bool(result.get("path_registration", {}).get("registered")))
 
     def test_install_package_resolves_builder_alias(self) -> None:
         result = self.service.install_package(

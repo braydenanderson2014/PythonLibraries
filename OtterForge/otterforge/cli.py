@@ -66,6 +66,22 @@ def _run_with_console_progress(label: str, operation: Callable[[], _T]) -> _T:
         sys.stderr.flush()
 
 
+def _run_sequence_with_console_progress(
+    label: str,
+    items: list[str],
+    operation: Callable[[str], _T],
+) -> list[_T]:
+    total = len(items)
+    if total == 0:
+        return []
+
+    results: list[_T] = []
+    for index, item in enumerate(items, start=1):
+        step_label = f"{label} ({index}/{total})"
+        results.append(_run_with_console_progress(step_label, lambda item=item: operation(item)))
+    return results
+
+
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -175,6 +191,20 @@ def build_parser() -> argparse.ArgumentParser:
     toolchain_subparsers = toolchain_parser.add_subparsers(dest="toolchain_command", required=True)
     toolchain_subparsers.add_parser("list")
     toolchain_subparsers.add_parser("doctor")
+    toolchain_uv_install = toolchain_subparsers.add_parser("install-uv")
+    toolchain_uv_install.add_argument("--os", dest="os_name")
+    toolchain_uv_install.add_argument("--execute", action="store_true")
+    toolchain_integrations = toolchain_subparsers.add_parser("integrations")
+    toolchain_integrations_subparsers = toolchain_integrations.add_subparsers(
+        dest="toolchain_integrations_command", required=True
+    )
+    toolchain_integrations_list = toolchain_integrations_subparsers.add_parser("list")
+    toolchain_integrations_list.add_argument("--os", dest="os_name")
+    toolchain_integrations_install = toolchain_integrations_subparsers.add_parser("install")
+    toolchain_integrations_install.add_argument("tool_id", choices=["uv", "git", "docker"])
+    toolchain_integrations_install.add_argument("--manager")
+    toolchain_integrations_install.add_argument("--os", dest="os_name")
+    toolchain_integrations_install.add_argument("--execute", action="store_true")
     toolchain_packs = toolchain_subparsers.add_parser("packs")
     toolchain_packs_subparsers = toolchain_packs.add_subparsers(dest="toolchain_packs_command", required=True)
     toolchain_packs_subparsers.add_parser("list")
@@ -715,6 +745,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.toolchain_command == "doctor":
             _print_json(api.doctor_toolchain())
             return 0
+        if args.toolchain_command == "install-uv":
+            _print_json(
+                _run_with_console_progress(
+                    "Installing uv" if args.execute else "Planning uv installation",
+                    lambda: api.install_uv(os_name=args.os_name, execute=args.execute),
+                )
+            )
+            return 0
+        if args.toolchain_command == "integrations":
+            if args.toolchain_integrations_command == "list":
+                _print_json(api.list_integration_tools(os_name=args.os_name))
+                return 0
+            if args.toolchain_integrations_command == "install":
+                _print_json(
+                    _run_with_console_progress(
+                        "Installing integration tool" if args.execute else "Planning integration tool install",
+                        lambda: api.install_integration_tool(
+                            tool_id=args.tool_id,
+                            manager=args.manager,
+                            os_name=args.os_name,
+                            execute=args.execute,
+                        ),
+                    )
+                )
+                return 0
         if args.toolchain_command == "packs":
             if args.toolchain_packs_command == "list":
                 _print_json(api.list_language_packs())
@@ -769,17 +824,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if args.toolchain_packages_command == "install":
-                results = _run_with_console_progress(
+                results = _run_sequence_with_console_progress(
                     "Installing packages" if args.execute else "Planning package installs",
-                    lambda: [
-                        api.install_package(
-                            package_name=package_name,
-                            manager=args.manager,
-                            os_name=args.os_name,
-                            execute=args.execute,
-                        )
-                        for package_name in args.packages
-                    ],
+                    list(args.packages),
+                    lambda package_name: api.install_package(
+                        package_name=package_name,
+                        manager=args.manager,
+                        os_name=args.os_name,
+                        execute=args.execute,
+                    ),
                 )
                 _print_json(
                     {
@@ -791,17 +844,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if args.toolchain_packages_command == "uninstall":
-                results = _run_with_console_progress(
+                results = _run_sequence_with_console_progress(
                     "Uninstalling packages" if args.execute else "Planning package uninstalls",
-                    lambda: [
-                        api.uninstall_package(
-                            package_name=package_name,
-                            manager=args.manager,
-                            os_name=args.os_name,
-                            execute=args.execute,
-                        )
-                        for package_name in args.packages
-                    ],
+                    list(args.packages),
+                    lambda package_name: api.uninstall_package(
+                        package_name=package_name,
+                        manager=args.manager,
+                        os_name=args.os_name,
+                        execute=args.execute,
+                    ),
                 )
                 _print_json(
                     {
@@ -827,17 +878,15 @@ def main(argv: list[str] | None = None) -> int:
                     lambda: api.list_modules(args.path),
                 )
                 missing = list(analysis.get("missing_dependencies", []))
-                results = _run_with_console_progress(
+                results = _run_sequence_with_console_progress(
                     "Installing missing dependencies" if args.execute else "Planning missing dependency installs",
-                    lambda: [
-                        api.install_package(
-                            package_name=str(name),
-                            manager=args.manager,
-                            os_name=args.os_name,
-                            execute=args.execute,
-                        )
-                        for name in missing
-                    ],
+                    [str(name) for name in missing],
+                    lambda package_name: api.install_package(
+                        package_name=package_name,
+                        manager=args.manager,
+                        os_name=args.os_name,
+                        execute=args.execute,
+                    ),
                 )
                 _print_json(
                     {

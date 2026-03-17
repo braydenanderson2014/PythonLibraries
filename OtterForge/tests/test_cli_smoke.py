@@ -99,6 +99,46 @@ def test_toolchain_packages_managers_smoke(tmp_path: Path, monkeypatch, capsys) 
     assert any(item.get("manager") == "pip" for item in managers)
 
 
+def test_toolchain_install_uv_plan_smoke(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run_cli(["toolchain", "install-uv", "--os", "windows"], capsys)
+
+    assert code == 0
+    assert isinstance(payload, dict)
+    assert payload.get("executed") is False
+    assert payload.get("os") == "windows"
+    assert isinstance(payload.get("command"), list)
+
+
+def test_toolchain_integrations_list_smoke(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run_cli(["toolchain", "integrations", "list", "--os", "windows"], capsys)
+
+    assert code == 0
+    assert isinstance(payload, dict)
+    assert payload.get("count", 0) >= 3
+    tools = payload.get("tools")
+    assert isinstance(tools, list)
+    tool_ids = {item.get("tool_id") for item in tools}
+    assert "uv" in tool_ids
+    assert "git" in tool_ids
+    assert "docker" in tool_ids
+
+
+def test_toolchain_integrations_install_plan_smoke(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run_cli(
+        ["toolchain", "integrations", "install", "git", "--os", "windows", "--manager", "winget"],
+        capsys,
+    )
+
+    assert code == 0
+    assert isinstance(payload, dict)
+    assert payload.get("executed") is False
+    assert payload.get("tool_id") == "git"
+    assert isinstance(payload.get("command"), list)
+
+
 def test_toolchain_packages_install_plan_smoke(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     code, payload = _run_cli(
