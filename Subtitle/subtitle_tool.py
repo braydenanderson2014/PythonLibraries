@@ -1799,6 +1799,276 @@ class SubtitleProcessor:
 
         return summary
 
+    # ------------------------------------------------------------------
+    # Subtitle sync helpers
+    # ------------------------------------------------------------------
+
+    def _compute_subtitle_offset(
+        self,
+        whisper_segments: List[Dict[str, object]],
+        sub_events: List[object],
+        max_offset_seconds: float = 300.0,
+    ) -> Tuple[float, int]:
+        """Vote-accumulate the best global time offset (seconds) to shift sub_events onto whisper_segments.
+
+        A positive offset means subtitles need to be moved *later* in time.
+        Returns (offset_seconds, vote_count).
+        """
+        w_starts = sorted(
+            float(seg["start"])
+            for seg in whisper_segments
+            if str(seg.get("text", "")).strip()
+        )
+        s_starts = sorted(
+            float(ev.start) / 1000.0
+            for ev in sub_events
+            if str(getattr(ev, "text", "") or "").strip()
+        )
+        if not w_starts or not s_starts:
+            return 0.0, 0
+
+        # Sample at most 300 items each to keep O(n^2) cost bounded
+        sample_w = w_starts[:: max(1, len(w_starts) // 300)]
+        sample_s = s_starts[:: max(1, len(s_starts) // 300)]
+
+        # Hough-style vote accumulation: each (w, s) pair votes for offset = w - s
+        # Quantize to 0.1 s resolution (QUANT = 10 → 1 unit = 0.1 s)
+        QUANT = 10
+        votes: Counter[int] = Counter()
+        for w in sample_w:
+            for s in sample_s:
+                d = w - s
+                if -max_offset_seconds <= d <= max_offset_seconds:
+                    votes[round(d * QUANT)] += 1
+
+        if not votes:
+            return 0.0, 0
+
+        # Find the 1-second window (±5 bins) with the highest total votes
+        best_bin = max(votes, key=lambda b: sum(votes.get(b + delta, 0) for delta in range(-5, 6)))
+        window_votes = sum(votes.get(best_bin + delta, 0) for delta in range(-5, 6))
+
+        # Weighted-average the bins inside that window for sub-0.1 s precision
+        total_weight = 0.0
+        total_count = 0
+        for delta in range(-5, 6):
+            v = votes.get(best_bin + delta, 0)
+            total_weight += (best_bin + delta) * v
+            total_count += v
+        precise_bin = total_weight / total_count if total_count else best_bin
+
+        return precise_bin / QUANT, window_votes
+
+    def _verify_subtitle_sync(
+        self,
+        whisper_segments: List[Dict[str, object]],
+        sub_events: List[object],
+        tolerance_seconds: float = 2.0,
+    ) -> Tuple[float, int, int]:
+        """Check what fraction of Whisper speech segments have a subtitle covering them.
+
+        Returns (coverage_ratio, matched_count, total_speech_count).
+        """
+        speech = [
+            (float(seg["start"]), float(seg["end"]))
+            for seg in whisper_segments
+            if str(seg.get("text", "")).strip()
+        ]
+        if not speech:
+            return 1.0, 0, 0
+
+        sub_intervals = sorted(
+            (float(ev.start) / 1000.0, float(ev.end) / 1000.0)
+            for ev in sub_events
+            if str(getattr(ev, "text", "") or "").strip()
+        )
+        if not sub_intervals:
+            return 0.0, 0, len(speech)
+
+        matched = 0
+        for ws, we in speech:
+            lo = ws - tolerance_seconds
+            hi = we + tolerance_seconds
+            for ss, se in sub_intervals:
+                if ss <= hi and se >= lo:
+                    matched += 1
+                    break
+
+        return matched / len(speech), matched, len(speech)
+
+    def sync_subtitles(
+        self,
+        folders: List[str],
+        recursive: bool,
+        target_files: List[str],
+        model_size: str = "base",
+        language: Optional[str] = None,
+        overwrite: bool = False,
+        output_suffix: str = "_synced",
+        max_offset_seconds: float = 300.0,
+        verification_tolerance_seconds: float = 2.0,
+    ) -> OperationSummary:
+        """Re-sync existing subtitle files to match actual audio timing using Whisper AI.
+
+        This shifts existing subtitle timestamps — it does NOT generate new subtitles.
+        After syncing each file it verifies subtitle coverage against Whisper speech segments
+        and reports a quality rating.
+        """
+        summary = OperationSummary(action="sync_subtitles")
+
+        if whisper is None:
+            self._log("ERROR: openai-whisper not installed. Run: pip install openai-whisper")
+            summary.failed = 1
+            summary.details.append({"file": "N/A", "status": "failed", "reason": "Whisper library not installed"})
+            return summary
+
+        if pysubs2 is None:
+            self._log("ERROR: pysubs2 not installed. Run: pip install pysubs2")
+            summary.failed = 1
+            summary.details.append({"file": "N/A", "status": "failed", "reason": "pysubs2 library not installed"})
+            return summary
+
+        videos = [Path(f) for f in target_files if Path(f).exists()]
+        for video in self._iter_video_files(folders, recursive):
+            videos.append(video)
+        videos = list({str(v): v for v in videos}.values())
+        summary.scanned = len(videos)
+
+        if not videos:
+            self._log("No video files found to sync subtitles")
+            return summary
+
+        try:
+            self._log(f"Loading Whisper model for subtitle sync: {model_size}...")
+            model = whisper.load_model(model_size)
+            self._log("Model loaded.")
+        except Exception as exc:
+            summary.failed = len(videos)
+            for video in videos:
+                summary.details.append({"file": str(video), "status": "failed", "reason": f"Failed to load model: {exc}"})
+            return summary
+
+        for video in videos:
+            self._log(f"Syncing subtitles: {video.name}")
+
+            # Find existing sidecar subtitle files (skip image-based .sup)
+            sidecars = [
+                p for p in self._find_sidecar_subtitles(video)
+                if p.suffix.lower() in {".srt", ".ass", ".ssa", ".vtt", ".sub", ".ttml"}
+            ]
+            if not sidecars:
+                summary.skipped += 1
+                summary.details.append({
+                    "file": str(video),
+                    "status": "skipped",
+                    "reason": "no text subtitle sidecar found (will not generate new subtitles)",
+                })
+                continue
+
+            subtitle_path = sidecars[0]
+            self._log(f"  Subtitle file: {subtitle_path.name}")
+
+            try:
+                subs = pysubs2.load(str(subtitle_path))
+            except Exception as exc:
+                summary.failed += 1
+                summary.details.append({"file": str(video), "status": "failed", "reason": f"Could not load subtitle: {exc}"})
+                continue
+
+            if not subs.events:
+                summary.skipped += 1
+                summary.details.append({"file": str(video), "status": "skipped", "reason": "subtitle file has no events"})
+                continue
+
+            # Transcribe with Whisper to get speech segment timestamps
+            try:
+                self._log(f"  Transcribing audio (model={model_size})…")
+                transcribe_opts: Dict[str, object] = {"task": "transcribe"}
+                if language:
+                    transcribe_opts["language"] = language
+                result = model.transcribe(str(video), **transcribe_opts)
+            except Exception as exc:
+                summary.failed += 1
+                summary.details.append({"file": str(video), "status": "failed", "reason": f"Whisper transcription failed: {exc}"})
+                continue
+
+            segments: List[Dict[str, object]] = result.get("segments", [])
+            if not segments:
+                summary.skipped += 1
+                summary.details.append({"file": str(video), "status": "skipped", "reason": "Whisper found no speech — cannot compute offset"})
+                continue
+
+            offset_seconds, votes = self._compute_subtitle_offset(segments, subs.events, max_offset_seconds)
+            offset_ms = int(round(offset_seconds * 1000))
+
+            if votes < 2:
+                summary.skipped += 1
+                self._log(f"  Offset confidence too low (votes={votes}); skipping")
+                summary.details.append({"file": str(video), "status": "skipped", "reason": f"Low offset confidence (votes={votes})"})
+                continue
+
+            self._log(f"  Computed offset: {offset_seconds:+.3f}s  (votes={votes})")
+
+            # Apply offset — clamp to non-negative times
+            shifted_subs = pysubs2.SSAFile()
+            shifted_subs.info.update(subs.info)
+            shifted_subs.styles.update(subs.styles)
+            for ev in subs.events:
+                new_ev = ev.copy()
+                new_ev.start = max(0, ev.start + offset_ms)
+                new_ev.end = max(new_ev.start + 100, ev.end + offset_ms)
+                shifted_subs.events.append(new_ev)
+
+            # Determine output path
+            if overwrite:
+                out_path = subtitle_path
+            else:
+                out_path = subtitle_path.with_name(
+                    f"{subtitle_path.stem}{output_suffix}{subtitle_path.suffix}"
+                )
+                idx = 1
+                while out_path.exists():
+                    out_path = subtitle_path.with_name(
+                        f"{subtitle_path.stem}{output_suffix}_{idx}{subtitle_path.suffix}"
+                    )
+                    idx += 1
+
+            try:
+                shifted_subs.save(str(out_path))
+                self._log(f"  Saved: {out_path.name}")
+            except Exception as exc:
+                summary.failed += 1
+                summary.details.append({"file": str(video), "status": "failed", "reason": f"Could not save synced subtitle: {exc}"})
+                continue
+
+            # --- Verification pass ---
+            coverage, matched, total = self._verify_subtitle_sync(
+                segments, shifted_subs.events, verification_tolerance_seconds
+            )
+            coverage_pct = int(round(coverage * 100))
+            quality = "good" if coverage >= 0.70 else ("fair" if coverage >= 0.40 else "low")
+            self._log(
+                f"  Verification: {matched}/{total} speech segments covered "
+                f"({coverage_pct}%)  →  quality={quality}"
+            )
+
+            summary.processed += 1
+            summary.details.append({
+                "file": str(video),
+                "status": "synced",
+                "reason": (
+                    f"offset={offset_seconds:+.3f}s  "
+                    f"coverage={coverage_pct}% ({matched}/{total} segs)  "
+                    f"quality={quality}"
+                ),
+                "output_path": str(out_path),
+                "offset_seconds": offset_seconds,
+                "coverage_pct": coverage_pct,
+                "quality": quality,
+            })
+
+        return summary
+
 
 class JobPayload(BaseModel):
     folders: List[str] = Field(default_factory=list)
@@ -1815,6 +2085,9 @@ class JobPayload(BaseModel):
     snippet_count: int = 3
     sample_seconds: float = 25.0
     overwrite_existing_tags: bool = False
+    sync_language: str = ""
+    sync_max_offset_seconds: float = 300.0
+    sync_verification_tolerance: float = 2.0
 
 
 @dataclass
@@ -1935,6 +2208,19 @@ class JobManager:
                     overwrite_existing_tags=bool(payload.overwrite_existing_tags),
                 )
                 result = summary.to_dict()
+            elif action == "sync_subtitles":
+                summary = self.processor.sync_subtitles(
+                    folders=payload.folders,
+                    recursive=payload.recursive,
+                    target_files=payload.target_files,
+                    model_size=payload.model_size or "base",
+                    language=payload.sync_language or None,
+                    overwrite=payload.overwrite,
+                    output_suffix=payload.output_suffix or "_synced",
+                    max_offset_seconds=max(10.0, float(payload.sync_max_offset_seconds or 300.0)),
+                    verification_tolerance_seconds=max(0.5, float(payload.sync_verification_tolerance or 2.0)),
+                )
+                result = summary.to_dict()
             else:
                 raise ValueError(f"Unsupported action: {action}")
 
@@ -2030,6 +2316,14 @@ def create_api_app():
     def start_tag_audio_language(payload: JobPayload) -> Dict[str, object]:
         try:
             job = manager.submit("tag_audio_language", payload)
+            return {"job_id": job.id, "status": job.status}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/jobs/sync-subtitles")
+    def start_sync_subtitles(payload: JobPayload) -> Dict[str, object]:
+        try:
+            job = manager.submit("sync_subtitles", payload)
             return {"job_id": job.id, "status": job.status}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2692,6 +2986,19 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         overwrite_existing_tags=bool(self.options.get("overwrite_existing_tags", False)),
                     )
                     payload = summary.to_dict()
+                elif self.action == "sync_subtitles":
+                    summary = processor.sync_subtitles(
+                        folders=folders,
+                        recursive=recursive,
+                        target_files=target_files,
+                        model_size=str(self.options.get("model_size", "base")),
+                        language=self.options.get("sync_language") or None,
+                        overwrite=overwrite,
+                        output_suffix=str(self.options.get("output_suffix", "_synced")),
+                        max_offset_seconds=max(10.0, float(self.options.get("sync_max_offset_seconds", 300.0))),
+                        verification_tolerance_seconds=max(0.5, float(self.options.get("sync_verification_tolerance", 2.0))),
+                    )
+                    payload = summary.to_dict()
                 else:
                     raise ValueError(f"Unsupported action: {self.action}")
 
@@ -3202,6 +3509,34 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 language_tag_options.addStretch()
                 tools_layout.addLayout(language_tag_options)
                 self.tag_audio_language_button.clicked.connect(self._start_tag_audio_language)
+
+                # Subtitle Sync row
+                tools_layout.addSpacing(4)
+                sync_options_row = QHBoxLayout()
+                sync_options_row.addWidget(QLabel("Subtitle Sync:"))
+
+                sync_options_row.addWidget(QLabel("Language hint:"))
+                self.sync_language_input = QLineEdit()
+                self.sync_language_input.setPlaceholderText("auto")
+                self.sync_language_input.setMaximumWidth(70)
+                self.sync_language_input.setToolTip("Optional ISO language code (en, es, fr…) for Whisper transcription")
+                sync_options_row.addWidget(self.sync_language_input)
+
+                self.sync_overwrite_checkbox = QCheckBox("Overwrite original subtitle")
+                self.sync_overwrite_checkbox.setToolTip("Replace the original subtitle file in-place instead of saving <name>_synced")
+                sync_options_row.addWidget(self.sync_overwrite_checkbox)
+
+                self.sync_button = QPushButton("Sync Subtitles to Audio")
+                self.sync_button.setToolTip(
+                    "Shift existing sidecar subtitle timings to match audio.\n"
+                    "Whisper transcribes the audio, then the best global offset is computed\n"
+                    "and applied to every subtitle event. No new subtitles are generated.\n"
+                    "A verification pass reports coverage quality when done."
+                )
+                sync_options_row.addWidget(self.sync_button)
+                sync_options_row.addStretch()
+                tools_layout.addLayout(sync_options_row)
+                self.sync_button.clicked.connect(self._start_sync_subtitles)
             else:
                 # Create dummy attributes for widgets that won't exist
                 self.whisper_model_combo = None
@@ -3212,6 +3547,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.audio_lang_seconds_input = None
                 self.audio_lang_overwrite_checkbox = None
                 self.tag_audio_language_button = None
+                self.sync_language_input = None
+                self.sync_overwrite_checkbox = None
+                self.sync_button = None
 
                 if self.ai_requested_but_unavailable:
                     tools_layout.addSpacing(10)
@@ -3356,6 +3694,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.generate_button.setEnabled(not running)
             if self.tag_audio_language_button is not None:
                 self.tag_audio_language_button.setEnabled(not running)
+            if self.sync_button is not None:
+                self.sync_button.setEnabled(not running)
             if running:
                 self.progress.setRange(0, 0)
             else:
@@ -3637,6 +3977,57 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 )
                 QMessageBox.warning(self, "Validation", str(exc))
 
+        def _start_sync_subtitles(self) -> None:
+            try:
+                options = self._collect_common_options()
+                options["model_size"] = self.whisper_model_combo.currentText() if self.whisper_model_combo else "base"
+                options["sync_language"] = self.sync_language_input.text().strip() if self.sync_language_input else ""
+                options["output_suffix"] = "_synced"
+                options["sync_max_offset_seconds"] = 300.0
+                options["sync_verification_tolerance"] = 2.0
+                if self.sync_overwrite_checkbox is not None:
+                    options["overwrite"] = self.sync_overwrite_checkbox.isChecked()
+
+                if whisper is None:
+                    QMessageBox.warning(
+                        self,
+                        "Whisper Not Installed",
+                        "Whisper AI is not installed. Please install it with:\n\n"
+                        "pip install openai-whisper",
+                    )
+                    return
+
+                if pysubs2 is None:
+                    QMessageBox.warning(
+                        self,
+                        "pysubs2 Not Installed",
+                        "pysubs2 is not installed. Please install it with:\n\n"
+                        "pip install pysubs2",
+                    )
+                    return
+
+                reply = QMessageBox.question(
+                    self,
+                    "Sync Subtitles to Audio",
+                    "This will use Whisper AI to transcribe audio, compute the timing offset\n"
+                    "between your existing subtitle file and the actual speech, then shift\n"
+                    "all subtitle timestamps to match.\n\n"
+                    "No new subtitles will be generated. Sync quality will be verified\n"
+                    "and reported when complete.\n\n"
+                    "Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._start_worker("sync_subtitles", options)
+            except ValueError as exc:
+                self._log_error(
+                    "ERR014_VALIDATION_FAILED",
+                    "Failed to validate subtitle sync options",
+                    str(exc),
+                )
+                QMessageBox.warning(self, "Validation", str(exc))
+
         def _on_result(self, result: Dict[str, object]) -> None:
             action = str(result.get("action", "unknown"))
             if action == "scan":
@@ -3679,6 +4070,30 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     self._log("Subtitle files saved to:")
                     for path in generated_paths:
                         self._log(f"- {path}")
+            elif action == "sync_subtitles":
+                self._log(
+                    "Subtitle sync complete: scanned={scanned}, synced={processed}, "
+                    "skipped={skipped}, failed={failed}".format(
+                        scanned=result.get("scanned", 0),
+                        processed=result.get("processed", 0),
+                        skipped=result.get("skipped", 0),
+                        failed=result.get("failed", 0),
+                    )
+                )
+                details = result.get("details", [])
+                if isinstance(details, list):
+                    for item in details:
+                        if not isinstance(item, dict):
+                            continue
+                        status = item.get("status", "")
+                        reason = item.get("reason", "")
+                        fname = Path(item.get("output_path", "") or item.get("file", "")).name or "?"
+                        if status == "synced":
+                            self._log(f"  \u2713 {fname} \u2014 {reason}")
+                        elif status == "skipped":
+                            self._log(f"  ~ Skipped: {reason}")
+                        elif status == "failed":
+                            self._log(f"  \u2717 Failed: {reason}")
             else:
                 self._log(
                     "Finished {action}: scanned={scanned}, processed={processed}, "
@@ -4121,6 +4536,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "audio_lang_snippets": self.audio_lang_snippets_input.text() if self.audio_lang_snippets_input else "3",
                 "audio_lang_seconds": self.audio_lang_seconds_input.text() if self.audio_lang_seconds_input else "25",
                 "audio_lang_overwrite": self.audio_lang_overwrite_checkbox.isChecked() if self.audio_lang_overwrite_checkbox else False,
+                "sync_language": self.sync_language_input.text() if self.sync_language_input else "",
+                "sync_overwrite": self.sync_overwrite_checkbox.isChecked() if self.sync_overwrite_checkbox else False,
             }
             
             settings["ui_state"] = ui_state
@@ -4198,6 +4615,11 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.audio_lang_seconds_input.setText(str(ui_state.get("audio_lang_seconds", "25")))
                 if self.audio_lang_overwrite_checkbox:
                     self.audio_lang_overwrite_checkbox.setChecked(bool(ui_state.get("audio_lang_overwrite", False)))
+
+            if self.use_ai and self.sync_language_input:
+                self.sync_language_input.setText(str(ui_state.get("sync_language", "")))
+                if self.sync_overwrite_checkbox:
+                    self.sync_overwrite_checkbox.setChecked(bool(ui_state.get("sync_overwrite", False)))
             
             self._log("Previous session restored from memory")
 
@@ -4322,6 +4744,21 @@ def run_cli_action(args: argparse.Namespace) -> int:
         cli_print_json(summary.to_dict())
         return 0
 
+    if args.mode == "sync-subtitles":
+        summary = processor.sync_subtitles(
+            folders=folders,
+            recursive=recursive,
+            target_files=[],
+            model_size=args.model_size,
+            language=args.language or None,
+            overwrite=args.overwrite,
+            output_suffix=args.suffix,
+            max_offset_seconds=max(10.0, args.max_offset),
+            verification_tolerance_seconds=max(0.5, args.tolerance),
+        )
+        cli_print_json(summary.to_dict())
+        return 0
+
     print(f"Unsupported mode: {args.mode}", file=sys.stderr)
     return 1
 
@@ -4345,6 +4782,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("include", "_withsubs"),
         ("extract", ".embedded_sub"),
         ("tag-audio-language", "_langtagged"),
+        ("sync-subtitles", "_synced"),
     ):
         cmd = subparsers.add_parser(mode, help=f"Run {mode} operation in CLI mode")
         cmd.add_argument("--folders", nargs="+", required=True, help="One or more folders to process")
@@ -4375,6 +4813,13 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Re-detect and overwrite existing audio language tags",
             )
+        if mode == "sync-subtitles":
+            cmd.add_argument("--overwrite", action="store_true", help="Overwrite original subtitle file in-place")
+            cmd.add_argument("--suffix", default=default_suffix, help="Output subtitle filename suffix")
+            cmd.add_argument("--model-size", default="base", help="Whisper model size")
+            cmd.add_argument("--language", default="", help="Language hint for Whisper (e.g. en, es); blank = auto-detect")
+            cmd.add_argument("--max-offset", type=float, default=300.0, help="Maximum offset in seconds to consider (default: 300)")
+            cmd.add_argument("--tolerance", type=float, default=2.0, help="Verification coverage tolerance in seconds (default: 2.0)")
         if mode == "remove":
             cmd.add_argument(
                 "--no-extract",
