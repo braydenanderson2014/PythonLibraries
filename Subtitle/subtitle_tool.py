@@ -16,13 +16,16 @@ Notes:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import importlib
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
 import uuid
@@ -179,6 +182,37 @@ SUBTITLE_CODEC_EXT = {
     "dvd_subtitle": ".sub",
     "hdmv_pgs_subtitle": ".sup",
     "pgs": ".sup",
+}
+LANGUAGE_CODE_MAP = {
+    "en": "eng",
+    "es": "spa",
+    "fr": "fra",
+    "de": "deu",
+    "it": "ita",
+    "pt": "por",
+    "ru": "rus",
+    "ja": "jpn",
+    "ko": "kor",
+    "zh": "zho",
+    "ar": "ara",
+    "hi": "hin",
+    "nl": "nld",
+    "sv": "swe",
+    "no": "nor",
+    "da": "dan",
+    "fi": "fin",
+    "pl": "pol",
+    "tr": "tur",
+    "el": "ell",
+    "he": "heb",
+    "uk": "ukr",
+    "cs": "ces",
+    "ro": "ron",
+    "hu": "hun",
+    "th": "tha",
+    "vi": "vie",
+    "id": "ind",
+    "ms": "msa",
 }
 HELP_DOC_NAME = "SUBTITLE_TOOL_HELP.md"
 SETTINGS_FILE = ".subtitle_tool_settings.json"
@@ -349,6 +383,183 @@ class SubtitleProcessor:
         except json.JSONDecodeError:
             self._log(f"Failed parsing ffprobe output for {video_path}")
         return []
+
+    def _probe_audio_streams(self, video_path: Path) -> List[Dict[str, object]]:
+        cmd = [
+            self.ffprobe_bin,
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index,codec_name:stream_tags=language,title",
+            "-of",
+            "json",
+            str(video_path),
+        ]
+        result = self._run_command(cmd)
+        if result.returncode != 0:
+            self._log(f"ffprobe audio stream probe failed for {video_path}: {result.stderr.strip()}")
+            return []
+
+        try:
+            payload = json.loads(result.stdout or "{}")
+            streams = payload.get("streams", [])
+            if isinstance(streams, list):
+                return streams
+        except json.JSONDecodeError:
+            self._log(f"Failed parsing ffprobe audio stream output for {video_path}")
+        return []
+
+    def _probe_media_duration_seconds(self, video_path: Path) -> Optional[float]:
+        cmd = [
+            self.ffprobe_bin,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ]
+        result = self._run_command(cmd)
+        if result.returncode != 0:
+            return None
+
+        raw = (result.stdout or "").strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            return None
+        if value <= 0:
+            return None
+        return value
+
+    @staticmethod
+    def _normalize_language_code(code: str) -> str:
+        value = (code or "").strip().lower()
+        if not value:
+            return ""
+        if len(value) == 3:
+            return value
+        return LANGUAGE_CODE_MAP.get(value, value)
+
+    def _extract_audio_sample(
+        self,
+        video_path: Path,
+        stream_index: int,
+        output_path: Path,
+        start_seconds: Optional[float],
+        sample_seconds: Optional[float],
+    ) -> bool:
+        cmd: List[str] = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            "error",
+            "-nostats",
+        ]
+        if start_seconds is not None and start_seconds > 0:
+            cmd.extend(["-ss", f"{start_seconds:.3f}"])
+
+        cmd.extend(
+            [
+                "-i",
+                str(video_path),
+                "-map",
+                f"0:{stream_index}",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+            ]
+        )
+        if sample_seconds is not None and sample_seconds > 0:
+            cmd.extend(["-t", f"{sample_seconds:.3f}"])
+        cmd.extend(["-c:a", "pcm_s16le", str(output_path)])
+        result = self._run_command(cmd)
+        return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+
+    def _detect_language_from_audio_sample(self, model: object, audio_path: Path) -> Tuple[str, float]:
+        if whisper is None:
+            return "", 0.0
+        try:
+            audio = whisper.load_audio(str(audio_path))
+            audio = whisper.pad_or_trim(audio)
+            mel = whisper.log_mel_spectrogram(audio).to(model.device)
+            _, probs = model.detect_language(mel)
+            top_lang, top_prob = max(probs.items(), key=lambda item: item[1])
+            return self._normalize_language_code(str(top_lang)), float(top_prob)
+        except Exception as exc:
+            self._log(f"Whisper language detection failed for {audio_path.name}: {exc}")
+            return "", 0.0
+
+    def _detect_language_for_audio_stream(
+        self,
+        model: object,
+        video_path: Path,
+        stream_index: int,
+        strategy: str,
+        snippet_count: int,
+        sample_seconds: float,
+    ) -> Tuple[str, float, int]:
+        duration = self._probe_media_duration_seconds(video_path)
+        effective_strategy = strategy.lower().strip() or "snippets"
+        use_full = effective_strategy == "full"
+
+        starts: List[Optional[float]] = []
+        if use_full:
+            starts = [None]
+        else:
+            count = max(1, snippet_count)
+            if duration and duration > sample_seconds:
+                max_start = max(0.0, duration - sample_seconds)
+                starts = [random.uniform(0.0, max_start) for _ in range(count)]
+            else:
+                starts = [0.0 for _ in range(count)]
+
+        score_by_lang: Counter[str] = Counter()
+        successful_samples = 0
+
+        for index, start in enumerate(starts):
+            fd, temp_name = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            sample_path = Path(temp_name)
+            try:
+                sample_duration = None if use_full else sample_seconds
+                ok = self._extract_audio_sample(
+                    video_path=video_path,
+                    stream_index=stream_index,
+                    output_path=sample_path,
+                    start_seconds=start,
+                    sample_seconds=sample_duration,
+                )
+                if not ok:
+                    continue
+
+                lang, confidence = self._detect_language_from_audio_sample(model, sample_path)
+                if not lang:
+                    continue
+
+                successful_samples += 1
+                score_by_lang[lang] += max(0.05, confidence)
+                self._log(
+                    f"  stream {stream_index} sample {index + 1}/{len(starts)} -> {lang} ({confidence:.2f})"
+                )
+            finally:
+                try:
+                    sample_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        if not score_by_lang:
+            return "", 0.0, successful_samples
+
+        detected_lang, detected_score = score_by_lang.most_common(1)[0]
+        total_score = float(sum(score_by_lang.values()))
+        normalized_confidence = detected_score / total_score if total_score > 0 else 0.0
+        return detected_lang, normalized_confidence, successful_samples
 
     def _subtitle_extension_for_codec(self, codec_name: Optional[str]) -> str:
         if not codec_name:
@@ -1423,6 +1634,171 @@ class SubtitleProcessor:
         
         return summary
 
+    def detect_and_tag_audio_languages(
+        self,
+        folders: List[str],
+        recursive: bool,
+        target_files: List[str],
+        model_size: str = "base",
+        strategy: str = "snippets",
+        snippet_count: int = 3,
+        sample_seconds: float = 25.0,
+        overwrite: bool = False,
+        output_suffix: str = "_langtagged",
+        overwrite_existing_tags: bool = False,
+    ) -> OperationSummary:
+        """Detect audio stream languages with Whisper and write language metadata tags."""
+        summary = OperationSummary(action="tag_audio_languages")
+
+        if whisper is None:
+            self._log("ERROR: openai-whisper not installed. Run: pip install openai-whisper")
+            summary.failed = 1
+            summary.details.append(
+                {
+                    "file": "N/A",
+                    "status": "failed",
+                    "reason": "Whisper library not installed",
+                }
+            )
+            return summary
+
+        videos = [Path(f) for f in target_files if Path(f).exists()]
+        for video in self._iter_video_files(folders, recursive):
+            videos.append(video)
+
+        videos = list({str(v): v for v in videos}.values())
+        summary.scanned = len(videos)
+
+        if not videos:
+            self._log("No video files found to detect audio language")
+            return summary
+
+        try:
+            self._log(f"Loading Whisper model for audio language tagging: {model_size}...")
+            model = whisper.load_model(model_size)
+        except Exception as exc:
+            summary.failed = len(videos)
+            for video in videos:
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "failed",
+                        "reason": f"Failed to load model: {exc}",
+                    }
+                )
+            return summary
+
+        for video in videos:
+            self._log(f"Detecting audio language: {video.name}")
+            audio_streams = self._probe_audio_streams(video)
+            if not audio_streams:
+                summary.skipped += 1
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "skipped",
+                        "reason": "no audio streams",
+                    }
+                )
+                continue
+
+            updates: List[Tuple[int, str]] = []
+            changed_streams = 0
+            attempted_streams = 0
+            for stream_order, stream in enumerate(audio_streams):
+                stream_index = int(stream.get("index") or -1)
+                if stream_index < 0:
+                    continue
+
+                tags = stream.get("tags") or {}
+                existing_lang = ""
+                if isinstance(tags, dict):
+                    existing_lang = self._normalize_language_code(str(tags.get("language") or ""))
+
+                if existing_lang and not overwrite_existing_tags:
+                    continue
+
+                attempted_streams += 1
+                detected_lang, confidence, sample_hits = self._detect_language_for_audio_stream(
+                    model=model,
+                    video_path=video,
+                    stream_index=stream_index,
+                    strategy=strategy,
+                    snippet_count=snippet_count,
+                    sample_seconds=sample_seconds,
+                )
+                if not detected_lang:
+                    self._log(
+                        f"  Could not detect language for stream {stream_order + 1} ({stream_index}); "
+                        f"successful samples: {sample_hits}"
+                    )
+                    continue
+
+                updates.append((stream_order, detected_lang))
+                changed_streams += 1
+                self._log(
+                    f"  Stream {stream_order + 1} ({stream_index}) -> {detected_lang} "
+                    f"(confidence {confidence:.2f})"
+                )
+
+            if not updates:
+                summary.skipped += 1
+                reason = "no detectable stream languages"
+                if attempted_streams == 0 and not overwrite_existing_tags:
+                    reason = "language tags already present"
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "skipped",
+                        "reason": reason,
+                    }
+                )
+                continue
+
+            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite)
+            cmd: List[str] = [
+                self.ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-nostats",
+                "-i",
+                str(video),
+                "-map",
+                "0",
+                "-c",
+                "copy",
+            ]
+            for stream_order, language_code in updates:
+                cmd.extend([f"-metadata:s:a:{stream_order}", f"language={language_code}"])
+            cmd.append(str(output_path))
+
+            result = self._run_command(cmd)
+            if result.returncode != 0:
+                summary.failed += 1
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "failed",
+                        "reason": result.stderr.strip() or "ffmpeg failed",
+                    }
+                )
+                continue
+
+            if replace_target:
+                output_path.replace(replace_target)
+
+            summary.processed += 1
+            summary.details.append(
+                {
+                    "file": str(video),
+                    "status": "processed",
+                    "reason": f"tagged {changed_streams} audio stream(s)",
+                }
+            )
+
+        return summary
+
 
 class JobPayload(BaseModel):
     folders: List[str] = Field(default_factory=list)
@@ -1434,6 +1810,11 @@ class JobPayload(BaseModel):
     extract_for_restore: bool = True
     export_txt: bool = True
     scan_only_embedded: bool = False
+    model_size: str = "base"
+    language_strategy: str = "snippets"
+    snippet_count: int = 3
+    sample_seconds: float = 25.0
+    overwrite_existing_tags: bool = False
 
 
 @dataclass
@@ -1540,6 +1921,20 @@ class JobManager:
                     target_files=payload.target_files,
                 )
                 result = summary.to_dict()
+            elif action == "tag_audio_language":
+                summary = self.processor.detect_and_tag_audio_languages(
+                    folders=payload.folders,
+                    recursive=payload.recursive,
+                    target_files=payload.target_files,
+                    model_size=payload.model_size or "base",
+                    strategy=payload.language_strategy or "snippets",
+                    snippet_count=max(1, int(payload.snippet_count or 3)),
+                    sample_seconds=max(5.0, float(payload.sample_seconds or 25.0)),
+                    overwrite=payload.overwrite,
+                    output_suffix=payload.output_suffix or "_langtagged",
+                    overwrite_existing_tags=bool(payload.overwrite_existing_tags),
+                )
+                result = summary.to_dict()
             else:
                 raise ValueError(f"Unsupported action: {action}")
 
@@ -1627,6 +2022,14 @@ def create_api_app():
     def start_extract(payload: JobPayload) -> Dict[str, object]:
         try:
             job = manager.submit("extract", payload)
+            return {"job_id": job.id, "status": job.status}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/jobs/tag-audio-language")
+    def start_tag_audio_language(payload: JobPayload) -> Dict[str, object]:
+        try:
+            job = manager.submit("tag_audio_language", payload)
             return {"job_id": job.id, "status": job.status}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2275,6 +2678,20 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         language=self.options.get("language"),
                     )
                     payload = summary.to_dict()
+                elif self.action == "tag_audio_language":
+                    summary = processor.detect_and_tag_audio_languages(
+                        folders=folders,
+                        recursive=recursive,
+                        target_files=target_files,
+                        model_size=str(self.options.get("model_size", "base")),
+                        strategy=str(self.options.get("language_strategy", "snippets")),
+                        snippet_count=max(1, int(self.options.get("snippet_count", 3))),
+                        sample_seconds=max(5.0, float(self.options.get("sample_seconds", 25.0))),
+                        overwrite=overwrite,
+                        output_suffix=str(self.options.get("output_suffix", "_langtagged")),
+                        overwrite_existing_tags=bool(self.options.get("overwrite_existing_tags", False)),
+                    )
+                    payload = summary.to_dict()
                 else:
                     raise ValueError(f"Unsupported action: {self.action}")
 
@@ -2757,11 +3174,44 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 
                 tools_layout.addLayout(whisper_options)
                 self.generate_button.clicked.connect(self._start_generate)
+
+                language_tag_options = QHBoxLayout()
+                language_tag_options.addWidget(QLabel("Lang Analysis:"))
+                self.audio_lang_strategy_combo = QComboBox()
+                self.audio_lang_strategy_combo.addItem("Random snippets (faster)", "snippets")
+                self.audio_lang_strategy_combo.addItem("Whole stream (slower, deeper)", "full")
+                language_tag_options.addWidget(self.audio_lang_strategy_combo)
+
+                language_tag_options.addWidget(QLabel("Snippets:"))
+                self.audio_lang_snippets_input = QLineEdit("3")
+                self.audio_lang_snippets_input.setMaximumWidth(60)
+                self.audio_lang_snippets_input.setToolTip("Used for random-snippet mode")
+                language_tag_options.addWidget(self.audio_lang_snippets_input)
+
+                language_tag_options.addWidget(QLabel("Seconds/sample:"))
+                self.audio_lang_seconds_input = QLineEdit("25")
+                self.audio_lang_seconds_input.setMaximumWidth(60)
+                language_tag_options.addWidget(self.audio_lang_seconds_input)
+
+                self.audio_lang_overwrite_checkbox = QCheckBox("Overwrite existing language tags")
+                language_tag_options.addWidget(self.audio_lang_overwrite_checkbox)
+
+                self.tag_audio_language_button = QPushButton("Detect + Tag Audio Language")
+                self.tag_audio_language_button.setToolTip("Use Whisper AI to detect audio language per stream and write metadata tags")
+                language_tag_options.addWidget(self.tag_audio_language_button)
+                language_tag_options.addStretch()
+                tools_layout.addLayout(language_tag_options)
+                self.tag_audio_language_button.clicked.connect(self._start_tag_audio_language)
             else:
                 # Create dummy attributes for widgets that won't exist
                 self.whisper_model_combo = None
                 self.whisper_language_input = None
                 self.generate_button = None
+                self.audio_lang_strategy_combo = None
+                self.audio_lang_snippets_input = None
+                self.audio_lang_seconds_input = None
+                self.audio_lang_overwrite_checkbox = None
+                self.tag_audio_language_button = None
 
                 if self.ai_requested_but_unavailable:
                     tools_layout.addSpacing(10)
@@ -2904,6 +3354,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.repair_button.setEnabled(not running)
             if self.generate_button is not None:
                 self.generate_button.setEnabled(not running)
+            if self.tag_audio_language_button is not None:
+                self.tag_audio_language_button.setEnabled(not running)
             if running:
                 self.progress.setRange(0, 0)
             else:
@@ -3133,6 +3585,55 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     "ERR012_VALIDATION_FAILED",
                     "Failed to validate subtitle generation options",
                     str(exc)
+                )
+                QMessageBox.warning(self, "Validation", str(exc))
+
+        def _start_tag_audio_language(self) -> None:
+            try:
+                options = self._collect_common_options()
+                options["model_size"] = self.whisper_model_combo.currentText() if self.whisper_model_combo else "base"
+                strategy = "snippets"
+                if self.audio_lang_strategy_combo is not None:
+                    strategy = str(self.audio_lang_strategy_combo.currentData() or "snippets")
+                options["language_strategy"] = strategy
+
+                snippet_count = 3
+                if self.audio_lang_snippets_input is not None:
+                    snippet_count = int((self.audio_lang_snippets_input.text() or "3").strip())
+                sample_seconds = 25.0
+                if self.audio_lang_seconds_input is not None:
+                    sample_seconds = float((self.audio_lang_seconds_input.text() or "25").strip())
+                options["snippet_count"] = max(1, snippet_count)
+                options["sample_seconds"] = max(5.0, sample_seconds)
+                options["overwrite_existing_tags"] = bool(
+                    self.audio_lang_overwrite_checkbox.isChecked()
+                ) if self.audio_lang_overwrite_checkbox is not None else False
+                options["output_suffix"] = "_langtagged"
+
+                if whisper is None:
+                    QMessageBox.warning(
+                        self,
+                        "Whisper Not Installed",
+                        "Whisper AI is not installed. Please install it with:\n\n"
+                        "pip install openai-whisper",
+                    )
+                    return
+
+                reply = QMessageBox.question(
+                    self,
+                    "Tag Audio Language",
+                    "Detect language from audio streams and write metadata tags?\n\n"
+                    "Tip: Random snippets is faster. Whole stream can improve confidence on difficult content.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._start_worker("tag_audio_language", options)
+            except ValueError as exc:
+                self._log_error(
+                    "ERR013_VALIDATION_FAILED",
+                    "Failed to validate audio language tagging options",
+                    str(exc),
                 )
                 QMessageBox.warning(self, "Validation", str(exc))
 
@@ -3616,6 +4117,10 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "repair_backup": self.repair_backup_checkbox.isChecked(),
                 "whisper_model": self.whisper_model_combo.currentText() if self.whisper_model_combo else "base",
                 "whisper_language": self.whisper_language_input.text() if self.whisper_language_input else "",
+                "audio_lang_strategy": self.audio_lang_strategy_combo.currentData() if self.audio_lang_strategy_combo else "snippets",
+                "audio_lang_snippets": self.audio_lang_snippets_input.text() if self.audio_lang_snippets_input else "3",
+                "audio_lang_seconds": self.audio_lang_seconds_input.text() if self.audio_lang_seconds_input else "25",
+                "audio_lang_overwrite": self.audio_lang_overwrite_checkbox.isChecked() if self.audio_lang_overwrite_checkbox else False,
             }
             
             settings["ui_state"] = ui_state
@@ -3683,6 +4188,16 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 if index >= 0:
                     self.whisper_model_combo.setCurrentIndex(index)
                 self.whisper_language_input.setText(ui_state.get("whisper_language", ""))
+
+            if self.use_ai and self.audio_lang_strategy_combo and self.audio_lang_snippets_input and self.audio_lang_seconds_input:
+                strategy = ui_state.get("audio_lang_strategy", "snippets")
+                index = self.audio_lang_strategy_combo.findData(strategy)
+                if index >= 0:
+                    self.audio_lang_strategy_combo.setCurrentIndex(index)
+                self.audio_lang_snippets_input.setText(str(ui_state.get("audio_lang_snippets", "3")))
+                self.audio_lang_seconds_input.setText(str(ui_state.get("audio_lang_seconds", "25")))
+                if self.audio_lang_overwrite_checkbox:
+                    self.audio_lang_overwrite_checkbox.setChecked(bool(ui_state.get("audio_lang_overwrite", False)))
             
             self._log("Previous session restored from memory")
 
@@ -3791,6 +4306,22 @@ def run_cli_action(args: argparse.Namespace) -> int:
         cli_print_json(summary.to_dict())
         return 0
 
+    if args.mode == "tag-audio-language":
+        summary = processor.detect_and_tag_audio_languages(
+            folders=folders,
+            recursive=recursive,
+            target_files=[],
+            model_size=args.model_size,
+            strategy=args.strategy,
+            snippet_count=max(1, args.snippets),
+            sample_seconds=max(5.0, args.sample_seconds),
+            overwrite=args.overwrite,
+            output_suffix=args.suffix,
+            overwrite_existing_tags=args.overwrite_existing_tags,
+        )
+        cli_print_json(summary.to_dict())
+        return 0
+
     print(f"Unsupported mode: {args.mode}", file=sys.stderr)
     return 1
 
@@ -3813,6 +4344,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("remove", "_nosubs"),
         ("include", "_withsubs"),
         ("extract", ".embedded_sub"),
+        ("tag-audio-language", "_langtagged"),
     ):
         cmd = subparsers.add_parser(mode, help=f"Run {mode} operation in CLI mode")
         cmd.add_argument("--folders", nargs="+", required=True, help="One or more folders to process")
@@ -3826,6 +4358,23 @@ def build_parser() -> argparse.ArgumentParser:
         if mode in {"remove", "include", "extract"}:
             cmd.add_argument("--overwrite", action="store_true", help="Overwrite original files")
             cmd.add_argument("--suffix", default=default_suffix, help="Output filename suffix")
+        if mode == "tag-audio-language":
+            cmd.add_argument("--overwrite", action="store_true", help="Overwrite original files")
+            cmd.add_argument("--suffix", default=default_suffix, help="Output filename suffix")
+            cmd.add_argument("--model-size", default="base", help="Whisper model size")
+            cmd.add_argument(
+                "--strategy",
+                choices=["snippets", "full"],
+                default="snippets",
+                help="Language analysis strategy",
+            )
+            cmd.add_argument("--snippets", type=int, default=3, help="Number of random snippets (snippets strategy)")
+            cmd.add_argument("--sample-seconds", type=float, default=25.0, help="Duration per snippet in seconds")
+            cmd.add_argument(
+                "--overwrite-existing-tags",
+                action="store_true",
+                help="Re-detect and overwrite existing audio language tags",
+            )
         if mode == "remove":
             cmd.add_argument(
                 "--no-extract",
