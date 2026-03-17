@@ -263,6 +263,21 @@ class SubtitleProcessor:
         if self.log_callback:
             self.log_callback(message)
 
+    def _get_temp_workspace_root(self) -> Path:
+        custom_dir = os.getenv("SUBTITLE_TOOL_TEMP_DIR", "").strip()
+        if custom_dir:
+            base = Path(custom_dir).expanduser()
+        else:
+            local_app_data = os.getenv("LOCALAPPDATA", "").strip()
+            if local_app_data:
+                base = Path(local_app_data)
+            else:
+                base = Path(tempfile.gettempdir())
+
+        root = base / "SubtitleTool" / "temp"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
     def check_dependencies(self) -> Dict[str, object]:
         ffmpeg = shutil.which(self.ffmpeg_bin)
         ffprobe = shutil.which(self.ffprobe_bin)
@@ -487,13 +502,21 @@ class SubtitleProcessor:
         try:
             audio = whisper.load_audio(str(audio_path))
             audio = whisper.pad_or_trim(audio)
-            mel = whisper.log_mel_spectrogram(audio).to(model.device)
+            model_n_mels = int(getattr(getattr(model, "dims", None), "n_mels", 80) or 80)
+            mel = whisper.log_mel_spectrogram(audio, n_mels=model_n_mels).to(model.device)
             _, probs = model.detect_language(mel)
             top_lang, top_prob = max(probs.items(), key=lambda item: item[1])
             return self._normalize_language_code(str(top_lang)), float(top_prob)
         except Exception as exc:
-            self._log(f"Whisper language detection failed for {audio_path.name}: {exc}")
-            return "", 0.0
+            # Fallback for mismatched mel dimensions with some model/version combinations.
+            try:
+                mel = whisper.log_mel_spectrogram(audio, n_mels=80).to(model.device)
+                _, probs = model.detect_language(mel)
+                top_lang, top_prob = max(probs.items(), key=lambda item: item[1])
+                return self._normalize_language_code(str(top_lang)), float(top_prob)
+            except Exception:
+                self._log(f"Whisper language detection failed for {audio_path.name}: {exc}")
+                return "", 0.0
 
     def _detect_language_for_audio_stream(
         self,
@@ -522,36 +545,36 @@ class SubtitleProcessor:
         score_by_lang: Counter[str] = Counter()
         successful_samples = 0
 
-        for index, start in enumerate(starts):
-            fd, temp_name = tempfile.mkstemp(suffix=".wav")
-            os.close(fd)
-            sample_path = Path(temp_name)
-            try:
-                sample_duration = None if use_full else sample_seconds
-                ok = self._extract_audio_sample(
-                    video_path=video_path,
-                    stream_index=stream_index,
-                    output_path=sample_path,
-                    start_seconds=start,
-                    sample_seconds=sample_duration,
-                )
-                if not ok:
-                    continue
-
-                lang, confidence = self._detect_language_from_audio_sample(model, sample_path)
-                if not lang:
-                    continue
-
-                successful_samples += 1
-                score_by_lang[lang] += max(0.05, confidence)
-                self._log(
-                    f"  stream {stream_index} sample {index + 1}/{len(starts)} -> {lang} ({confidence:.2f})"
-                )
-            finally:
+        with tempfile.TemporaryDirectory(prefix="audio_lang_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+            temp_root = Path(temp_dir)
+            for index, start in enumerate(starts):
+                sample_path = temp_root / f"stream_{stream_index}_{index + 1:02d}.wav"
                 try:
-                    sample_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                    sample_duration = None if use_full else sample_seconds
+                    ok = self._extract_audio_sample(
+                        video_path=video_path,
+                        stream_index=stream_index,
+                        output_path=sample_path,
+                        start_seconds=start,
+                        sample_seconds=sample_duration,
+                    )
+                    if not ok:
+                        continue
+
+                    lang, confidence = self._detect_language_from_audio_sample(model, sample_path)
+                    if not lang:
+                        continue
+
+                    successful_samples += 1
+                    score_by_lang[lang] += max(0.05, confidence)
+                    self._log(
+                        f"  stream {stream_index} sample {index + 1}/{len(starts)} -> {lang} ({confidence:.2f})"
+                    )
+                finally:
+                    try:
+                        sample_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
         if not score_by_lang:
             return "", 0.0, successful_samples
