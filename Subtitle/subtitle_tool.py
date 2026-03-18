@@ -100,6 +100,11 @@ except (ImportError, OSError) as e:
     whisper = None  # type: ignore[assignment]
 
 try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore[assignment]
+
+try:
     import pysubs2
 except ImportError:
     pysubs2 = None  # type: ignore[assignment]
@@ -251,10 +256,12 @@ class SubtitleProcessor:
         ffmpeg_bin: Optional[str] = None,
         ffprobe_bin: Optional[str] = None,
         log_callback: Optional[Callable[[str], None]] = None,
+        use_hw_accel: bool = False,
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin or "ffmpeg"
         self.ffprobe_bin = ffprobe_bin or "ffprobe"
         self.log_callback = log_callback
+        self.use_hw_accel = use_hw_accel
         # Cache for IMDB episode name lookups - avoids repeated network requests
         # Key: "show_name_lower|season|episode", Value: episode title or None
         self._episode_name_cache: Dict[str, Optional[str]] = {}
@@ -262,6 +269,22 @@ class SubtitleProcessor:
     def _log(self, message: str) -> None:
         if self.log_callback:
             self.log_callback(message)
+
+    def _hw_accel_flags(self) -> List[str]:
+        """Return ffmpeg hardware acceleration flags when enabled."""
+        return ["-hwaccel", "auto"] if self.use_hw_accel else []
+
+    @staticmethod
+    def _ts_input_stability_flags() -> List[str]:
+        """Input flags that make ffmpeg probing/remuxing more stable for TS/M2TS sources."""
+        return [
+            "-analyzeduration",
+            "200M",
+            "-probesize",
+            "200M",
+            "-fflags",
+            "+genpts+igndts",
+        ]
 
     def _get_temp_workspace_root(self) -> Path:
         custom_dir = os.getenv("SUBTITLE_TOOL_TEMP_DIR", "").strip()
@@ -394,6 +417,7 @@ class SubtitleProcessor:
             payload = json.loads(result.stdout or "{}")
             streams = payload.get("streams", [])
             if isinstance(streams, list):
+                self._log(f"Found {len(streams)} subtitle stream(s): {video_path.name}")
                 return streams
         except json.JSONDecodeError:
             self._log(f"Failed parsing ffprobe output for {video_path}")
@@ -407,7 +431,7 @@ class SubtitleProcessor:
             "-select_streams",
             "a",
             "-show_entries",
-            "stream=index,codec_name:stream_tags=language,title",
+            "stream=index,codec_name,bit_rate,channels:stream_tags=language,title",
             "-of",
             "json",
             str(video_path),
@@ -421,6 +445,7 @@ class SubtitleProcessor:
             payload = json.loads(result.stdout or "{}")
             streams = payload.get("streams", [])
             if isinstance(streams, list):
+                self._log(f"Found {len(streams)} audio stream(s): {video_path.name}")
                 return streams
         except json.JSONDecodeError:
             self._log(f"Failed parsing ffprobe audio stream output for {video_path}")
@@ -499,11 +524,11 @@ class SubtitleProcessor:
         if not output_path.exists():
             return False, "output file missing"
 
+        source_ext = source_path.suffix.lower()
+        source_is_ts = source_ext in (".ts", ".m2ts")
+
         source_size = source_path.stat().st_size
         output_size = output_path.stat().st_size
-        if source_size > 0 and output_size < source_size * 0.90:
-            return False, f"output size sanity check failed ({output_size:,} vs {source_size:,} bytes)"
-
         src_duration = self._probe_media_duration_seconds(source_path)
         out_duration = self._probe_media_duration_seconds(output_path)
         if src_duration and src_duration > 0 and out_duration and out_duration > 0:
@@ -526,6 +551,11 @@ class SubtitleProcessor:
             return False, f"audio stream count reduced ({out_a} vs {src_a})"
         if not allow_reduced_subtitles and out_s < src_s:
             return False, f"subtitle stream count reduced ({out_s} vs {src_s})"
+
+        # TS/M2TS often contains heavy constant-bitrate padding that can disappear
+        # after remux; size ratio is not a reliable integrity signal there.
+        if not source_is_ts and source_size > 0 and output_size < source_size * 0.90:
+            return False, f"output size sanity check failed ({output_size:,} vs {source_size:,} bytes)"
 
         return True, "ok"
 
@@ -553,6 +583,7 @@ class SubtitleProcessor:
             "error",
             "-nostats",
         ]
+        cmd.extend(self._hw_accel_flags())
         if start_seconds is not None and start_seconds > 0:
             cmd.extend(["-ss", f"{start_seconds:.3f}"])
 
@@ -597,6 +628,31 @@ class SubtitleProcessor:
                 self._log(f"Whisper language detection failed for {audio_path.name}: {exc}")
                 return "", 0.0
 
+    def _detect_language_from_audio_array(
+        self,
+        model: object,
+        audio_data: Any,
+        sample_label: str,
+    ) -> Tuple[str, float]:
+        if whisper is None:
+            return "", 0.0
+        try:
+            audio = whisper.pad_or_trim(audio_data)
+            model_n_mels = int(getattr(getattr(model, "dims", None), "n_mels", 80) or 80)
+            mel = whisper.log_mel_spectrogram(audio, n_mels=model_n_mels).to(model.device)
+            _, probs = model.detect_language(mel)
+            top_lang, top_prob = max(probs.items(), key=lambda item: item[1])
+            return self._normalize_language_code(str(top_lang)), float(top_prob)
+        except Exception as exc:
+            try:
+                mel = whisper.log_mel_spectrogram(audio, n_mels=80).to(model.device)
+                _, probs = model.detect_language(mel)
+                top_lang, top_prob = max(probs.items(), key=lambda item: item[1])
+                return self._normalize_language_code(str(top_lang)), float(top_prob)
+            except Exception:
+                self._log(f"Whisper language detection failed for {sample_label}: {exc}")
+                return "", 0.0
+
     def _detect_language_for_audio_stream(
         self,
         model: object,
@@ -605,8 +661,9 @@ class SubtitleProcessor:
         strategy: str,
         snippet_count: int,
         sample_seconds: float,
+        duration_seconds: Optional[float] = None,
     ) -> Tuple[str, float, int]:
-        duration = self._probe_media_duration_seconds(video_path)
+        duration = duration_seconds if duration_seconds is not None else self._probe_media_duration_seconds(video_path)
         effective_strategy = strategy.lower().strip() or "snippets"
         use_full = effective_strategy == "full"
 
@@ -622,51 +679,95 @@ class SubtitleProcessor:
                 starts = [0.0 for _ in range(count)]
 
         score_by_lang: Counter[str] = Counter()
-        # Track the best raw per-sample confidence seen for the winning language
-        best_raw_confidence: Dict[str, float] = {}
         successful_samples = 0
         # Minimum raw confidence from Whisper to trust a detection.
         # Below this the audio is likely music, effects, or silence.
-        MIN_CONFIDENCE = 0.65
+        MIN_CONFIDENCE = 0.50
 
         with tempfile.TemporaryDirectory(prefix="audio_lang_", dir=str(self._get_temp_workspace_root())) as temp_dir:
             temp_root = Path(temp_dir)
-            for index, start in enumerate(starts):
-                sample_path = temp_root / f"stream_{stream_index}_{index + 1:02d}.wav"
+            # Snippet mode can be much slower than full-stream mode when each snippet
+            # spawns a separate ffmpeg process. Decode once, then sample in-memory.
+            can_use_in_memory_snippets = bool(not use_full and len(starts) > 1 and whisper is not None and np is not None)
+            if can_use_in_memory_snippets:
+                full_stream_path = temp_root / f"stream_{stream_index}_full.wav"
                 try:
-                    sample_duration = None if use_full else sample_seconds
                     ok = self._extract_audio_sample(
                         video_path=video_path,
                         stream_index=stream_index,
-                        output_path=sample_path,
-                        start_seconds=start,
-                        sample_seconds=sample_duration,
+                        output_path=full_stream_path,
+                        start_seconds=None,
+                        sample_seconds=None,
                     )
-                    if not ok:
-                        continue
+                    if ok:
+                        full_audio = whisper.load_audio(str(full_stream_path))
+                        if len(full_audio) > 0:
+                            sr = 16000
+                            clip_samples = int(max(1.0, sample_seconds) * sr)
+                            for index, start in enumerate(starts):
+                                start_s = float(start or 0.0)
+                                start_idx = max(0, int(start_s * sr))
+                                end_idx = min(len(full_audio), start_idx + clip_samples)
+                                clip = full_audio[start_idx:end_idx]
+                                if len(clip) == 0:
+                                    continue
 
-                    lang, confidence = self._detect_language_from_audio_sample(model, sample_path)
-                    if not lang:
-                        continue
+                                label = f"stream {stream_index} sample {index + 1}/{len(starts)}"
+                                lang, confidence = self._detect_language_from_audio_array(model, clip, label)
+                                if not lang:
+                                    continue
 
-                    if confidence < MIN_CONFIDENCE:
-                        self._log(
-                            f"  stream {stream_index} sample {index + 1}/{len(starts)} -> "
-                            f"{lang} ({confidence:.2f}) — skipped (below confidence threshold)"
-                        )
-                        continue
+                                if confidence < MIN_CONFIDENCE:
+                                    self._log(
+                                        f"  {label} -> {lang} ({confidence:.2f}) — skipped (below confidence threshold)"
+                                    )
+                                    continue
 
-                    successful_samples += 1
-                    score_by_lang[lang] += confidence
-                    best_raw_confidence[lang] = max(best_raw_confidence.get(lang, 0.0), confidence)
-                    self._log(
-                        f"  stream {stream_index} sample {index + 1}/{len(starts)} -> {lang} ({confidence:.2f})"
-                    )
+                                successful_samples += 1
+                                score_by_lang[lang] += confidence
+                                self._log(f"  {label} -> {lang} ({confidence:.2f})")
                 finally:
                     try:
-                        sample_path.unlink(missing_ok=True)
+                        full_stream_path.unlink(missing_ok=True)
                     except OSError:
                         pass
+
+            if not can_use_in_memory_snippets:
+                for index, start in enumerate(starts):
+                    sample_path = temp_root / f"stream_{stream_index}_{index + 1:02d}.wav"
+                    try:
+                        sample_duration = None if use_full else sample_seconds
+                        ok = self._extract_audio_sample(
+                            video_path=video_path,
+                            stream_index=stream_index,
+                            output_path=sample_path,
+                            start_seconds=start,
+                            sample_seconds=sample_duration,
+                        )
+                        if not ok:
+                            continue
+
+                        lang, confidence = self._detect_language_from_audio_sample(model, sample_path)
+                        if not lang:
+                            continue
+
+                        if confidence < MIN_CONFIDENCE:
+                            self._log(
+                                f"  stream {stream_index} sample {index + 1}/{len(starts)} -> "
+                                f"{lang} ({confidence:.2f}) — skipped (below confidence threshold)"
+                            )
+                            continue
+
+                        successful_samples += 1
+                        score_by_lang[lang] += confidence
+                        self._log(
+                            f"  stream {stream_index} sample {index + 1}/{len(starts)} -> {lang} ({confidence:.2f})"
+                        )
+                    finally:
+                        try:
+                            sample_path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
 
         if not score_by_lang:
             return "", 0.0, successful_samples
@@ -771,18 +872,30 @@ class SubtitleProcessor:
             )
         return output
 
-    def _build_output_paths(self, source: Path, suffix: str, overwrite: bool) -> tuple[Path, Optional[Path]]:
+    def _build_output_paths(
+        self,
+        source: Path,
+        suffix: str,
+        overwrite: bool,
+        output_root: Optional[str] = None,
+    ) -> tuple[Path, Optional[Path]]:
         if overwrite:
             temp_output = source.with_name(f"{source.stem}.tmp_subtitle_tool{source.suffix}")
             return temp_output, source
 
-        desired = source.with_name(f"{source.stem}{suffix}{source.suffix}")
+        destination_parent = source.parent
+        if output_root:
+            out_dir = Path(output_root).expanduser().resolve()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            destination_parent = out_dir
+
+        desired = destination_parent / f"{source.stem}{suffix}{source.suffix}"
         if not desired.exists():
             return desired, None
 
         index = 1
         while True:
-            candidate = source.with_name(f"{source.stem}{suffix}_{index}{source.suffix}")
+            candidate = destination_parent / f"{source.stem}{suffix}_{index}{source.suffix}"
             if not candidate.exists():
                 return candidate, None
             index += 1
@@ -797,6 +910,7 @@ class SubtitleProcessor:
                 "-loglevel",
                 "error",
                 "-nostats",
+                *self._hw_accel_flags(),
                 "-i",
                 str(video),
                 "-map",
@@ -859,6 +973,7 @@ class SubtitleProcessor:
                     "-loglevel",
                     "error",
                     "-nostats",
+                    *self._hw_accel_flags(),
                     "-i",
                     str(video),
                     "-map",
@@ -912,6 +1027,7 @@ class SubtitleProcessor:
         output_suffix: str = "_nosubs",
         extract_for_restore: bool = True,
         target_files: Optional[List[str]] = None,
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         summary = OperationSummary(action="remove")
 
@@ -930,13 +1046,14 @@ class SubtitleProcessor:
                 if extracted:
                     self._log(f"Extracted {len(extracted)} subtitle stream(s) for restore: {video.name}")
 
-            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite)
+            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
             cmd = [
                 self.ffmpeg_bin,
                 "-y",
                 "-loglevel",
                 "error",
                 "-nostats",
+                *self._hw_accel_flags(),
                 "-i",
                 str(video),
                 "-map",
@@ -982,6 +1099,7 @@ class SubtitleProcessor:
         output_suffix: str = "_withsubs",
         target_files: Optional[List[str]] = None,
         manual_sidecars: Optional[Dict[str, List[str]]] = None,
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         summary = OperationSummary(action="include")
         normalized_sidecars: Dict[str, List[Path]] = {}
@@ -1003,7 +1121,7 @@ class SubtitleProcessor:
                 summary.details.append({"file": str(video), "status": "skipped", "reason": "no sidecar subtitles"})
                 continue
 
-            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite)
+            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
 
             cmd: List[str] = [
                 self.ffmpeg_bin,
@@ -1011,6 +1129,7 @@ class SubtitleProcessor:
                 "-loglevel",
                 "error",
                 "-nostats",
+                *self._hw_accel_flags(),
                 "-i",
                 str(video),
             ]
@@ -1066,6 +1185,7 @@ class SubtitleProcessor:
         target_format: str,  # "mkv" or "mp4"
         overwrite: bool = False,
         output_suffix: str = "_converted",
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         """Convert video files between mkv and mp4 formats while preserving all streams."""
         summary = OperationSummary(action=f"convert_to_{target_format}")
@@ -1095,7 +1215,12 @@ class SubtitleProcessor:
                 })
                 continue
             
-            output_path = video.with_name(f"{video.stem}{output_suffix}{target_ext}")
+            output_parent = video.parent
+            if output_root and not overwrite:
+                out_dir = Path(output_root).expanduser().resolve()
+                out_dir.mkdir(parents=True, exist_ok=True)
+                output_parent = out_dir
+            output_path = output_parent / f"{video.stem}{output_suffix}{target_ext}"
             replace_target = None
             
             if not overwrite and output_path.exists():
@@ -1113,7 +1238,7 @@ class SubtitleProcessor:
             self._log(f"Converting {video.name} to {target_format.upper()}...")
             
             # Build ffmpeg command for format conversion
-            cmd = [self.ffmpeg_bin, "-i", str(video)]
+            cmd = [self.ffmpeg_bin, *self._hw_accel_flags(), "-i", str(video)]
             
             # For MP4, use specific codecs
             if target_format == "mp4":
@@ -1583,6 +1708,7 @@ class SubtitleProcessor:
                 # Use aggressive error handling to rebuild container
                 cmd = [
                     self.ffmpeg_bin,
+                    *self._hw_accel_flags(),
                     "-fflags", "+genpts",  # Generate presentation timestamps
                     "-err_detect", "ignore_err",  # Ignore errors
                     "-i", str(video),
@@ -1762,6 +1888,7 @@ class SubtitleProcessor:
         output_suffix: str = "_langtagged",
         overwrite_existing_tags: bool = False,
         detect_only: bool = False,
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         """Detect audio stream languages with Whisper and optionally write language metadata tags."""
         summary = OperationSummary(action="tag_audio_language")
@@ -1821,6 +1948,9 @@ class SubtitleProcessor:
                 )
                 continue
 
+            # Probe duration once per file so we can estimate per-stream sizes.
+            video_duration = self._probe_media_duration_seconds(video)
+
             updates: List[Tuple[int, str]] = []
             detected_streams: List[Dict[str, object]] = []
             changed_streams = 0
@@ -1839,6 +1969,18 @@ class SubtitleProcessor:
                     continue
 
                 attempted_streams += 1
+                # Estimate stream size from per-stream bitrate × duration.
+                _br_raw = stream.get("bit_rate")
+                _br_bps: Optional[int] = None
+                try:
+                    _br_bps = int(_br_raw) if _br_raw else None
+                except (TypeError, ValueError):
+                    pass
+                _estimated_bytes: Optional[int] = (
+                    int(_br_bps / 8 * video_duration)
+                    if _br_bps and video_duration
+                    else None
+                )
                 detected_lang, confidence, sample_hits = self._detect_language_for_audio_stream(
                     model=model,
                     video_path=video,
@@ -1846,22 +1988,35 @@ class SubtitleProcessor:
                     strategy=strategy,
                     snippet_count=snippet_count,
                     sample_seconds=sample_seconds,
+                    duration_seconds=video_duration,
                 )
                 if not detected_lang:
                     self._log(
                         f"  Could not detect language for stream {stream_order + 1} ({stream_index}); "
                         f"successful samples: {sample_hits}"
                     )
-                    continue
-
-                detected_streams.append(
-                    {
+                    # Still track in detected_streams so the stream appears in the
+                    # language selection dialog and the user can keep or prune it.
+                    _entry: Dict[str, object] = {
                         "stream_order": stream_order,
                         "stream_index": stream_index,
-                        "language": detected_lang,
-                        "confidence": round(float(confidence), 4),
+                        "language": "unknown",
+                        "confidence": 0.0,
                     }
-                )
+                    if _estimated_bytes is not None:
+                        _entry["estimated_bytes"] = _estimated_bytes
+                    detected_streams.append(_entry)
+                    continue
+
+                _det_entry: Dict[str, object] = {
+                    "stream_order": stream_order,
+                    "stream_index": stream_index,
+                    "language": detected_lang,
+                    "confidence": round(float(confidence), 4),
+                }
+                if _estimated_bytes is not None:
+                    _det_entry["estimated_bytes"] = _estimated_bytes
+                detected_streams.append(_det_entry)
 
                 updates.append((stream_order, detected_lang))
                 changed_streams += 1
@@ -1897,35 +2052,49 @@ class SubtitleProcessor:
                 )
                 continue
 
-            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite)
+            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
+            src_ext = video.suffix.lower()
+            is_ts_source = src_ext in (".m2ts", ".ts")
+
             cmd: List[str] = [
                 self.ffmpeg_bin,
                 "-y",
                 "-loglevel",
-                "error",
+                "warning",
                 "-nostats",
+            ]
+            if is_ts_source:
+                # Large/complex Blu-ray transport streams need a bigger muxing queue
+                cmd.extend(self._ts_input_stability_flags())
+            cmd.extend([
                 "-i",
                 str(video),
-                "-map",
-                "0",
-                "-c",
-                "copy",
-            ]
+            ])
+            if is_ts_source:
+                cmd.extend(["-max_muxing_queue_size", "1024"])
+            cmd.extend(["-map", "0", "-c", "copy"])
             for stream_order, language_code in updates:
                 cmd.extend([f"-metadata:s:a:{stream_order}", f"language={language_code}"])
             cmd.append(str(output_path))
 
+            self._log("  Remuxing full source file with -map 0 (all streams); detection snippets do not limit output length.")
+
             result = self._run_command(cmd)
+            ffmpeg_msgs = (result.stderr or "").strip()
+            if ffmpeg_msgs:
+                for _line in ffmpeg_msgs.splitlines()[:15]:
+                    self._log(f"  ffmpeg: {_line}")
+
             if result.returncode != 0:
                 summary.failed += 1
                 summary.details.append(
                     {
                         "file": str(video),
                         "status": "failed",
-                        "reason": result.stderr.strip() or "ffmpeg failed",
+                        "reason": ffmpeg_msgs[:300] or "ffmpeg failed",
+                        "detected_streams": detected_streams,
                     }
                 )
-                # Clean up any partial output
                 try:
                     output_path.unlink(missing_ok=True)
                 except OSError:
@@ -1935,19 +2104,86 @@ class SubtitleProcessor:
             is_valid, invalid_reason = self._validate_muxed_output(video, output_path)
             if not is_valid:
                 self._log(f"  Output validation failed: {invalid_reason}")
-                summary.failed += 1
-                summary.details.append(
-                    {
-                        "file": str(video),
-                        "status": "failed",
-                        "reason": invalid_reason,
-                    }
+                src_v, src_a, src_s = self._probe_stream_counts(video)
+                out_v, out_a, out_s = self._probe_stream_counts(output_path)
+                self._log(
+                    f"  Stream counts source(v/a/s)={src_v}/{src_a}/{src_s} -> "
+                    f"output(v/a/s)={out_v}/{out_a}/{out_s}"
                 )
                 try:
                     output_path.unlink(missing_ok=True)
                 except OSError:
                     pass
-                continue
+                # The m2ts muxer can silently truncate large/complex Blu-ray streams
+                # (TrueHD/Atmos, DTS-HD MA, etc.) and still exit with code 0.
+                # Fall back to MKV, which handles all Blu-ray codec types reliably.
+                if is_ts_source:
+                    self._log("  Retrying as MKV to work around m2ts muxer limitation...")
+                    mkv_output = output_path.with_suffix(".mkv")
+                    mkv_cmd: List[str] = [
+                        self.ffmpeg_bin,
+                        "-y",
+                        "-loglevel",
+                        "warning",
+                        "-nostats",
+                        *self._hw_accel_flags(),
+                    ]
+                    if is_ts_source:
+                        mkv_cmd.extend(self._ts_input_stability_flags())
+                    mkv_cmd.extend([
+                        "-i",
+                        str(video),
+                        "-max_muxing_queue_size",
+                        "1024",
+                        "-map",
+                        "0",
+                        "-c",
+                        "copy",
+                    ])
+                    for stream_order, language_code in updates:
+                        mkv_cmd.extend([f"-metadata:s:a:{stream_order}", f"language={language_code}"])
+                    mkv_cmd.append(str(mkv_output))
+                    mkv_result = self._run_command(mkv_cmd)
+                    mkv_msgs = (mkv_result.stderr or "").strip()
+                    if mkv_msgs:
+                        for _line in mkv_msgs.splitlines()[:15]:
+                            self._log(f"  ffmpeg: {_line}")
+                    if mkv_result.returncode == 0:
+                        mkv_valid, mkv_reason = self._validate_muxed_output(video, mkv_output)
+                        if mkv_valid:
+                            self._log(f"  MKV fallback succeeded -> {mkv_output.name}")
+                            output_path = mkv_output
+                            replace_target = None  # cannot overwrite .m2ts with .mkv in-place
+                            is_valid = True
+                        else:
+                            self._log(f"  MKV fallback validation failed: {mkv_reason}")
+                            src_v, src_a, src_s = self._probe_stream_counts(video)
+                            out_v, out_a, out_s = self._probe_stream_counts(mkv_output)
+                            self._log(
+                                f"  Stream counts source(v/a/s)={src_v}/{src_a}/{src_s} -> "
+                                f"output(v/a/s)={out_v}/{out_a}/{out_s}"
+                            )
+                            try:
+                                mkv_output.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                    else:
+                        try:
+                            mkv_output.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+
+                if not is_valid:
+                    summary.failed += 1
+                    summary.details.append(
+                        {
+                            "file": str(video),
+                            "status": "failed",
+                            "reason": invalid_reason,
+                            "detected_streams": detected_streams,
+                        }
+                    )
+                    continue
 
             if replace_target:
                 output_path.replace(replace_target)
@@ -1972,6 +2208,7 @@ class SubtitleProcessor:
         keep_audio_orders_by_file: Dict[str, List[int]],
         overwrite: bool = False,
         output_suffix: str = "_audiopruned",
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         """Keep only selected audio stream orders for each file using stream copy."""
         summary = OperationSummary(action="prune_audio_streams")
@@ -1997,6 +2234,7 @@ class SubtitleProcessor:
         for video in videos:
             video_key = str(video.resolve())
             keep_orders = normalized_keep.get(video_key, [])
+            is_ts_source = video.suffix.lower() in (".ts", ".m2ts")
             audio_streams = self._probe_audio_streams(video)
             audio_count = len(audio_streams)
 
@@ -2023,13 +2261,18 @@ class SubtitleProcessor:
                 )
                 continue
 
-            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite)
+            output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
             cmd: List[str] = [
                 self.ffmpeg_bin,
                 "-y",
                 "-loglevel",
                 "error",
                 "-nostats",
+                *self._hw_accel_flags(),
+            ]
+            if is_ts_source:
+                cmd.extend(self._ts_input_stability_flags())
+            cmd.extend([
                 "-i",
                 str(video),
                 "-map",
@@ -2040,9 +2283,11 @@ class SubtitleProcessor:
                 "0:d?",
                 "-map",
                 "0:t?",
-            ]
+            ])
             for order in valid_keep_orders:
                 cmd.extend(["-map", f"0:a:{order}"])
+            if is_ts_source:
+                cmd.extend(["-max_muxing_queue_size", "1024"])
             cmd.extend(["-c", "copy", str(output_path)])
 
             result = self._run_command(cmd)
@@ -2068,19 +2313,89 @@ class SubtitleProcessor:
             )
             if not is_valid:
                 self._log(f"  Output validation failed: {invalid_reason}")
-                summary.failed += 1
-                summary.details.append(
-                    {
-                        "file": str(video),
-                        "status": "failed",
-                        "reason": invalid_reason,
-                    }
+                src_v, src_a, src_s = self._probe_stream_counts(video)
+                out_v, out_a, out_s = self._probe_stream_counts(output_path)
+                self._log(
+                    f"  Stream counts source(v/a/s)={src_v}/{src_a}/{src_s} -> "
+                    f"output(v/a/s)={out_v}/{out_a}/{out_s}"
                 )
                 try:
                     output_path.unlink(missing_ok=True)
                 except OSError:
                     pass
-                continue
+
+                if is_ts_source:
+                    self._log("  Retrying prune as MKV to work around m2ts muxer limitation...")
+                    mkv_output = output_path.with_suffix(".mkv")
+                    mkv_cmd: List[str] = [
+                        self.ffmpeg_bin,
+                        "-y",
+                        "-loglevel",
+                        "warning",
+                        "-nostats",
+                        *self._hw_accel_flags(),
+                    ]
+                    mkv_cmd.extend(self._ts_input_stability_flags())
+                    mkv_cmd.extend([
+                        "-i",
+                        str(video),
+                        "-map",
+                        "0:v?",
+                        "-map",
+                        "0:s?",
+                        "-map",
+                        "0:d?",
+                        "-map",
+                        "0:t?",
+                    ])
+                    for order in valid_keep_orders:
+                        mkv_cmd.extend(["-map", f"0:a:{order}"])
+                    mkv_cmd.extend(["-max_muxing_queue_size", "1024", "-c", "copy", str(mkv_output)])
+
+                    mkv_result = self._run_command(mkv_cmd)
+                    if mkv_result.returncode == 0:
+                        mkv_valid, mkv_reason = self._validate_muxed_output(
+                            video,
+                            mkv_output,
+                            allow_reduced_audio=True,
+                        )
+                        if mkv_valid:
+                            self._log(f"  MKV prune fallback succeeded -> {mkv_output.name}")
+                            output_path = mkv_output
+                            replace_target = None
+                            is_valid = True
+                        else:
+                            self._log(f"  MKV prune fallback validation failed: {mkv_reason}")
+                            src_v, src_a, src_s = self._probe_stream_counts(video)
+                            out_v, out_a, out_s = self._probe_stream_counts(mkv_output)
+                            self._log(
+                                f"  Stream counts source(v/a/s)={src_v}/{src_a}/{src_s} -> "
+                                f"output(v/a/s)={out_v}/{out_a}/{out_s}"
+                            )
+                            try:
+                                mkv_output.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                    else:
+                        mkv_msgs = (mkv_result.stderr or "").strip()
+                        if mkv_msgs:
+                            for _line in mkv_msgs.splitlines()[:15]:
+                                self._log(f"  ffmpeg: {_line}")
+                        try:
+                            mkv_output.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+
+                if not is_valid:
+                    summary.failed += 1
+                    summary.details.append(
+                        {
+                            "file": str(video),
+                            "status": "failed",
+                            "reason": invalid_reason,
+                        }
+                    )
+                    continue
 
             if replace_target:
                 output_path.replace(replace_target)
@@ -2207,6 +2522,7 @@ class SubtitleProcessor:
         output_suffix: str = "_synced",
         max_offset_seconds: float = 300.0,
         verification_tolerance_seconds: float = 2.0,
+        output_root: Optional[str] = None,
     ) -> OperationSummary:
         """Re-sync existing subtitle files to match actual audio timing using Whisper AI.
 
@@ -2323,14 +2639,14 @@ class SubtitleProcessor:
             if overwrite:
                 out_path = subtitle_path
             else:
-                out_path = subtitle_path.with_name(
-                    f"{subtitle_path.stem}{output_suffix}{subtitle_path.suffix}"
-                )
+                output_parent = subtitle_path.parent
+                if output_root:
+                    output_parent = Path(output_root).expanduser().resolve()
+                    output_parent.mkdir(parents=True, exist_ok=True)
+                out_path = output_parent / f"{subtitle_path.stem}{output_suffix}{subtitle_path.suffix}"
                 idx = 1
                 while out_path.exists():
-                    out_path = subtitle_path.with_name(
-                        f"{subtitle_path.stem}{output_suffix}_{idx}{subtitle_path.suffix}"
-                    )
+                    out_path = output_parent / f"{subtitle_path.stem}{output_suffix}_{idx}{subtitle_path.suffix}"
                     idx += 1
 
             try:
@@ -2376,6 +2692,7 @@ class JobPayload(BaseModel):
     manual_sidecars: Dict[str, List[str]] = Field(default_factory=dict)
     recursive: bool = True
     overwrite: bool = False
+    output_root: str = ""
     output_suffix: str = ""
     extract_for_restore: bool = True
     export_txt: bool = True
@@ -2475,6 +2792,7 @@ class JobManager:
                     output_suffix=payload.output_suffix or "_nosubs",
                     extract_for_restore=payload.extract_for_restore,
                     target_files=payload.target_files,
+                    output_root=payload.output_root or None,
                 )
                 result = summary.to_dict()
             elif action == "include":
@@ -2485,6 +2803,7 @@ class JobManager:
                     output_suffix=payload.output_suffix or "_withsubs",
                     target_files=payload.target_files,
                     manual_sidecars=payload.manual_sidecars,
+                    output_root=payload.output_root or None,
                 )
                 result = summary.to_dict()
             elif action == "extract":
@@ -2510,6 +2829,7 @@ class JobManager:
                     output_suffix=payload.output_suffix or "_langtagged",
                     overwrite_existing_tags=bool(payload.overwrite_existing_tags),
                     detect_only=bool(payload.detect_only_audio_tagging),
+                    output_root=payload.output_root or None,
                 )
                 result = summary.to_dict()
             elif action == "prune_audio_streams":
@@ -2520,6 +2840,7 @@ class JobManager:
                     keep_audio_orders_by_file=dict(payload.keep_audio_orders_by_file or {}),
                     overwrite=payload.overwrite,
                     output_suffix=payload.prune_audio_suffix or "_audiopruned",
+                    output_root=payload.output_root or None,
                 )
                 result = summary.to_dict()
             elif action == "sync_subtitles":
@@ -2533,6 +2854,7 @@ class JobManager:
                     output_suffix=payload.output_suffix or "_synced",
                     max_offset_seconds=max(10.0, float(payload.sync_max_offset_seconds or 300.0)),
                     verification_tolerance_seconds=max(0.5, float(payload.sync_verification_tolerance or 2.0)),
+                    output_root=payload.output_root or None,
                 )
                 result = summary.to_dict()
             else:
@@ -3200,7 +3522,10 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
 
         def run(self) -> None:
             try:
-                processor = SubtitleProcessor(log_callback=self.log_message.emit)
+                processor = SubtitleProcessor(
+                    log_callback=self.log_message.emit,
+                    use_hw_accel=bool(self.options.get("use_hw_accel", False)),
+                )
                 folders = self.options["folders"]
                 target_files = self.options.get("target_files", [])
                 recursive = bool(self.options.get("recursive", True))
@@ -3233,6 +3558,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         output_suffix=str(self.options.get("output_suffix", "_nosubs")),
                         extract_for_restore=bool(self.options.get("extract_for_restore", True)),
                         target_files=target_files,
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 elif self.action == "include":
@@ -3243,6 +3569,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         output_suffix=str(self.options.get("output_suffix", "_withsubs")),
                         target_files=target_files,
                         manual_sidecars=dict(self.options.get("manual_sidecars", {})),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 elif self.action == "extract":
@@ -3264,6 +3591,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         target_format=target_format,
                         overwrite=overwrite,
                         output_suffix=str(self.options.get("output_suffix", "_converted")),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 elif self.action == "organize":
@@ -3307,6 +3635,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         output_suffix=str(self.options.get("output_suffix", "_langtagged")),
                         overwrite_existing_tags=bool(self.options.get("overwrite_existing_tags", False)),
                         detect_only=bool(self.options.get("detect_only_audio_tagging", False)),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 elif self.action == "prune_audio_streams":
@@ -3317,6 +3646,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         keep_audio_orders_by_file=dict(self.options.get("keep_audio_orders_by_file", {})),
                         overwrite=overwrite,
                         output_suffix=str(self.options.get("prune_audio_suffix", "_audiopruned")),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 elif self.action == "sync_subtitles":
@@ -3330,6 +3660,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         output_suffix=str(self.options.get("output_suffix", "_synced")),
                         max_offset_seconds=max(10.0, float(self.options.get("sync_max_offset_seconds", 300.0))),
                         verification_tolerance_seconds=max(0.5, float(self.options.get("sync_verification_tolerance", 2.0))),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
                     )
                     payload = summary.to_dict()
                 else:
@@ -3708,6 +4039,25 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.export_txt_checkbox.setChecked(True)
             self.scan_only_embedded_checkbox = QCheckBox("Scan only files with embedded subtitles")
             self.only_selected_targets_checkbox = QCheckBox("Use only selected target video file(s)")
+            self.hw_accel_checkbox = QCheckBox("Use hardware acceleration (GPU)")
+            self.hw_accel_checkbox.setToolTip(
+                "Pass -hwaccel auto to ffmpeg. Enables GPU-assisted video demuxing and decoding\n"
+                "where supported (NVIDIA NVDEC, Intel QuickSync, AMD VCE, etc.)."
+            )
+            self.save_next_to_source_checkbox = QCheckBox("Save outputs next to source files")
+            self.save_next_to_source_checkbox.setChecked(True)
+            self.custom_output_dir_input = QLineEdit()
+            self.custom_output_dir_input.setPlaceholderText("Custom output folder (optional)")
+            self.custom_output_dir_input.setEnabled(False)
+            self.custom_output_dir_browse_button = QPushButton("Browse...")
+            self.custom_output_dir_browse_button.setEnabled(False)
+            self.custom_output_dir_browse_button.clicked.connect(self._choose_output_directory)
+
+            def _toggle_output_controls(checked: bool) -> None:
+                self.custom_output_dir_input.setEnabled(not checked)
+                self.custom_output_dir_browse_button.setEnabled(not checked)
+
+            self.save_next_to_source_checkbox.toggled.connect(_toggle_output_controls)
 
             self.remove_suffix_input = QLineEdit("_nosubs")
             self.include_suffix_input = QLineEdit("_withsubs")
@@ -3719,15 +4069,23 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             options_layout.addWidget(self.export_txt_checkbox, 3, 0, 1, 2)
             options_layout.addWidget(self.scan_only_embedded_checkbox, 4, 0, 1, 2)
             options_layout.addWidget(self.only_selected_targets_checkbox, 5, 0, 1, 2)
-            options_layout.addWidget(QLabel("Remove output suffix:"), 6, 0)
-            options_layout.addWidget(self.remove_suffix_input, 6, 1)
-            options_layout.addWidget(QLabel("Include output suffix:"), 7, 0)
-            options_layout.addWidget(self.include_suffix_input, 7, 1)
-            options_layout.addWidget(QLabel("Extract output suffix:"), 8, 0)
-            options_layout.addWidget(self.extract_suffix_input, 8, 1)
-            options_layout.addWidget(QLabel("Conversion output suffix:"), 9, 0)
+            options_layout.addWidget(self.hw_accel_checkbox, 6, 0, 1, 2)
+            options_layout.addWidget(self.save_next_to_source_checkbox, 7, 0, 1, 2)
+            options_layout.addWidget(QLabel("Custom output folder:"), 8, 0)
+            custom_out_row = QHBoxLayout()
+            custom_out_row.setContentsMargins(0, 0, 0, 0)
+            custom_out_row.addWidget(self.custom_output_dir_input)
+            custom_out_row.addWidget(self.custom_output_dir_browse_button)
+            options_layout.addLayout(custom_out_row, 8, 1)
+            options_layout.addWidget(QLabel("Remove output suffix:"), 9, 0)
+            options_layout.addWidget(self.remove_suffix_input, 9, 1)
+            options_layout.addWidget(QLabel("Include output suffix:"), 10, 0)
+            options_layout.addWidget(self.include_suffix_input, 10, 1)
+            options_layout.addWidget(QLabel("Extract output suffix:"), 11, 0)
+            options_layout.addWidget(self.extract_suffix_input, 11, 1)
+            options_layout.addWidget(QLabel("Conversion output suffix:"), 12, 0)
             self.convert_suffix_input = QLineEdit("_converted")
-            options_layout.addWidget(self.convert_suffix_input, 9, 1)
+            options_layout.addWidget(self.convert_suffix_input, 12, 1)
 
             # Swiss Army Knife section
             tools_box = QGroupBox("Video Tools (Swiss Army Knife)")
@@ -3778,10 +4136,10 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.organize_button.clicked.connect(self._start_organize)
             self.repair_button.clicked.connect(self._start_repair)
             
-            # Subtitle Generation with Whisper AI (only show if use_ai is enabled)
+            # AI tools section (only show if use_ai is enabled)
             if self.use_ai:
                 tools_layout.addSpacing(10)
-                subtitle_gen_label = QLabel("<b>Generate Subtitles (Whisper AI)</b>")
+                subtitle_gen_label = QLabel("<b>AI Tools</b>")
                 tools_layout.addWidget(subtitle_gen_label)
                 
                 whisper_options = QHBoxLayout()
@@ -3808,7 +4166,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 whisper_options.addWidget(self.whisper_language_input)
                 
                 self.generate_button = QPushButton("Generate Subtitles")
-                self.generate_button.setToolTip("Generate subtitles from video audio using Whisper AI")
+                self.generate_button.setToolTip("Generate subtitles from video audio using the selected AI model")
                 whisper_options.addWidget(self.generate_button)
                 whisper_options.addStretch()
                 
@@ -3843,7 +4201,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 language_tag_options.addWidget(self.audio_lang_detect_only_checkbox)
 
                 self.tag_audio_language_button = QPushButton("Detect + Tag Audio Language")
-                self.tag_audio_language_button.setToolTip("Use Whisper AI to detect audio language per stream and write metadata tags")
+                self.tag_audio_language_button.setToolTip("Use AI language detection per audio stream and write metadata tags")
                 language_tag_options.addWidget(self.tag_audio_language_button)
                 language_tag_options.addStretch()
                 tools_layout.addLayout(language_tag_options)
@@ -3858,7 +4216,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.sync_language_input = QLineEdit()
                 self.sync_language_input.setPlaceholderText("auto")
                 self.sync_language_input.setMaximumWidth(70)
-                self.sync_language_input.setToolTip("Optional ISO language code (en, es, fr…) for Whisper transcription")
+                self.sync_language_input.setToolTip("Optional ISO language code (en, es, fr…) for AI transcription")
                 sync_options_row.addWidget(self.sync_language_input)
 
                 self.sync_overwrite_checkbox = QCheckBox("Overwrite original subtitle")
@@ -4011,6 +4369,14 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             target_files = self._collect_target_files()
             if not folders and not target_files:
                 raise ValueError("Add at least one folder or target video file before running.")
+            output_root = ""
+            if not self.save_next_to_source_checkbox.isChecked():
+                output_root = self.custom_output_dir_input.text().strip()
+                if not output_root:
+                    raise ValueError("Choose a custom output folder or enable 'Save outputs next to source files'.")
+                out_path = Path(output_root).expanduser().resolve()
+                out_path.mkdir(parents=True, exist_ok=True)
+                output_root = str(out_path)
             return {
                 "folders": folders,
                 "target_files": target_files,
@@ -4019,7 +4385,14 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "extract_for_restore": self.extract_checkbox.isChecked(),
                 "export_txt": self.export_txt_checkbox.isChecked(),
                 "scan_only_embedded": self.scan_only_embedded_checkbox.isChecked(),
+                "use_hw_accel": self.hw_accel_checkbox.isChecked(),
+                "output_root": output_root,
             }
+
+        def _choose_output_directory(self) -> None:
+            folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+            if folder:
+                self.custom_output_dir_input.setText(folder)
 
         def _set_running(self, running: bool) -> None:
             self.scan_button.setEnabled(not running)
@@ -4378,6 +4751,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             details: List[Dict[str, object]],
         ) -> Optional[Tuple[Dict[str, List[int]], List[str]]]:
             language_counts: Counter[str] = Counter()
+            language_bytes: Dict[str, int] = {}
             for item in details:
                 detected = item.get("detected_streams", [])
                 if not isinstance(detected, list):
@@ -4388,13 +4762,22 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     lang = str(stream.get("language") or "").strip().lower()
                     if lang:
                         language_counts[lang] += 1
+                        eb = stream.get("estimated_bytes")
+                        if isinstance(eb, (int, float)) and eb > 0:
+                            language_bytes[lang] = language_bytes.get(lang, 0) + int(eb)
 
             if not language_counts:
                 return None
 
+            def _fmt_bytes(total: int) -> str:
+                mb = total / (1024 * 1024)
+                if mb >= 1024:
+                    return f"~{mb / 1024:.1f} GB"
+                return f"~{mb:.0f} MB"
+
             dialog = QDialog(self)
             dialog.setWindowTitle("Choose Audio Languages to Keep")
-            dialog.resize(480, 420)
+            dialog.resize(520, 420)
 
             layout = QVBoxLayout(dialog)
             layout.addWidget(
@@ -4406,7 +4789,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
 
             list_widget = QListWidget()
             for lang, count in sorted(language_counts.items(), key=lambda x: (-x[1], x[0])):
-                label = f"{lang} ({count} stream{'s' if count != 1 else ''})"
+                size_str = f",  {_fmt_bytes(language_bytes[lang])}" if lang in language_bytes else ""
+                label = f"{lang}  ({count} stream{'s' if count != 1 else ''}{size_str})"
                 item = QListWidgetItem(label)
                 item.setData(Qt.ItemDataRole.UserRole, lang)
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -4589,7 +4973,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         failed=result.get("failed", 0),
                     )
                 )
-                self._prompt_and_start_audio_prune(result)
+                if int(result.get("processed", 0)) > 0:
+                    self._prompt_and_start_audio_prune(result)
             elif action == "prune_audio_streams":
                 self._log(
                     "Audio pruning complete: scanned={scanned}, processed={processed}, "
@@ -5069,6 +5454,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "audio_lang_detect_only": self.audio_lang_detect_only_checkbox.isChecked() if self.audio_lang_detect_only_checkbox else False,
                 "sync_language": self.sync_language_input.text() if self.sync_language_input else "",
                 "sync_overwrite": self.sync_overwrite_checkbox.isChecked() if self.sync_overwrite_checkbox else False,
+                "hw_accel": self.hw_accel_checkbox.isChecked(),
+                "save_next_to_source": self.save_next_to_source_checkbox.isChecked(),
+                "custom_output_dir": self.custom_output_dir_input.text(),
             }
             
             settings["ui_state"] = ui_state
@@ -5116,6 +5504,10 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.export_txt_checkbox.setChecked(ui_state.get("export_txt", True))
             self.scan_only_embedded_checkbox.setChecked(ui_state.get("scan_only_embedded", False))
             self.only_selected_targets_checkbox.setChecked(ui_state.get("only_selected_targets", False))
+            self.save_next_to_source_checkbox.setChecked(ui_state.get("save_next_to_source", True))
+            self.custom_output_dir_input.setText(str(ui_state.get("custom_output_dir", "")))
+            self.custom_output_dir_input.setEnabled(not self.save_next_to_source_checkbox.isChecked())
+            self.custom_output_dir_browse_button.setEnabled(not self.save_next_to_source_checkbox.isChecked())
             
             # Restore text inputs
             self.remove_suffix_input.setText(ui_state.get("remove_suffix", "_nosubs"))
@@ -5153,6 +5545,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.sync_language_input.setText(str(ui_state.get("sync_language", "")))
                 if self.sync_overwrite_checkbox:
                     self.sync_overwrite_checkbox.setChecked(bool(ui_state.get("sync_overwrite", False)))
+
+            self.hw_accel_checkbox.setChecked(bool(ui_state.get("hw_accel", False)))
             
             self._log("Previous session restored from memory")
 
@@ -5236,6 +5630,7 @@ def run_cli_action(args: argparse.Namespace) -> int:
             overwrite=args.overwrite,
             output_suffix=args.suffix,
             extract_for_restore=not args.no_extract,
+            output_root=args.output_root or None,
         )
         cli_print_json(summary.to_dict())
         return 0
@@ -5246,6 +5641,7 @@ def run_cli_action(args: argparse.Namespace) -> int:
             recursive=recursive,
             overwrite=args.overwrite,
             output_suffix=args.suffix,
+            output_root=args.output_root or None,
         )
         cli_print_json(summary.to_dict())
         return 0
@@ -5274,6 +5670,7 @@ def run_cli_action(args: argparse.Namespace) -> int:
             output_suffix=args.suffix,
             overwrite_existing_tags=args.overwrite_existing_tags,
             detect_only=bool(args.detect_only),
+            output_root=args.output_root or None,
         )
         cli_print_json(summary.to_dict())
         return 0
@@ -5289,6 +5686,7 @@ def run_cli_action(args: argparse.Namespace) -> int:
             output_suffix=args.suffix,
             max_offset_seconds=max(10.0, args.max_offset),
             verification_tolerance_seconds=max(0.5, args.tolerance),
+            output_root=args.output_root or None,
         )
         cli_print_json(summary.to_dict())
         return 0
@@ -5330,9 +5728,12 @@ def build_parser() -> argparse.ArgumentParser:
         if mode in {"remove", "include", "extract"}:
             cmd.add_argument("--overwrite", action="store_true", help="Overwrite original files")
             cmd.add_argument("--suffix", default=default_suffix, help="Output filename suffix")
+            if mode in {"remove", "include"}:
+                cmd.add_argument("--output-root", default="", help="Custom output folder (default: next to source)")
         if mode == "tag-audio-language":
             cmd.add_argument("--overwrite", action="store_true", help="Overwrite original files")
             cmd.add_argument("--suffix", default=default_suffix, help="Output filename suffix")
+            cmd.add_argument("--output-root", default="", help="Custom output folder (default: next to source)")
             cmd.add_argument("--model-size", default="base", help="Whisper model size")
             cmd.add_argument(
                 "--strategy",
@@ -5355,6 +5756,7 @@ def build_parser() -> argparse.ArgumentParser:
         if mode == "sync-subtitles":
             cmd.add_argument("--overwrite", action="store_true", help="Overwrite original subtitle file in-place")
             cmd.add_argument("--suffix", default=default_suffix, help="Output subtitle filename suffix")
+            cmd.add_argument("--output-root", default="", help="Custom output folder (default: next to source)")
             cmd.add_argument("--model-size", default="base", help="Whisper model size")
             cmd.add_argument("--language", default="", help="Language hint for Whisper (e.g. en, es); blank = auto-detect")
             cmd.add_argument("--max-offset", type=float, default=300.0, help="Maximum offset in seconds to consider (default: 300)")

@@ -1,7 +1,7 @@
 {
   "use_ai": true,
   "launch_times": [
-    1773784983.665977
+    1773804214.771541
   ],
   "tutorial_completed": true,
   "ui_state": {
@@ -26,11 +26,13 @@
     "repair_backup": true,
     "whisper_model": "large-v3",
     "whisper_language": "",
-    "audio_lang_strategy": "full",
-    "audio_lang_snippets": "3",
-    "audio_lang_seconds": "25",
-    "audio_lang_overwrite": false,
+    "audio_lang_strategy": "snippets",
+    "audio_lang_snippets": "5",
+    "audio_lang_seconds": "30",
+    "audio_lang_overwrite": true,
+    "audio_lang_detect_only": false,
     "sync_language": "",
-    "sync_overwrite": false
+    "sync_overwrite": false,
+    "hw_accel": true
   }
 }
