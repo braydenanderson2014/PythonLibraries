@@ -5,9 +5,32 @@ param(
     [ValidateSet("auto", "winget", "choco", "scoop")]
     [string]$FfmpegInstallMethod = "auto",
 
+    [ValidateSet("auto", "winget", "choco", "scoop")]
+    [string]$ToolInstallMethod = "auto",
+
+    [switch]$InstallAiAll,
+    [switch]$InstallAiOpenAIWhisper,
+    [switch]$InstallAiFasterWhisper,
+    [switch]$InstallAiWhisperX,
+    [switch]$InstallAiStableTs,
+    [switch]$InstallAiWhisperTimestamped,
+    [switch]$InstallAiSpeechBrain,
+    [switch]$InstallAiVosk,
+    [switch]$InstallAiAeneas,
+    [switch]$SkipAiSelectionPrompt,
+
+    [switch]$InteractiveMenu,
+    [switch]$NoMenu,
+    [switch]$DisableAutoPathBridge,
+    [switch]$DisableClickSelection,
+
     [switch]$NoPause,
 
     [switch]$KeepInstallArtifacts,
+
+    # Suppress per-line pip/uv output (Collecting..., Downloading..., Resolved...).
+    # Errors and status lines are always shown regardless of this setting.
+    [switch]$QuietInstallOutput,
 
     # Uninstall ALL dependencies: deletes venv, pip cache dirs, and reports what
     # was removed. Does NOT uninstall system-wide Python, ffmpeg, or VC++.
@@ -21,6 +44,21 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = 'SilentlyContinue'
 $script:CleanupTargets = @()
+$script:AutoPathBridgeEnabled = (-not $DisableAutoPathBridge)
+$script:ClickSelectionEnabled = (-not $DisableClickSelection)
+$script:OptionalToolInstallMode = "prompt"
+$script:MkvtoolnixInstallMethod = $ToolInstallMethod
+$script:HandBrakeInstallMethod = $ToolInstallMethod
+$script:MakeMKVInstallMethod = $ToolInstallMethod
+$script:OptionalToolAutoInstallKeys = @()
+$script:UvExe = ""
+$script:QuietOutput = [bool]$QuietInstallOutput
+
+# On PowerShell 7+, do not treat native command stderr text (warnings) as a
+# terminating error. The script already validates native command exit codes.
+if ($null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue)) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Cleanup-InstallerArtifacts {
     if ($KeepInstallArtifacts) {
@@ -118,6 +156,1182 @@ function Write-StatusFail {
 function Test-CommandAvailable {
     param([string]$CommandName)
     return [bool](Get-Command $CommandName -ErrorAction SilentlyContinue)
+}
+
+function Refresh-ProcessPathFromRegistry {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath"
+}
+
+function Get-UserPathEntries {
+    $rawPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $rawPath) { return @() }
+    return @($rawPath -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Set-UserPathEntries {
+    param([string[]]$Entries)
+
+    $normalized = @()
+    foreach ($entry in $Entries) {
+        if (-not $entry) { continue }
+        $trimmed = [string]$entry
+        $trimmed = $trimmed.Trim()
+        if (-not $trimmed) { continue }
+        $trimmed = $trimmed.TrimEnd("\\")
+        if (-not $normalized.Contains($trimmed)) {
+            $normalized += $trimmed
+        }
+    }
+
+    [System.Environment]::SetEnvironmentVariable("Path", ($normalized -join ";"), "User")
+    Refresh-ProcessPathFromRegistry
+}
+
+function Add-UserPathEntry {
+    param([string]$PathEntry)
+
+    if (-not $PathEntry) { return $false }
+    if (-not (Test-Path -LiteralPath $PathEntry)) { return $false }
+
+    $entries = Get-UserPathEntries
+    $candidate = [string]$PathEntry
+    $candidate = $candidate.Trim().TrimEnd("\\")
+    foreach ($existing in $entries) {
+        if ([string]::Equals($existing.Trim().TrimEnd("\\"), $candidate, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+
+    $entries += $candidate
+    Set-UserPathEntries -Entries $entries
+    return $true
+}
+
+function Set-UserEnvironmentVariable {
+    param(
+        [string]$Name,
+        [string]$Value
+    )
+
+    if (-not $Name) { return $false }
+    try {
+        [System.Environment]::SetEnvironmentVariable($Name, $Value, "User")
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function New-MakeMKVCommandShim {
+    param([string]$MakeMKVBinaryPath)
+
+    if (-not $MakeMKVBinaryPath -or -not (Test-Path -LiteralPath $MakeMKVBinaryPath)) {
+        return ""
+    }
+
+    $shimDir = Join-Path $env:LOCALAPPDATA "SubtitleTool\bin"
+    New-Item -ItemType Directory -Path $shimDir -Force | Out-Null
+
+    $shimPath = Join-Path $shimDir "makemkvcon.cmd"
+    $shimContent = "@echo off`r`n`"$MakeMKVBinaryPath`" %*`r`n"
+    Set-Content -Path $shimPath -Value $shimContent -Encoding ASCII -Force
+
+    Add-UserPathEntry -PathEntry $shimDir | Out-Null
+    return $shimPath
+}
+
+function Ensure-ToolCliReachable {
+    param(
+        [string]$ToolCommand,
+        [string]$DetectedBinaryPath,
+        [string]$ToolDisplayName
+    )
+
+    $envVarName = ""
+    switch ($ToolCommand) {
+        "mkvmerge" { $envVarName = "SUBTITLE_TOOL_MKVMERGE_BIN" }
+        "HandBrakeCLI" { $envVarName = "SUBTITLE_TOOL_HANDBRAKE_BIN" }
+        "makemkvcon" { $envVarName = "SUBTITLE_TOOL_MAKEMKVCON_BIN" }
+    }
+
+    if (-not $script:AutoPathBridgeEnabled) {
+        return @{ changed = $false; reachable = [bool](Test-CommandAvailable $ToolCommand); reason = "disabled" }
+    }
+
+    if ($envVarName -and $DetectedBinaryPath) {
+        Set-UserEnvironmentVariable -Name $envVarName -Value $DetectedBinaryPath | Out-Null
+    }
+    if (-not $DetectedBinaryPath) {
+        return @{ changed = $false; reachable = $false; reason = "binary_not_detected" }
+    }
+    if (Test-CommandAvailable $ToolCommand) {
+        return @{ changed = $false; reachable = $true; reason = "already_reachable" }
+    }
+
+    $changed = $false
+    $reason = ""
+    $fileName = [string](Split-Path -Leaf $DetectedBinaryPath)
+
+    if ($ToolCommand -eq "makemkvcon" -and $fileName -ieq "makemkvcon64.exe") {
+        $shimPath = New-MakeMKVCommandShim -MakeMKVBinaryPath $DetectedBinaryPath
+        if ($shimPath) {
+            $changed = $true
+            $reason = "created_makemkv_shim"
+        }
+    } else {
+        $binaryDir = Split-Path -Parent $DetectedBinaryPath
+        if ($binaryDir) {
+            if (Add-UserPathEntry -PathEntry $binaryDir) {
+                $changed = $true
+                $reason = "added_tool_dir_to_user_path"
+            }
+        }
+    }
+
+    Refresh-ProcessPathFromRegistry
+    $reachable = [bool](Test-CommandAvailable $ToolCommand)
+    if (-not $reason) {
+        $reason = if ($reachable) { "reachable_after_refresh" } else { "not_reachable" }
+    }
+
+    if ($changed -and $reachable) {
+        Write-Host "Auto-bridged CLI for $ToolDisplayName into PATH." -ForegroundColor Green
+    } elseif ($changed -and -not $reachable) {
+        Write-Host "Tried to auto-bridge CLI for $ToolDisplayName, but command is still not callable." -ForegroundColor Yellow
+    }
+
+    return @{ changed = $changed; reachable = $reachable; reason = $reason }
+}
+
+function Set-AiSelectionFlagsFromKeys {
+    param([string[]]$SelectedKeys)
+
+    $script:InstallAiAll = $false
+    $script:InstallAiOpenAIWhisper = $false
+    $script:InstallAiFasterWhisper = $false
+    $script:InstallAiWhisperX = $false
+    $script:InstallAiStableTs = $false
+    $script:InstallAiWhisperTimestamped = $false
+    $script:InstallAiSpeechBrain = $false
+    $script:InstallAiVosk = $false
+    $script:InstallAiAeneas = $false
+
+    foreach ($key in $SelectedKeys) {
+        switch ($key) {
+            "openai-whisper" { $script:InstallAiOpenAIWhisper = $true }
+            "faster-whisper" { $script:InstallAiFasterWhisper = $true }
+            "whisperx" { $script:InstallAiWhisperX = $true }
+            "stable-ts" { $script:InstallAiStableTs = $true }
+            "whisper-timestamped" { $script:InstallAiWhisperTimestamped = $true }
+            "speechbrain" { $script:InstallAiSpeechBrain = $true }
+            "vosk" { $script:InstallAiVosk = $true }
+            "aeneas" { $script:InstallAiAeneas = $true }
+        }
+    }
+
+    $defs = Get-AiBackendDefinitions
+    if ($SelectedKeys.Count -ge $defs.Count -and $defs.Count -gt 0) {
+        $script:InstallAiAll = $true
+    }
+}
+
+function Test-ClickSelectionAvailable {
+    if (-not $script:ClickSelectionEnabled) {
+        return $false
+    }
+
+    return [bool](Get-Command Out-GridView -ErrorAction SilentlyContinue)
+}
+
+function Test-WinFormsAvailable {
+    if (-not $script:ClickSelectionEnabled) {
+        return $false
+    }
+
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        return $false
+    }
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Select-DefinitionKeysWithMouse {
+    param(
+        [array]$Definitions,
+        [string[]]$PreselectedKeys = @(),
+        [string]$Title = "Select items"
+    )
+
+    if (-not (Test-ClickSelectionAvailable)) {
+        return @{
+            used_gui = $false
+            cancelled = $false
+            selected = @()
+        }
+    }
+
+    $selectedSet = @{}
+    foreach ($key in $PreselectedKeys) {
+        $selectedSet[[string]$key] = $true
+    }
+
+    $rows = @()
+    foreach ($def in $Definitions) {
+        $key = [string]$def.key
+        $rows += [PSCustomObject]@{
+            Selected = [bool]$selectedSet.ContainsKey($key)
+            Name = [string]$def.display
+            Key = $key
+        }
+    }
+
+    try {
+        $selectedRows = @(
+            $rows |
+                Sort-Object -Property @{ Expression = "Selected"; Descending = $true }, Name |
+                Out-GridView -Title "$Title (multi-select with Ctrl/Shift, then click OK)" -PassThru
+        )
+
+        $isEmptySelection = ($selectedRows.Count -eq 0) -or (($selectedRows.Count -eq 1) -and $null -eq $selectedRows[0])
+        if ($isEmptySelection) {
+            return @{
+                used_gui = $true
+                cancelled = $true
+                selected = @($PreselectedKeys)
+            }
+        }
+
+        return @{
+            used_gui = $true
+            cancelled = $false
+            selected = @($selectedRows | ForEach-Object { [string]$_.Key } | Select-Object -Unique)
+        }
+    } catch {
+        Write-Host "Mouse click selection is unavailable in this host. Falling back to keyboard prompts." -ForegroundColor DarkYellow
+        return @{
+            used_gui = $false
+            cancelled = $false
+            selected = @()
+        }
+    }
+}
+
+function Show-InteractiveInstallerControlPanel {
+    param(
+        [array]$Definitions,
+        [string[]]$InitialSelectedAiKeys = @()
+    )
+
+    if (-not (Test-WinFormsAvailable)) {
+        return @{ used_gui = $false; submitted = $false }
+    }
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Subtitle Tool Installer Control Panel"
+    $form.Size = New-Object System.Drawing.Size(980, 820)
+    $form.MinimumSize = New-Object System.Drawing.Size(940, 760)
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.KeyPreview = $true
+    $form.AutoScroll = $true
+
+    $titleLabel = New-Object System.Windows.Forms.Label
+    $titleLabel.Text = "Configure install options, then click Continue"
+    $titleLabel.AutoSize = $false
+    $titleLabel.Size = New-Object System.Drawing.Size(900, 28)
+    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $titleLabel.Location = New-Object System.Drawing.Point(20, 15)
+    $form.Controls.Add($titleLabel)
+
+    $shortcutLabel = New-Object System.Windows.Forms.Label
+    $shortcutLabel.Text = "Shortcuts: Ctrl+R Recommended, Ctrl+F Full AI, Ctrl+M Minimal, Enter Continue, Esc Cancel"
+    $shortcutLabel.AutoSize = $false
+    $shortcutLabel.Size = New-Object System.Drawing.Size(920, 22)
+    $shortcutLabel.Location = New-Object System.Drawing.Point(20, 46)
+    $form.Controls.Add($shortcutLabel)
+
+    $methodValues = @("auto", "winget", "choco", "scoop")
+    $toolDefs = @(
+        @{ key = "mkvtoolnix"; display = "MKVToolNix (mkvmerge)" },
+        @{ key = "handbrake"; display = "HandBrakeCLI" },
+        @{ key = "makemkv"; display = "MakeMKV (makemkvcon)" }
+    )
+
+    $lblPython = New-Object System.Windows.Forms.Label
+    $lblPython.Text = "Python install method"
+    $lblPython.AutoSize = $false
+    $lblPython.Size = New-Object System.Drawing.Size(220, 22)
+    $lblPython.Location = New-Object System.Drawing.Point(20, 86)
+    $form.Controls.Add($lblPython)
+
+    $comboPython = New-Object System.Windows.Forms.ComboBox
+    $comboPython.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboPython.Items.AddRange($methodValues)
+    $comboPython.SelectedItem = $script:PythonInstallMethod
+    $comboPython.Location = New-Object System.Drawing.Point(250, 82)
+    $comboPython.Width = 170
+    $form.Controls.Add($comboPython)
+
+    $lblFfmpeg = New-Object System.Windows.Forms.Label
+    $lblFfmpeg.Text = "FFmpeg install method"
+    $lblFfmpeg.AutoSize = $false
+    $lblFfmpeg.Size = New-Object System.Drawing.Size(220, 22)
+    $lblFfmpeg.Location = New-Object System.Drawing.Point(20, 120)
+    $form.Controls.Add($lblFfmpeg)
+
+    $comboFfmpeg = New-Object System.Windows.Forms.ComboBox
+    $comboFfmpeg.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboFfmpeg.Items.AddRange($methodValues)
+    $comboFfmpeg.SelectedItem = $script:FfmpegInstallMethod
+    $comboFfmpeg.Location = New-Object System.Drawing.Point(250, 116)
+    $comboFfmpeg.Width = 170
+    $form.Controls.Add($comboFfmpeg)
+
+    $toolsGroup = New-Object System.Windows.Forms.GroupBox
+    $toolsGroup.Text = "External Tools (Optional)"
+    $toolsGroup.Location = New-Object System.Drawing.Point(20, 156)
+    $toolsGroup.Size = New-Object System.Drawing.Size(920, 220)
+    $form.Controls.Add($toolsGroup)
+
+    $lblMkvMethod = New-Object System.Windows.Forms.Label
+    $lblMkvMethod.Text = "MKVToolNix method"
+    $lblMkvMethod.AutoSize = $false
+    $lblMkvMethod.Size = New-Object System.Drawing.Size(220, 22)
+    $lblMkvMethod.Location = New-Object System.Drawing.Point(16, 32)
+    $toolsGroup.Controls.Add($lblMkvMethod)
+
+    $comboMkvMethod = New-Object System.Windows.Forms.ComboBox
+    $comboMkvMethod.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboMkvMethod.Items.AddRange($methodValues)
+    $comboMkvMethod.SelectedItem = $script:MkvtoolnixInstallMethod
+    $comboMkvMethod.Location = New-Object System.Drawing.Point(250, 28)
+    $comboMkvMethod.Width = 170
+    $toolsGroup.Controls.Add($comboMkvMethod)
+
+    $lblHandBrakeMethod = New-Object System.Windows.Forms.Label
+    $lblHandBrakeMethod.Text = "HandBrakeCLI method"
+    $lblHandBrakeMethod.AutoSize = $false
+    $lblHandBrakeMethod.Size = New-Object System.Drawing.Size(220, 22)
+    $lblHandBrakeMethod.Location = New-Object System.Drawing.Point(16, 66)
+    $toolsGroup.Controls.Add($lblHandBrakeMethod)
+
+    $comboHandBrakeMethod = New-Object System.Windows.Forms.ComboBox
+    $comboHandBrakeMethod.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboHandBrakeMethod.Items.AddRange($methodValues)
+    $comboHandBrakeMethod.SelectedItem = $script:HandBrakeInstallMethod
+    $comboHandBrakeMethod.Location = New-Object System.Drawing.Point(250, 62)
+    $comboHandBrakeMethod.Width = 170
+    $toolsGroup.Controls.Add($comboHandBrakeMethod)
+
+    $lblMakeMKVMethod = New-Object System.Windows.Forms.Label
+    $lblMakeMKVMethod.Text = "MakeMKV method"
+    $lblMakeMKVMethod.AutoSize = $false
+    $lblMakeMKVMethod.Size = New-Object System.Drawing.Size(220, 22)
+    $lblMakeMKVMethod.Location = New-Object System.Drawing.Point(16, 100)
+    $toolsGroup.Controls.Add($lblMakeMKVMethod)
+
+    $comboMakeMKVMethod = New-Object System.Windows.Forms.ComboBox
+    $comboMakeMKVMethod.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboMakeMKVMethod.Items.AddRange($methodValues)
+    $comboMakeMKVMethod.SelectedItem = $script:MakeMKVInstallMethod
+    $comboMakeMKVMethod.Location = New-Object System.Drawing.Point(250, 96)
+    $comboMakeMKVMethod.Width = 170
+    $toolsGroup.Controls.Add($comboMakeMKVMethod)
+
+    $lblAutoInstallTools = New-Object System.Windows.Forms.Label
+    $lblAutoInstallTools.Text = "Auto-install if missing"
+    $lblAutoInstallTools.AutoSize = $false
+    $lblAutoInstallTools.Size = New-Object System.Drawing.Size(220, 22)
+    $lblAutoInstallTools.Location = New-Object System.Drawing.Point(450, 30)
+    $toolsGroup.Controls.Add($lblAutoInstallTools)
+
+    $toolAutoInstallList = New-Object System.Windows.Forms.CheckedListBox
+    $toolAutoInstallList.CheckOnClick = $true
+    $toolAutoInstallList.Location = New-Object System.Drawing.Point(450, 54)
+    $toolAutoInstallList.Size = New-Object System.Drawing.Size(440, 76)
+    foreach ($tool in $toolDefs) {
+        [void]$toolAutoInstallList.Items.Add([string]$tool.display)
+    }
+    $toolsGroup.Controls.Add($toolAutoInstallList)
+
+    $lblRemainingTools = New-Object System.Windows.Forms.Label
+    $lblRemainingTools.Text = "For tools not auto-selected"
+    $lblRemainingTools.AutoSize = $false
+    $lblRemainingTools.Size = New-Object System.Drawing.Size(220, 22)
+    $lblRemainingTools.Location = New-Object System.Drawing.Point(450, 140)
+    $toolsGroup.Controls.Add($lblRemainingTools)
+
+    $comboOptionalToolMode = New-Object System.Windows.Forms.ComboBox
+    $comboOptionalToolMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboOptionalToolMode.Items.AddRange(@("prompt", "none"))
+    $modeDefault = if ($script:OptionalToolInstallMode -eq "none") { "none" } else { "prompt" }
+    $comboOptionalToolMode.SelectedItem = $modeDefault
+    $comboOptionalToolMode.Location = New-Object System.Drawing.Point(680, 136)
+    $comboOptionalToolMode.Width = 210
+    $toolsGroup.Controls.Add($comboOptionalToolMode)
+
+    $chkAutoPathBridge = New-Object System.Windows.Forms.CheckBox
+    $chkAutoPathBridge.Text = "Enable auto PATH bridge for detected GUI-installed tools"
+    $chkAutoPathBridge.Checked = [bool]$script:AutoPathBridgeEnabled
+    $chkAutoPathBridge.AutoSize = $false
+    $chkAutoPathBridge.Size = New-Object System.Drawing.Size(900, 24)
+    $chkAutoPathBridge.Location = New-Object System.Drawing.Point(20, 388)
+    $form.Controls.Add($chkAutoPathBridge)
+
+    $chkSkipAiPrompt = New-Object System.Windows.Forms.CheckBox
+    $chkSkipAiPrompt.Text = "Skip AI selection prompt if nothing selected"
+    $chkSkipAiPrompt.Checked = [bool]$script:SkipAiSelectionPrompt
+    $chkSkipAiPrompt.AutoSize = $false
+    $chkSkipAiPrompt.Size = New-Object System.Drawing.Size(900, 24)
+    $chkSkipAiPrompt.Location = New-Object System.Drawing.Point(20, 416)
+    $form.Controls.Add($chkSkipAiPrompt)
+
+    $aiLabel = New-Object System.Windows.Forms.Label
+    $aiLabel.Text = "AI backends to install"
+    $aiLabel.AutoSize = $false
+    $aiLabel.Size = New-Object System.Drawing.Size(300, 22)
+    $aiLabel.Location = New-Object System.Drawing.Point(20, 448)
+    $form.Controls.Add($aiLabel)
+
+    $aiCheckedList = New-Object System.Windows.Forms.CheckedListBox
+    $aiCheckedList.Location = New-Object System.Drawing.Point(20, 472)
+    $aiCheckedList.Size = New-Object System.Drawing.Size(920, 180)
+    $aiCheckedList.CheckOnClick = $true
+    foreach ($def in $Definitions) {
+        $label = "{0} ({1})" -f ([string]$def.display), ([string]$def.key)
+        [void]$aiCheckedList.Items.Add($label)
+    }
+    $form.Controls.Add($aiCheckedList)
+
+    $setAiCheckedState = {
+        param([string[]]$Keys)
+        $keySet = @{}
+        foreach ($k in $Keys) { $keySet[[string]$k] = $true }
+        for ($i = 0; $i -lt $Definitions.Count; $i++) {
+            $k = [string]$Definitions[$i].key
+            $aiCheckedList.SetItemChecked($i, [bool]$keySet.ContainsKey($k))
+        }
+    }
+
+    $setToolAutoInstallCheckedState = {
+        param([string[]]$Keys)
+        $keySet = @{}
+        foreach ($k in $Keys) { $keySet[[string]$k] = $true }
+        for ($i = 0; $i -lt $toolDefs.Count; $i++) {
+            $key = [string]$toolDefs[$i].key
+            $toolAutoInstallList.SetItemChecked($i, [bool]$keySet.ContainsKey($key))
+        }
+    }
+
+    $initialToolAutoInstallKeys = @($script:OptionalToolAutoInstallKeys | Select-Object -Unique)
+    if ($initialToolAutoInstallKeys.Count -eq 0 -and $script:OptionalToolInstallMode -eq "all") {
+        $initialToolAutoInstallKeys = @($toolDefs | ForEach-Object { [string]$_.key })
+    }
+    & $setToolAutoInstallCheckedState $initialToolAutoInstallKeys
+
+    $selectedFromFlags = @($InitialSelectedAiKeys | Select-Object -Unique)
+    if ($selectedFromFlags.Count -eq 0) {
+        $selectedFromFlags = @("openai-whisper")
+    }
+    & $setAiCheckedState $selectedFromFlags
+
+    $applyRecommended = {
+        $comboPython.SelectedItem = "auto"
+        $comboFfmpeg.SelectedItem = "auto"
+        $comboMkvMethod.SelectedItem = "auto"
+        $comboHandBrakeMethod.SelectedItem = "auto"
+        $comboMakeMKVMethod.SelectedItem = "auto"
+        $chkAutoPathBridge.Checked = $true
+        $chkSkipAiPrompt.Checked = $false
+        $comboOptionalToolMode.SelectedItem = "prompt"
+        & $setToolAutoInstallCheckedState @()
+        & $setAiCheckedState @("openai-whisper")
+    }
+
+    $applyFull = {
+        $comboPython.SelectedItem = "auto"
+        $comboFfmpeg.SelectedItem = "auto"
+        $comboMkvMethod.SelectedItem = "auto"
+        $comboHandBrakeMethod.SelectedItem = "auto"
+        $comboMakeMKVMethod.SelectedItem = "auto"
+        $chkAutoPathBridge.Checked = $true
+        $chkSkipAiPrompt.Checked = $true
+        $comboOptionalToolMode.SelectedItem = "none"
+        & $setToolAutoInstallCheckedState @($toolDefs | ForEach-Object { [string]$_.key })
+        & $setAiCheckedState @($Definitions | ForEach-Object { [string]$_.key })
+    }
+
+    $applyMinimal = {
+        $comboPython.SelectedItem = "auto"
+        $comboFfmpeg.SelectedItem = "auto"
+        $comboMkvMethod.SelectedItem = "auto"
+        $comboHandBrakeMethod.SelectedItem = "auto"
+        $comboMakeMKVMethod.SelectedItem = "auto"
+        $chkAutoPathBridge.Checked = $false
+        $chkSkipAiPrompt.Checked = $true
+        $comboOptionalToolMode.SelectedItem = "none"
+        & $setToolAutoInstallCheckedState @()
+        & $setAiCheckedState @()
+    }
+
+    $btnRecommended = New-Object System.Windows.Forms.Button
+    $btnRecommended.Text = "Recommended"
+    $btnRecommended.Location = New-Object System.Drawing.Point(20, 680)
+    $btnRecommended.Size = New-Object System.Drawing.Size(120, 32)
+    $btnRecommended.Add_Click({ & $applyRecommended })
+    $form.Controls.Add($btnRecommended)
+
+    $btnFull = New-Object System.Windows.Forms.Button
+    $btnFull.Text = "Full AI"
+    $btnFull.Location = New-Object System.Drawing.Point(150, 680)
+    $btnFull.Size = New-Object System.Drawing.Size(120, 32)
+    $btnFull.Add_Click({ & $applyFull })
+    $form.Controls.Add($btnFull)
+
+    $btnMinimal = New-Object System.Windows.Forms.Button
+    $btnMinimal.Text = "Minimal"
+    $btnMinimal.Location = New-Object System.Drawing.Point(280, 680)
+    $btnMinimal.Size = New-Object System.Drawing.Size(120, 32)
+    $btnMinimal.Add_Click({ & $applyMinimal })
+    $form.Controls.Add($btnMinimal)
+
+    $script:__InstallerControlPanelSubmitted = $false
+
+    $btnContinue = New-Object System.Windows.Forms.Button
+    $btnContinue.Text = "Continue Install"
+    $btnContinue.Location = New-Object System.Drawing.Point(710, 680)
+    $btnContinue.Size = New-Object System.Drawing.Size(120, 32)
+    $btnContinue.Add_Click({
+        $script:PythonInstallMethod = Normalize-InstallMethod -Value $comboPython.SelectedItem
+        $script:FfmpegInstallMethod = Normalize-InstallMethod -Value $comboFfmpeg.SelectedItem
+        $script:MkvtoolnixInstallMethod = Normalize-InstallMethod -Value $comboMkvMethod.SelectedItem
+        $script:HandBrakeInstallMethod = Normalize-InstallMethod -Value $comboHandBrakeMethod.SelectedItem
+        $script:MakeMKVInstallMethod = Normalize-InstallMethod -Value $comboMakeMKVMethod.SelectedItem
+        $script:AutoPathBridgeEnabled = [bool]$chkAutoPathBridge.Checked
+        $script:SkipAiSelectionPrompt = [bool]$chkSkipAiPrompt.Checked
+        $script:OptionalToolInstallMode = [string]$comboOptionalToolMode.SelectedItem
+
+        $methodSet = @(
+            @(
+                $script:MkvtoolnixInstallMethod,
+                $script:HandBrakeInstallMethod,
+                $script:MakeMKVInstallMethod
+            ) | ForEach-Object { Normalize-InstallMethod -Value $_ } | Select-Object -Unique
+        )
+        if ($methodSet.Count -eq 1) {
+            $script:ToolInstallMethod = Normalize-InstallMethod -Value $methodSet[0]
+        } else {
+            $script:ToolInstallMethod = "auto"
+        }
+
+        $selectedToolKeys = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $toolDefs.Count; $i++) {
+            if ($toolAutoInstallList.GetItemChecked($i)) {
+                $selectedToolKeys.Add([string]$toolDefs[$i].key)
+            }
+        }
+        $script:OptionalToolAutoInstallKeys = @($selectedToolKeys.ToArray() | Select-Object -Unique)
+
+        $selectedKeys = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $Definitions.Count; $i++) {
+            if ($aiCheckedList.GetItemChecked($i)) {
+                $selectedKeys.Add([string]$Definitions[$i].key)
+            }
+        }
+
+        Set-AiSelectionFlagsFromKeys -SelectedKeys @($selectedKeys.ToArray())
+        if ($selectedKeys.Count -gt 0) {
+            $script:SkipAiSelectionPrompt = $true
+        }
+
+        $script:__InstallerControlPanelSubmitted = $true
+        $form.Close()
+    })
+    $form.Controls.Add($btnContinue)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Location = New-Object System.Drawing.Point(840, 680)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.Add_Click({
+        $script:__InstallerControlPanelSubmitted = $false
+        $form.Close()
+    })
+    $form.Controls.Add($btnCancel)
+
+    $form.AcceptButton = $btnContinue
+    $form.CancelButton = $btnCancel
+    $form.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::R) {
+            & $applyRecommended
+            $e.SuppressKeyPress = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F) {
+            & $applyFull
+            $e.SuppressKeyPress = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::M) {
+            & $applyMinimal
+            $e.SuppressKeyPress = $true
+        }
+    })
+
+    [void]$form.ShowDialog()
+
+    return @{
+        used_gui = $true
+        submitted = [bool]$script:__InstallerControlPanelSubmitted
+    }
+}
+
+function Read-InstallMethodChoice {
+    param(
+        [string]$Title,
+        [string]$CurrentMethod
+    )
+
+    Write-Host ""
+    Write-Host $Title -ForegroundColor Cyan
+    Write-Host "  1) auto"
+    Write-Host "  2) winget"
+    Write-Host "  3) choco"
+    Write-Host "  4) scoop"
+    $defaultChoice = switch ($CurrentMethod) {
+        "winget" { "2" }
+        "choco" { "3" }
+        "scoop" { "4" }
+        default { "1" }
+    }
+
+    while ($true) {
+        $raw = Read-Host "Choose [1-4] (default: $defaultChoice)"
+        if ([string]::IsNullOrWhiteSpace("$raw")) { $raw = $defaultChoice }
+        switch ($raw.Trim()) {
+            "1" { return "auto" }
+            "2" { return "winget" }
+            "3" { return "choco" }
+            "4" { return "scoop" }
+        }
+        Write-Host "Invalid choice. Try again." -ForegroundColor Yellow
+    }
+}
+
+function Normalize-InstallMethod {
+    param([object]$Value)
+
+    $candidate = [string]$Value
+    if ($candidate -in @("auto", "winget", "choco", "scoop")) {
+        return $candidate
+    }
+    return "auto"
+}
+
+function Show-InteractiveInstallerMenu {
+    if ($NoMenu -or $Uninstall -or $UninstallAI) {
+        return
+    }
+
+    $shouldShow = $InteractiveMenu
+    if (-not $shouldShow) {
+        $hasAnyAiFlag = $InstallAiAll -or $InstallAiOpenAIWhisper -or $InstallAiFasterWhisper -or $InstallAiWhisperX -or $InstallAiStableTs -or $InstallAiWhisperTimestamped -or $InstallAiSpeechBrain -or $InstallAiVosk -or $InstallAiAeneas
+        $usingDefaultMethods = ($PythonInstallMethod -eq "auto" -and $FfmpegInstallMethod -eq "auto" -and $ToolInstallMethod -eq "auto")
+        if ($usingDefaultMethods -and -not $hasAnyAiFlag -and -not $SkipAiSelectionPrompt) {
+            $shouldShow = $true
+        }
+    }
+
+    if (-not $shouldShow) {
+        return
+    }
+
+    $defs = Get-AiBackendDefinitions
+    $selectedFromFlags = Get-AiBackendSelectionFromFlags -Definitions $defs
+    $selectedAiKeys = @($selectedFromFlags.selected)
+
+    $controlPanelResult = Show-InteractiveInstallerControlPanel -Definitions $defs -InitialSelectedAiKeys $selectedAiKeys
+    if ([bool]$controlPanelResult.used_gui) {
+        if ([bool]$controlPanelResult.submitted) {
+            return
+        }
+        exit 0
+    }
+
+    while ($true) {
+        Write-Host ""
+        Write-Host "=== Interactive Installer Menu ===" -ForegroundColor Cyan
+        Write-Host "1) Python install method      : $script:PythonInstallMethod"
+        Write-Host "2) FFmpeg install method      : $script:FfmpegInstallMethod"
+        Write-Host "3) Tool install method        : $script:ToolInstallMethod"
+        Write-Host "4) Auto PATH bridge           : $(if ($script:AutoPathBridgeEnabled) { 'enabled' } else { 'disabled' })"
+        Write-Host "5) AI backend selection       : $(if ($selectedAiKeys.Count -gt 0) { ($selectedAiKeys -join ', ') } else { 'prompt later' })"
+        Write-Host "6) Click selection UI         : $(if ($script:ClickSelectionEnabled) { 'enabled' } else { 'disabled' })"
+        Write-Host "7) Skip AI prompt             : $(if ($script:SkipAiSelectionPrompt) { 'yes' } else { 'no' })"
+        Write-Host "8) Continue install"
+        Write-Host "9) Exit"
+
+        $choice = Read-Host "Choose an option [1-9]"
+        switch ($choice.Trim()) {
+            "1" { $script:PythonInstallMethod = Read-InstallMethodChoice -Title "Python Install Method" -CurrentMethod $script:PythonInstallMethod }
+            "2" { $script:FfmpegInstallMethod = Read-InstallMethodChoice -Title "FFmpeg Install Method" -CurrentMethod $script:FfmpegInstallMethod }
+            "3" {
+                $selectedToolMethod = Read-InstallMethodChoice -Title "Tool Install Method" -CurrentMethod $script:ToolInstallMethod
+                $script:ToolInstallMethod = $selectedToolMethod
+                $script:MkvtoolnixInstallMethod = $selectedToolMethod
+                $script:HandBrakeInstallMethod = $selectedToolMethod
+                $script:MakeMKVInstallMethod = $selectedToolMethod
+            }
+            "4" { $script:AutoPathBridgeEnabled = -not $script:AutoPathBridgeEnabled }
+            "5" {
+                if (Test-ClickSelectionAvailable) {
+                    $mouseSelected = Select-DefinitionKeysWithMouse `
+                        -Definitions $defs `
+                        -PreselectedKeys $selectedAiKeys `
+                        -Title "Select AI backends to install"
+
+                    if ([bool]$mouseSelected.used_gui -and -not [bool]$mouseSelected.cancelled) {
+                        $selectedAiKeys = @($mouseSelected.selected)
+                        Set-AiSelectionFlagsFromKeys -SelectedKeys $selectedAiKeys
+                        if ($selectedAiKeys.Count -gt 0) {
+                            $script:SkipAiSelectionPrompt = $true
+                        }
+                        continue
+                    }
+
+                    if ([bool]$mouseSelected.cancelled) {
+                        Write-Host "Selection window cancelled. Keeping existing AI selections." -ForegroundColor Yellow
+                        continue
+                    }
+                }
+
+                while ($true) {
+                    Write-Host ""
+                    Write-Host "AI Backends (toggle by number, A=all, N=none, D=done)" -ForegroundColor Cyan
+                    for ($i = 0; $i -lt $defs.Count; $i++) {
+                        $key = [string]$defs[$i].key
+                        $label = [string]$defs[$i].display
+                        $mark = if ($selectedAiKeys -contains $key) { "x" } else { " " }
+                        Write-Host "  $($i + 1)) [$mark] $label ($key)"
+                    }
+                    $cmd = Read-Host "Enter choice"
+                    if ([string]::IsNullOrWhiteSpace("$cmd")) { continue }
+                    $cmdNorm = $cmd.Trim().ToUpperInvariant()
+                    if ($cmdNorm -eq "D") { break }
+                    if ($cmdNorm -eq "A") {
+                        $selectedAiKeys = @($defs | ForEach-Object { [string]$_.key })
+                        continue
+                    }
+                    if ($cmdNorm -eq "N") {
+                        $selectedAiKeys = @()
+                        continue
+                    }
+
+                    $tokens = $cmd -split ","
+                    foreach ($token in $tokens) {
+                        $numRaw = $token.Trim()
+                        $num = 0
+                        if ([int]::TryParse($numRaw, [ref]$num)) {
+                            if ($num -ge 1 -and $num -le $defs.Count) {
+                                $key = [string]$defs[$num - 1].key
+                                if ($selectedAiKeys -contains $key) {
+                                    $selectedAiKeys = @($selectedAiKeys | Where-Object { $_ -ne $key })
+                                } else {
+                                    $selectedAiKeys += $key
+                                }
+                            }
+                        }
+                    }
+                    $selectedAiKeys = @($selectedAiKeys | Select-Object -Unique)
+                }
+
+                Set-AiSelectionFlagsFromKeys -SelectedKeys $selectedAiKeys
+                if ($selectedAiKeys.Count -gt 0) {
+                    $script:SkipAiSelectionPrompt = $true
+                }
+            }
+            "6" { $script:ClickSelectionEnabled = -not $script:ClickSelectionEnabled }
+            "7" { $script:SkipAiSelectionPrompt = -not $script:SkipAiSelectionPrompt }
+            "8" { return }
+            "9" { exit 0 }
+            default { Write-Host "Invalid choice. Try again." -ForegroundColor Yellow }
+        }
+    }
+}
+
+function Resolve-ExecutablePath {
+    param(
+        [string]$CommandName,
+        [string[]]$FallbackPaths = @()
+    )
+
+    try {
+        $cmd = Get-Command $CommandName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd) {
+            if ($cmd.Path) {
+                return [string]$cmd.Path
+            }
+            if ($cmd.Source) {
+                return [string]$cmd.Source
+            }
+        }
+    } catch {
+        # Continue to fallback path checks.
+    }
+
+    foreach ($candidate in $FallbackPaths) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return [string]$candidate
+        }
+    }
+
+    return ""
+}
+
+function Get-OptionalVideoToolStatus {
+    $mkvmergePath = Resolve-ExecutablePath -CommandName "mkvmerge" -FallbackPaths @(
+        (Join-Path $env:ProgramFiles "MKVToolNix\mkvmerge.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "MKVToolNix\mkvmerge.exe")
+    )
+    $handbrakePath = Resolve-ExecutablePath -CommandName "HandBrakeCLI" -FallbackPaths @(
+        (Join-Path $env:ProgramFiles "HandBrake\HandBrakeCLI.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "HandBrake\HandBrakeCLI.exe")
+    )
+    $makemkvPath = Resolve-ExecutablePath -CommandName "makemkvcon" -FallbackPaths @(
+        (Join-Path $env:ProgramFiles "MakeMKV\makemkvcon64.exe"),
+        (Join-Path $env:ProgramFiles "MakeMKV\makemkvcon.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "MakeMKV\makemkvcon64.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "MakeMKV\makemkvcon.exe")
+    )
+
+    return @{
+        mkvtoolnix = @{
+            found = [bool]$mkvmergePath
+            path = $mkvmergePath
+            command = "mkvmerge"
+            command_on_path = [bool](Test-CommandAvailable "mkvmerge")
+            display = "MKVToolNix (mkvmerge)"
+            winget_id = "MoritzBunkus.MKVToolNix"
+            choco_id = "mkvtoolnix"
+            scoop_id = "mkvtoolnix"
+        }
+        handbrake = @{
+            found = [bool]$handbrakePath
+            path = $handbrakePath
+            command = "HandBrakeCLI"
+            command_on_path = [bool](Test-CommandAvailable "HandBrakeCLI")
+            display = "HandBrakeCLI"
+            winget_id = "HandBrake.HandBrake"
+            choco_id = "handbrake"
+            scoop_id = "handbrake"
+        }
+        makemkv = @{
+            found = [bool]$makemkvPath
+            path = $makemkvPath
+            command = "makemkvcon"
+            command_on_path = [bool](Test-CommandAvailable "makemkvcon")
+            display = "MakeMKV (makemkvcon)"
+            winget_id = "GuinpinSoft.MakeMKV"
+            choco_id = "makemkv"
+            scoop_id = "makemkv"
+        }
+    }
+}
+
+function Install-WithWingetId {
+    param([string]$PackageId)
+    if (-not (Test-CommandAvailable "winget")) { return $false }
+    try {
+        $process = Start-Process winget -ArgumentList "install", "--id", $PackageId, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements" -Wait -NoNewWindow -PassThru
+        return ($process.ExitCode -eq 0 -or $process.ExitCode -eq 996)
+    } catch {
+        return $false
+    }
+}
+
+function Install-WithChocoPackage {
+    param([string]$PackageName)
+    if (-not (Test-CommandAvailable "choco")) { return $false }
+    try {
+        $process = Start-Process choco -ArgumentList "install", $PackageName, "-y" -Wait -NoNewWindow -PassThru
+        return ($process.ExitCode -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Install-WithScoopPackage {
+    param([string]$PackageName)
+    if (-not (Test-CommandAvailable "scoop")) { return $false }
+    try {
+        $process = Start-Process scoop -ArgumentList "install", $PackageName -Wait -NoNewWindow -PassThru
+        return ($process.ExitCode -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Install-OptionalSystemTool {
+    param(
+        [string]$DisplayName,
+        [string]$WingetId,
+        [string]$ChocoId,
+        [string]$ScoopId,
+        [string]$Method = "auto"
+    )
+
+    $attempted = @()
+    $usedMethod = ""
+    $success = $false
+    $methodsToTry = if ($Method -eq "auto") { @("winget", "choco", "scoop") } else { @($Method) }
+
+    foreach ($candidateMethod in $methodsToTry) {
+        if ($candidateMethod -eq "winget") {
+            if (-not $WingetId -or -not (Test-CommandAvailable "winget")) { continue }
+            $attempted += "winget"
+            Write-Host "Installing $DisplayName via winget..." -ForegroundColor Yellow
+            if (Install-WithWingetId -PackageId $WingetId) {
+                $success = $true
+                $usedMethod = "winget"
+                break
+            }
+        } elseif ($candidateMethod -eq "choco") {
+            if (-not $ChocoId -or -not (Test-CommandAvailable "choco")) { continue }
+            $attempted += "choco"
+            Write-Host "Installing $DisplayName via Chocolatey..." -ForegroundColor Yellow
+            if (Install-WithChocoPackage -PackageName $ChocoId) {
+                $success = $true
+                $usedMethod = "choco"
+                break
+            }
+        } elseif ($candidateMethod -eq "scoop") {
+            if (-not $ScoopId -or -not (Test-CommandAvailable "scoop")) { continue }
+            $attempted += "scoop"
+            Write-Host "Installing $DisplayName via Scoop..." -ForegroundColor Yellow
+            if (Install-WithScoopPackage -PackageName $ScoopId) {
+                $success = $true
+                $usedMethod = "scoop"
+                break
+            }
+        }
+    }
+
+    return @{
+        success = $success
+        install_method = $usedMethod
+        attempted = $attempted
+    }
+}
+
+function Get-AiBackendDefinitions {
+    return @(
+        @{ key = "openai-whisper"; display = "OpenAI Whisper (original)"; import = "whisper"; packages = @("torch", "openai-whisper", "pysubs2"); needs_vcredist = $true }
+        @{ key = "faster-whisper"; display = "faster-whisper"; import = "faster_whisper"; packages = @("faster-whisper", "pysubs2"); needs_vcredist = $true }
+        @{ key = "whisperx"; display = "WhisperX"; import = "whisperx"; packages = @("whisperx", "pysubs2"); needs_vcredist = $true }
+        @{ key = "stable-ts"; display = "stable-ts"; import = "stable_whisper"; packages = @("stable-ts", "pysubs2"); needs_vcredist = $true }
+        @{ key = "whisper-timestamped"; display = "whisper-timestamped"; import = "whisper_timestamped"; packages = @("whisper-timestamped", "pysubs2"); needs_vcredist = $true }
+        @{ key = "speechbrain"; display = "SpeechBrain"; import = "speechbrain"; packages = @("speechbrain", "soundfile", "pysubs2"); needs_vcredist = $true }
+        @{ key = "vosk"; display = "Vosk"; import = "vosk"; packages = @("vosk", "pysubs2"); needs_vcredist = $false }
+        @{ key = "aeneas"; display = "Aeneas"; import = "aeneas"; packages = @("aeneas", "pysubs2"); needs_vcredist = $false }
+    )
+}
+
+function Get-AiBackendSelectionFromFlags {
+    param([array]$Definitions)
+
+    $selected = New-Object System.Collections.Generic.List[string]
+    $hasFlags = $false
+
+    if ($InstallAiAll) {
+        foreach ($def in $Definitions) {
+            $selected.Add([string]$def.key)
+        }
+        return @{ has_flags = $true; selected = @($selected.ToArray() | Select-Object -Unique) }
+    }
+
+    $flagMap = @{
+        "openai-whisper" = [bool]$InstallAiOpenAIWhisper
+        "faster-whisper" = [bool]$InstallAiFasterWhisper
+        "whisperx" = [bool]$InstallAiWhisperX
+        "stable-ts" = [bool]$InstallAiStableTs
+        "whisper-timestamped" = [bool]$InstallAiWhisperTimestamped
+        "speechbrain" = [bool]$InstallAiSpeechBrain
+        "vosk" = [bool]$InstallAiVosk
+        "aeneas" = [bool]$InstallAiAeneas
+    }
+
+    foreach ($entry in $flagMap.GetEnumerator()) {
+        if ([bool]$entry.Value) {
+            $hasFlags = $true
+            $selected.Add([string]$entry.Key)
+        }
+    }
+
+    return @{ has_flags = $hasFlags; selected = @($selected.ToArray() | Select-Object -Unique) }
+}
+
+function Prompt-AiBackendSelections {
+    param([array]$Definitions)
+
+    if (Test-ClickSelectionAvailable) {
+        $defaultSelection = @("openai-whisper")
+        $mouseSelected = Select-DefinitionKeysWithMouse `
+            -Definitions $Definitions `
+            -PreselectedKeys $defaultSelection `
+            -Title "Select AI backends to install"
+
+        if ([bool]$mouseSelected.used_gui -and -not [bool]$mouseSelected.cancelled) {
+            return @($mouseSelected.selected)
+        }
+
+        if ([bool]$mouseSelected.cancelled) {
+            Write-Host "Selection window cancelled. Falling back to keyboard prompts." -ForegroundColor Yellow
+        }
+    }
+
+    $selected = New-Object System.Collections.Generic.List[string]
+    Write-Host ""
+    Write-Host "Select AI backends to install (each can be installed independently):" -ForegroundColor White
+
+    foreach ($def in $Definitions) {
+        $default = if ([string]$def.key -eq "openai-whisper") { "Y" } else { "N" }
+        $answer = Read-Host "  Install $($def.display)? [Y/N] (default: $default)"
+        if ([string]::IsNullOrWhiteSpace("$answer")) {
+            $answer = $default
+        }
+        if ("$answer" -match "^[Yy]") {
+            $selected.Add([string]$def.key)
+        }
+    }
+
+    return @($selected.ToArray() | Select-Object -Unique)
+}
+
+function Get-InstalledAiBackends {
+    param(
+        [string]$PythonExe,
+        [array]$Definitions
+    )
+
+    $installed = @()
+    foreach ($def in $Definitions) {
+        $importName = [string]$def.import
+        $probeCode = "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$importName') is not None else 1)"
+        & $PythonExe -c $probeCode 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $installed += [string]$def.key
+        }
+    }
+    return @($installed | Select-Object -Unique)
+}
+
+function Install-AiBackends {
+    param(
+        [string]$PythonExe,
+        [array]$Definitions,
+        [string[]]$SelectedBackends
+    )
+
+    $selectedSet = @{}
+    foreach ($k in $SelectedBackends) {
+        $selectedSet[[string]$k] = $true
+    }
+
+    $selectedDefs = @($Definitions | Where-Object { $selectedSet.ContainsKey([string]$_.key) })
+    if ($selectedDefs.Count -eq 0) {
+        return @{ installed = @(); failed = @(); attempted_packages = @() }
+    }
+
+    $packageInstallOrder = New-Object System.Collections.Generic.List[string]
+    foreach ($def in $selectedDefs) {
+        foreach ($pkg in [array]$def.packages) {
+            if (-not $packageInstallOrder.Contains([string]$pkg)) {
+                $packageInstallOrder.Add([string]$pkg)
+            }
+        }
+    }
+
+    Write-Host "Installing selected AI backend packages..." -ForegroundColor White
+    foreach ($pkg in $packageInstallOrder) {
+        Write-Host "  Installing $pkg..." -NoNewline -ForegroundColor Gray
+        $pkgExit = Invoke-PipInstall -PythonExe $PythonExe -Packages @($pkg)
+        if ($pkgExit -eq 0) {
+            Write-Host " [ " -NoNewline -ForegroundColor White
+            Write-Host "done" -NoNewline -ForegroundColor Green
+            Write-Host " ]" -ForegroundColor White
+        } else {
+            Write-Host " failed" -ForegroundColor Yellow
+        }
+    }
+
+    $installedBackends = @()
+    $failedBackends = @()
+    foreach ($def in $selectedDefs) {
+        $importName = [string]$def.import
+        $checkCode = "import warnings,importlib,sys; warnings.filterwarnings('ignore'); importlib.import_module('$importName'); print('ok')"
+        $probe = & $PythonExe -c $checkCode 2>$null
+        if ($LASTEXITCODE -eq 0 -and $probe -match "ok") {
+            $installedBackends += [string]$def.key
+        } else {
+            $failedBackends += [string]$def.key
+        }
+    }
+
+    return @{
+        installed = @($installedBackends | Select-Object -Unique)
+        failed = @($failedBackends | Select-Object -Unique)
+        attempted_packages = @($packageInstallOrder.ToArray())
+    }
+}
+
+function Ensure-SpeechBrainAudioSupport {
+    param([string]$PythonExe)
+
+    Write-Host "Ensuring SpeechBrain audio backend dependencies (soundfile)..." -ForegroundColor White
+    Invoke-PipInstall -PythonExe $PythonExe -Packages @("soundfile") -Upgrade | Out-Null
+
+    $verifyCode = @"
+import sys
+import warnings
+
+warnings.filterwarnings("ignore", message=".*SpeechBrain could not find any working torchaudio backend.*")
+warnings.filterwarnings("ignore", module="speechbrain.utils.torch_audio_backend")
+
+ok = True
+
+try:
+    import soundfile as sf
+    _ = sf.available_formats()
+except Exception as exc:
+    print(f"SOUNDFILE_ERROR: {exc}")
+    ok = False
+
+try:
+    from speechbrain.dataio import audio_io  # noqa: F401
+except Exception as exc:
+    print(f"SPEECHBRAIN_AUDIO_IO_ERROR: {exc}")
+    ok = False
+
+sys.exit(0 if ok else 1)
+"@
+
+    $probe = & $PythonExe -c $verifyCode 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-StatusOK "SpeechBrain audio backend (soundfile)"
+        return $true
+    }
+
+    Write-Host "SpeechBrain installed, but soundfile-based audio loading is not fully ready." -ForegroundColor Yellow
+    foreach ($line in $probe) {
+        if ($line) {
+            Write-Host "  $line" -ForegroundColor DarkYellow
+        }
+    }
+    return $false
 }
 
 function Test-VCRedist {
@@ -660,6 +1874,112 @@ function Repair-TorchInVenv {
     return ($LASTEXITCODE -eq 0)
 }
 
+# ---------------------------------------------------------------------------
+# UV - fast Python package installer (https://github.com/astral-sh/uv)
+# Install-UV:   downloads and installs UV if not already present; returns
+#               the path to the uv executable, or "" on failure.
+# Invoke-PipInstall: wraps uv/pip installs so the rest of the script
+#               doesn't care which backend is in use.
+# ---------------------------------------------------------------------------
+function Install-UV {
+    # Step 1: already on PATH
+    $uvCmd = Get-Command "uv" -ErrorAction SilentlyContinue
+    if ($uvCmd) { return $uvCmd.Source }
+
+    # Step 2: not on PATH yet but binary exists at standard install locations
+    $candidates = @(
+        (Join-Path $env:USERPROFILE ".local\bin\uv.exe"),
+        (Join-Path $env:USERPROFILE ".cargo\bin\uv.exe")
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
+            Refresh-ProcessPathFromRegistry
+            return $c
+        }
+    }
+
+    # Step 3: download and run the official PowerShell installer
+    try {
+        $installScript = Invoke-RestMethod "https://astral.sh/uv/install.ps1" `
+            -UseBasicParsing -TimeoutSec 60
+        # Redirect all streams so UV's own installer messages don't clutter output
+        & ([scriptblock]::Create($installScript)) *>&1 | Out-Null
+        Refresh-ProcessPathFromRegistry
+    } catch {
+        return ""
+    }
+
+    # Step 4: re-check after install
+    $uvCmd = Get-Command "uv" -ErrorAction SilentlyContinue
+    if ($uvCmd) { return $uvCmd.Source }
+
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
+            Refresh-ProcessPathFromRegistry
+            return $c
+        }
+    }
+
+    return ""
+}
+
+# Invoke-PipInstall: install packages via uv (preferred) or pip (fallback).
+# When $script:QuietOutput is true, all install noise is suppressed.
+function Invoke-PipInstall {
+    param(
+        [string]$PythonExe,
+        [string[]]$Packages = @(),
+        [string]$RequirementsFile = "",
+        [switch]$Upgrade,
+        [string[]]$ExtraArgs = @()
+    )
+
+    $pkgArgs = @()
+    if ($Upgrade) { $pkgArgs += "--upgrade" }
+    $pkgArgs += $ExtraArgs
+    if ($RequirementsFile) {
+        $pkgArgs += "-r", $RequirementsFile
+    } else {
+        $pkgArgs += $Packages
+    }
+
+    $showOutput = -not $script:QuietOutput
+
+    if ($script:UvExe -and (Test-Path $script:UvExe)) {
+        $cmdArgs = @("pip", "install", "--python", $PythonExe) + $pkgArgs
+        if ($showOutput) {
+            $firstLine = $true
+            & $script:UvExe @cmdArgs 2>&1 | ForEach-Object {
+                $lineStr = [string]$_
+                if ($lineStr -match "Resolved|Prepared|Installed|Audited|Downloading|warning:|error") {
+                    if ($firstLine) { Write-Host ""; $firstLine = $false }
+                    Write-Host "    $lineStr" -ForegroundColor DarkGray
+                }
+            }
+        } else {
+            & $script:UvExe @cmdArgs *>&1 | Out-Null
+        }
+    } else {
+        $pipArgs = @("-m", "pip", "install") + $pkgArgs
+        if ($showOutput) {
+            $firstLine = $true
+            & $PythonExe @pipArgs 2>&1 | ForEach-Object {
+                $lineStr = [string]$_
+                if ($lineStr -match "Successfully installed|Requirement already satisfied|Collecting|Downloading|ERROR:") {
+                    if ($firstLine) { Write-Host ""; $firstLine = $false }
+                    Write-Host "    $lineStr" -ForegroundColor DarkGray
+                }
+            }
+        } else {
+            & $PythonExe @pipArgs 2>&1 | Out-Null
+        }
+    }
+
+    return $LASTEXITCODE
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $requirementsPath = Join-Path $scriptDir "requirements.txt"
 $requirementsAIPath = Join-Path $scriptDir "requirements_ai.txt"
@@ -713,14 +2033,22 @@ if ($UninstallAI) {
     if (-not (Test-Path $venvPy)) {
         Write-Host "No virtual environment found at $venvPath. Nothing to uninstall." -ForegroundColor Yellow
     } else {
-        $aiPackages = @("torch", "torchvision", "torchaudio", "openai-whisper", "whisper", "pysubs2", "cinemagoer", "imdbpy")
+        $aiPackages = @(
+            "torch", "torchvision", "torchaudio",
+            "openai-whisper", "whisper", "pysubs2",
+            "faster-whisper", "whisperx", "stable-ts", "whisper-timestamped",
+            "speechbrain", "vosk", "aeneas",
+            "cinemagoer", "imdbpy"
+        )
 
         Write-Host "Uninstalling AI packages from venv..." -ForegroundColor White
         foreach ($pkg in $aiPackages) {
             Write-Host "  Removing $pkg..." -NoNewline -ForegroundColor Gray
             $result = & $venvPy -m pip uninstall -y $pkg 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Host " done" -ForegroundColor Green
+                Write-Host " [ " -NoNewline -ForegroundColor White
+                Write-Host "done" -NoNewline -ForegroundColor Green
+                Write-Host " ]" -ForegroundColor White
             } else {
                 # pip exits non-zero when the package isn't installed - that's fine.
                 Write-Host " (not installed, skipping)" -ForegroundColor DarkGray
@@ -730,7 +2058,9 @@ if ($UninstallAI) {
         # Also remove stale torch-related packages that may linger after uninstall
         Write-Host "  Cleaning up torch dependencies..." -NoNewline -ForegroundColor Gray
         & $venvPy -m pip uninstall -y filelock sympy networkx jinja2-markupsafe 2>&1 | Out-Null
-        Write-Host " done" -ForegroundColor Green
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "done" -NoNewline -ForegroundColor Green
+        Write-Host " ]" -ForegroundColor White
 
         Write-StatusOK "AI packages removed from venv"
     }
@@ -841,6 +2171,9 @@ if ($Uninstall) {
     $mPython   = if ($hasMfst) { Get-MfstProp $m "python"   } else { $null }
     $mVCRedist = if ($hasMfst) { Get-MfstProp $m "vcredist" } else { $null }
     $mFfmpeg   = if ($hasMfst) { Get-MfstProp $m "ffmpeg"   } else { $null }
+    $mMkvtoolnix = if ($hasMfst) { Get-MfstProp $m "mkvtoolnix" } else { $null }
+    $mHandBrake = if ($hasMfst) { Get-MfstProp $m "handbrake" } else { $null }
+    $mMakeMKV = if ($hasMfst) { Get-MfstProp $m "makemkv" } else { $null }
 
     $pyPreExisted  = if ($mPython)   { [bool](Get-MfstProp $mPython   "pre_existed" $true) } else { $true }
     $pyMethod      = if ($mPython)   { [string](Get-MfstProp $mPython   "install_method" "") } else { "" }
@@ -848,6 +2181,12 @@ if ($Uninstall) {
     $vcMethod      = if ($mVCRedist) { [string](Get-MfstProp $mVCRedist "install_method" "") } else { "" }
     $ffPreExisted  = if ($mFfmpeg)   { [bool](Get-MfstProp $mFfmpeg   "pre_existed" $true) } else { $true }
     $ffMethod      = if ($mFfmpeg)   { [string](Get-MfstProp $mFfmpeg   "install_method" "") } else { "" }
+    $mkvPreExisted = if ($mMkvtoolnix) { [bool](Get-MfstProp $mMkvtoolnix "pre_existed" $true) } else { $true }
+    $mkvMethod = if ($mMkvtoolnix) { [string](Get-MfstProp $mMkvtoolnix "install_method" "") } else { "" }
+    $hbPreExisted = if ($mHandBrake) { [bool](Get-MfstProp $mHandBrake "pre_existed" $true) } else { $true }
+    $hbMethod = if ($mHandBrake) { [string](Get-MfstProp $mHandBrake "install_method" "") } else { "" }
+    $mmPreExisted = if ($mMakeMKV) { [bool](Get-MfstProp $mMakeMKV "pre_existed" $true) } else { $true }
+    $mmMethod = if ($mMakeMKV) { [string](Get-MfstProp $mMakeMKV "install_method" "") } else { "" }
 
     # Show summary of what will happen
     Write-Host "The following will always be removed:" -ForegroundColor White
@@ -878,6 +2217,21 @@ if ($Uninstall) {
             Write-Host "  - VC++ Redist    will be uninstalled via $vcMethod" -ForegroundColor Cyan
         } else {
             Write-Host "  - VC++ Redist    was already installed before this script - will NOT be touched" -ForegroundColor Gray
+        }
+        if (-not $mkvPreExisted -and $mkvMethod) {
+            Write-Host "  - MKVToolNix     will be uninstalled via $mkvMethod" -ForegroundColor Cyan
+        } else {
+            Write-Host "  - MKVToolNix     was already installed before this script - will NOT be touched" -ForegroundColor Gray
+        }
+        if (-not $hbPreExisted -and $hbMethod) {
+            Write-Host "  - HandBrakeCLI   will be uninstalled via $hbMethod" -ForegroundColor Cyan
+        } else {
+            Write-Host "  - HandBrakeCLI   was already installed before this script - will NOT be touched" -ForegroundColor Gray
+        }
+        if (-not $mmPreExisted -and $mmMethod) {
+            Write-Host "  - MakeMKV        will be uninstalled via $mmMethod" -ForegroundColor Cyan
+        } else {
+            Write-Host "  - MakeMKV        was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
     }
 
@@ -1046,6 +2400,75 @@ if ($Uninstall) {
             }
         }
 
+        # --- MKVToolNix ---
+        if (-not $mkvPreExisted -and $mkvMethod) {
+            Write-Host ""
+            Write-Host "Uninstalling MKVToolNix via $mkvMethod..." -ForegroundColor White
+            switch ($mkvMethod) {
+                "winget" {
+                    winget uninstall --id MoritzBunkus.MKVToolNix --silent 2>&1 | Out-Null
+                    Write-Host "  MKVToolNix uninstall attempted." -ForegroundColor Green
+                }
+                "choco" {
+                    choco uninstall mkvtoolnix -y 2>&1 | Out-Null
+                    Write-Host "  MKVToolNix uninstalled via Chocolatey." -ForegroundColor Green
+                }
+                "scoop" {
+                    scoop uninstall mkvtoolnix 2>&1 | Out-Null
+                    Write-Host "  MKVToolNix uninstalled via Scoop." -ForegroundColor Green
+                }
+                default {
+                    Write-Host "  Install method '$mkvMethod' - please remove MKVToolNix manually." -ForegroundColor Yellow
+                }
+            }
+        }
+
+        # --- HandBrake ---
+        if (-not $hbPreExisted -and $hbMethod) {
+            Write-Host ""
+            Write-Host "Uninstalling HandBrake via $hbMethod..." -ForegroundColor White
+            switch ($hbMethod) {
+                "winget" {
+                    winget uninstall --id HandBrake.HandBrake --silent 2>&1 | Out-Null
+                    Write-Host "  HandBrake uninstall attempted." -ForegroundColor Green
+                }
+                "choco" {
+                    choco uninstall handbrake -y 2>&1 | Out-Null
+                    Write-Host "  HandBrake uninstalled via Chocolatey." -ForegroundColor Green
+                }
+                "scoop" {
+                    scoop uninstall handbrake 2>&1 | Out-Null
+                    Write-Host "  HandBrake uninstalled via Scoop." -ForegroundColor Green
+                }
+                default {
+                    Write-Host "  Install method '$hbMethod' - please remove HandBrake manually." -ForegroundColor Yellow
+                }
+            }
+        }
+
+        # --- MakeMKV ---
+        if (-not $mmPreExisted -and $mmMethod) {
+            Write-Host ""
+            Write-Host "Uninstalling MakeMKV via $mmMethod..." -ForegroundColor White
+            switch ($mmMethod) {
+                "winget" {
+                    winget uninstall --id GuinpinSoft.MakeMKV --silent 2>&1 | Out-Null
+                    Write-Host "  MakeMKV uninstall attempted." -ForegroundColor Green
+                }
+                "choco" {
+                    choco uninstall makemkv -y 2>&1 | Out-Null
+                    Write-Host "  MakeMKV uninstalled via Chocolatey." -ForegroundColor Green
+                }
+                "scoop" {
+                    scoop uninstall makemkv 2>&1 | Out-Null
+                    Write-Host "  MakeMKV uninstalled via Scoop." -ForegroundColor Green
+                }
+                default {
+                    Write-Host "  Install method '$mmMethod' - please remove MakeMKV manually." -ForegroundColor Yellow
+                }
+            }
+        }
+
         # 6. Delete the manifest itself (clean slate for future installs)
         if (Test-Path $manifestPath) {
             Remove-Item $manifestPath -Force -ErrorAction SilentlyContinue
@@ -1090,6 +2513,8 @@ if ($scriptDrive -ne $systemDrive) {
 Write-Host "=== Subtitle Tool Installation ==="
 Write-Host ""
 
+Show-InteractiveInstallerMenu
+
 # Ensure we have a package manager
 Ensure-PackageManager
 
@@ -1103,6 +2528,12 @@ $script:VCRedistPreExisted   = $true
 $script:VCRedistInstallUsed  = ""
 $script:FfmpegPreExisted  = $true
 $script:FfmpegInstallUsed = ""
+$script:MkvtoolnixPreExisted = $true
+$script:MkvtoolnixInstallUsed = ""
+$script:HandBrakePreExisted = $true
+$script:HandBrakeInstallUsed = ""
+$script:MakeMKVPreExisted = $true
+$script:MakeMKVInstallUsed = ""
 
 Write-Host "Checking Python installation" -NoNewline -ForegroundColor White
 $pythonCmd = Find-PythonCommand
@@ -1204,276 +2635,157 @@ if ($LASTEXITCODE -ne 0 -or $venvVersion -notmatch '^3\.(10|11|12)$') {
 Write-Host "Using virtual environment Python: $venvPythonCmd" -ForegroundColor Cyan
 Write-Host "Using Python version: $venvVersion" -ForegroundColor Cyan
 
-Write-Host "Upgrading pip/setuptools/wheel..." -ForegroundColor White
-& $venvPythonCmd -m pip install --upgrade pip setuptools wheel 2>&1 | ForEach-Object { 
-    if ($_ -match "Successfully installed|Requirement already satisfied|Collecting") {
-        Write-Host "  $_" -ForegroundColor Gray
-    }
+# Bootstrap UV for faster, more reliable package installs
+Write-Host "Setting up UV package manager" -NoNewline -ForegroundColor White
+Write-Host "..." -NoNewline -ForegroundColor White
+$script:UvExe = Install-UV
+if ($script:UvExe) {
+    Write-Host " [ " -NoNewline -ForegroundColor White
+    Write-Host "OK" -NoNewline -ForegroundColor Green
+    Write-Host " ]" -ForegroundColor White
+    Write-Host "  UV: $($script:UvExe)" -ForegroundColor DarkGray
+} else {
+    Write-Host " [ " -NoNewline -ForegroundColor White
+    Write-Host "SKIP" -NoNewline -ForegroundColor Yellow
+    Write-Host " ] (UV unavailable, falling back to pip)" -ForegroundColor White
 }
-if ($LASTEXITCODE -ne 0) {
+
+Write-Host "Upgrading pip/setuptools/wheel" -NoNewline -ForegroundColor White
+$_pipUpgradeExit = Invoke-PipInstall -PythonExe $venvPythonCmd -Packages @("pip", "setuptools", "wheel") -Upgrade
+if ($_pipUpgradeExit -ne 0) {
+    Write-Host "" # end NoNewline if output was quiet
     Write-StatusFail "pip upgrade"
     throw "Failed to upgrade pip"
 }
-Write-StatusOK "pip/setuptools/wheel upgraded"
+Write-Host " [ " -NoNewline -ForegroundColor White
+Write-Host "OK" -NoNewline -ForegroundColor Green
+Write-Host " ]" -ForegroundColor White
 
 if (-not (Test-Path $requirementsPath)) {
     throw "requirements.txt not found at $requirementsPath"
 }
 
-Write-Host "Installing Python dependencies..." -ForegroundColor White
-& $venvPythonCmd -m pip install -r "$requirementsPath" 2>&1 | ForEach-Object { 
-    if ($_ -match "Successfully installed|Requirement already satisfied|Collecting") {
-        Write-Host "  $_" -ForegroundColor Gray
-    }
-}
-if ($LASTEXITCODE -ne 0) {
+Write-Host "Installing Python dependencies" -NoNewline -ForegroundColor White
+$_depsExit = Invoke-PipInstall -PythonExe $venvPythonCmd -RequirementsFile $requirementsPath
+if ($_depsExit -ne 0) {
+    Write-Host "" # end NoNewline if output was quiet
     Write-StatusFail "Python dependencies"
     throw "Failed to install Python dependencies"
 }
-Write-StatusOK "Core dependencies installed"
+Write-Host " [ " -NoNewline -ForegroundColor White
+Write-Host "OK" -NoNewline -ForegroundColor Green
+Write-Host " ]" -ForegroundColor White
 
-$installAI = $null
+$aiDefinitions = Get-AiBackendDefinitions
+$script:InstalledAiBackends = @()
+$script:FailedAiBackends = @()
+$script:InstalledOptionalAiBackends = @()
+$script:FailedOptionalAiBackends = @()
+
 $aiSettingOverride = $null
-$showSkipAiMessage = $true
 
-# Check if AI libraries are already installed AND working
 Write-Host ""
-Write-Host "Checking for AI libraries..." -NoNewline -ForegroundColor White
-$previousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "SilentlyContinue"
-
-# First try to import torch to verify it works (torch is required for whisper)
-$torchCheckResult = & $venvPythonCmd -c "import torch; print('ok')" 2>$null
-$torchWorks = ($torchCheckResult -match "ok")
-
-# Only mark AI as installed if torch actually works
-if ($torchWorks) {
-    $whisperCheckResult = & $venvPythonCmd -c "import whisper; print('installed')" 2>$null
-    $aiAlreadyInstalled = ($whisperCheckResult -match "installed")
-} else {
-    $aiAlreadyInstalled = $false
-}
-$ErrorActionPreference = $previousErrorActionPreference
-
-if ($aiAlreadyInstalled) {
+Write-Host "Checking for installed AI backends..." -NoNewline -ForegroundColor White
+$existingAiBackends = Get-InstalledAiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions
+if ($existingAiBackends.Count -gt 0) {
     Write-Host " [ " -NoNewline -ForegroundColor White
-    Write-Host "ALREADY INSTALLED" -NoNewline -ForegroundColor Green
-    Write-Host " ]" -ForegroundColor White
-    $showSkipAiMessage = $false
+    Write-Host "FOUND" -NoNewline -ForegroundColor Green
+    Write-Host " ] $($existingAiBackends -join ', ')" -ForegroundColor White
+    $script:InstalledAiBackends = @($existingAiBackends)
+    $script:InstalledOptionalAiBackends = @($existingAiBackends | Where-Object { $_ -ne "openai-whisper" })
 } else {
-    Write-Host " NOT FOUND" -ForegroundColor Yellow
-    
-    # Check and install VC++ if needed (before prompting about AI)
-    Write-Host "Checking Visual C++ Redistributable..." -NoNewline -ForegroundColor White
-    if (-not (Test-VCRedist)) {
-        $script:VCRedistPreExisted = $false
-        # Record which package manager will be used for VC++ so uninstall can reverse it
-        if (Test-CommandAvailable "winget") {
-            $script:VCRedistInstallUsed = "winget"
-        } elseif (Test-CommandAvailable "choco") {
-            $script:VCRedistInstallUsed = "choco"
-        } else {
-            $script:VCRedistInstallUsed = "manual"
-        }
-        Write-Host " NOT FOUND" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "PyTorch (required for AI features) needs Visual C++ Redistributable." -ForegroundColor Yellow
-        Write-Host "Installing VC++ Redistributable..." -ForegroundColor White
-        $vcInstalled = Install-VCRedist
-        if (-not $vcInstalled) {
-            Write-Host ""
-            Write-Host "WARNING: VC++ Redistributable installation failed." -ForegroundColor Red
-            Write-Host "AI features will not be available. Install manually from:" -ForegroundColor Yellow
-            Write-Host "https://aka.ms/vs/17/release/vc_redist.x64.exe" -ForegroundColor Cyan
-            Write-Host ""
-            $aiSettingOverride = $false
-            $installAI = "N"  # Skip AI installation prompt since VC++ failed
-        } else {
-            Write-StatusOK "Visual C++ Redistributable installed"
-        }
-    } else {
-        Write-Host " [ " -NoNewline -ForegroundColor White
-        Write-Host "OK" -NoNewline -ForegroundColor Green
-        Write-Host " ]" -ForegroundColor White
-    }
-    
-    # Only prompt for AI installation if whisper not installed and VC++ is available
-    if ($installAI -ne "N") {
-        Write-Host ""
-        Write-Host "=== AI Subtitle Generation (Optional) ===" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "Whisper AI can automatically generate subtitles from video audio." -ForegroundColor White
-        Write-Host "This feature is completely optional and requires significant disk space:" -ForegroundColor White
-        Write-Host "  - Base installation: ~3-4GB (PyTorch + dependencies)" -ForegroundColor White
-        Write-Host "  - Models download on first use: 72MB (tiny) to 2.9GB (large-v3)" -ForegroundColor White
-        Write-Host "  - Total disk space needed: Up to ~10GB with all models" -ForegroundColor White
-        Write-Host ""
-        Write-Host "Install AI libraries? (openai-whisper, pysubs2, PyTorch)" -ForegroundColor Yellow
-        Write-Host "  [Y] Yes (enables AI subtitle generation)" -ForegroundColor White
-        Write-Host "  [N] No  (skip AI features, saves disk space)" -ForegroundColor White
-        Write-Host ""
-        $installAI = Read-Host "Your choice [Y/N]"
-        if ($installAI -notmatch "^[Yy]") {
-            $aiSettingOverride = $false
-        }
+    Write-Host " [ " -NoNewline -ForegroundColor White
+    Write-Host "NONE" -NoNewline -ForegroundColor Yellow
+    Write-Host " ]" -ForegroundColor White
+}
+
+$selectionFromFlags = Get-AiBackendSelectionFromFlags -Definitions $aiDefinitions
+$selectedAiBackends = @()
+if ([bool]$selectionFromFlags.has_flags) {
+    $selectedAiBackends = @($selectionFromFlags.selected)
+    if ($selectedAiBackends.Count -gt 0) {
+        Write-Host "AI backend selection from flags: $($selectedAiBackends -join ', ')" -ForegroundColor Cyan
     }
 }
 
-if ($installAI -match "^[Yy]") {
-    if (-not (Test-Path $requirementsAIPath)) {
-        Write-Host "Warning: requirements_ai.txt not found. Skipping AI installation." -ForegroundColor Yellow
-        $aiSettingOverride = $false
-    } else {
-        Write-Host "Installing AI libraries (PyTorch, Whisper, pysubs2)..." -ForegroundColor White
-        Write-Host "This will take several minutes. Package installation progress:" -ForegroundColor Yellow
-        Write-Host ""
-        
-        & $venvPythonCmd -m pip install -r "$requirementsAIPath" 2>&1 | ForEach-Object { 
-            if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
-                Write-Host "  $_" -ForegroundColor Gray
-            }
-        }
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-StatusFail "AI libraries installation"
-            Write-Host ""
-            Write-Host "Warning: AI libraries failed to install. The tool will work without AI features." -ForegroundColor Yellow
-            Write-Host "Common issues:" -ForegroundColor Yellow
-            Write-Host "  - Missing Visual C++ Redistributable" -ForegroundColor Yellow
-            Write-Host "  - Insufficient disk space (~10GB needed)" -ForegroundColor Yellow
-            Write-Host "  - Network/download issues" -ForegroundColor Yellow
-            $aiSettingOverride = $false
-        } else {
-            Write-Host ""
-            Write-StatusOK "AI libraries installed"
-            Write-Host ""
-            
-            # Verify PyTorch installation
-            Write-Host "Verifying PyTorch (AI backend)..." -NoNewline -ForegroundColor White
-            $previousErrorActionPreference = $ErrorActionPreference
-            $ErrorActionPreference = "SilentlyContinue"
-            $torchTest = & $venvPythonCmd -c "import torch; print(torch.__version__)" 2>&1
-            $ErrorActionPreference = $previousErrorActionPreference
-            $torchExitCode = $LASTEXITCODE
-            
-            if ($torchExitCode -ne 0) {
-                Write-StatusFail "PyTorch"
-                Write-Host ""
-                Write-Host "ERROR: PyTorch import failed." -ForegroundColor Red
-                Write-Host "Error details:" -ForegroundColor Yellow
-                Write-Host $torchTest -ForegroundColor Red
-                Write-Host ""
-                
-                # Check if it's a DLL error
-                if ($torchTest -match "c10\.dll|torch\.dll|DLL initialization") {
-                    Write-Host "This is a Visual C++ Redistributable issue." -ForegroundColor Yellow
-                    Write-Host ""
-                    Write-Host "Attempting to fix by reinstalling VC++ Redistributable..." -ForegroundColor Yellow
-                    $vcFixed = Install-VCRedist
-                    
-                    if ($vcFixed) {
-                        Write-Host ""
-                        Write-Host "VC++ Redistributable reinstalled. Testing PyTorch again..." -NoNewline -ForegroundColor Yellow
-                        Start-Sleep -Seconds 2
-                        $torchRetry = & $venvPythonCmd -c "import torch; print(torch.__version__)" 2>&1
-                        if ($LASTEXITCODE -eq 0) {
-                            Write-Host " SUCCESS!" -ForegroundColor Green
-                            Write-StatusOK "PyTorch verified ($torchRetry)"
-                        } else {
-                            Write-Host " FAILED" -ForegroundColor Red
-                            Write-Host "VC++ reinstall alone did not fix PyTorch. Trying fresh CPU PyTorch install..." -ForegroundColor Yellow
+if ($selectedAiBackends.Count -eq 0 -and $existingAiBackends.Count -eq 0 -and -not $SkipAiSelectionPrompt) {
+    Write-Host ""
+    Write-Host "=== AI Backend Selection ===" -ForegroundColor Cyan
+    Write-Host "Install only the AI backends you want. The original Whisper backend is available as 'OpenAI Whisper (original)'." -ForegroundColor White
+    $selectedAiBackends = Prompt-AiBackendSelections -Definitions $aiDefinitions
+}
 
-                            $torchRepair = Repair-TorchInVenv -PythonExe $venvPythonCmd
-                            if ($torchRepair) {
-                                $torchRetry2 = & $venvPythonCmd -c "import torch; print(torch.__version__)" 2>&1
-                                if ($LASTEXITCODE -eq 0) {
-                                    Write-StatusOK "PyTorch repaired and verified ($torchRetry2)"
-                                } else {
-                                    Write-Host "PyTorch still fails after repair. A reboot may be required for VC++ runtime changes." -ForegroundColor Yellow
-                                    $aiSettingOverride = $false
-                                }
-                            } else {
-                                Write-Host "PyTorch CPU reinstall failed." -ForegroundColor Red
-                                Write-Host "You may need to restart your computer for VC++ changes to take effect." -ForegroundColor Yellow
-                                $aiSettingOverride = $false
-                            }
-                        }
-                    } else {
-                        Write-Host "Failed to install VC++ Redistributable." -ForegroundColor Red
-                        Write-Host "Trying fresh CPU PyTorch install anyway..." -ForegroundColor Yellow
+if ($selectedAiBackends.Count -gt 0) {
+    $selectedSet = @{}
+    foreach ($k in $selectedAiBackends) { $selectedSet[[string]$k] = $true }
+    $selectedDefs = @($aiDefinitions | Where-Object { $selectedSet.ContainsKey([string]$_.key) })
 
-                        $torchRepair = Repair-TorchInVenv -PythonExe $venvPythonCmd
-                        if ($torchRepair) {
-                            $torchRetry3 = & $venvPythonCmd -c "import torch; print(torch.__version__)" 2>&1
-                            if ($LASTEXITCODE -eq 0) {
-                                Write-StatusOK "PyTorch repaired and verified ($torchRetry3)"
-                            } else {
-                                Write-Host "PyTorch still fails after repair." -ForegroundColor Red
-                                Write-Host "You may need to restart your computer or install VC++ manually." -ForegroundColor Yellow
-                                $aiSettingOverride = $false
-                            }
-                        } else {
-                            Write-Host "PyTorch CPU reinstall failed." -ForegroundColor Red
-                            Write-Host "You may need to restart your computer or install manually." -ForegroundColor Yellow
-                            $aiSettingOverride = $false
-                        }
-                    }
-                } else {
-                    Write-Host "Common fixes:" -ForegroundColor Yellow
-                    Write-Host "  1. Delete the venv folder and re-run this installer" -ForegroundColor White
-                    Write-Host "  2. Ensure you have ~10GB of free disk space" -ForegroundColor White
-                    Write-Host "  3. Check your internet connection" -ForegroundColor White
-                    $aiSettingOverride = $false
-                }
-            } else {
-                Write-Host " [ " -NoNewline -ForegroundColor White
-                Write-Host "OK" -NoNewline -ForegroundColor Green
-                Write-Host " ] v$torchTest" -ForegroundColor White
-                
-                # Verify Whisper installation
-                Write-Host "Verifying Whisper AI..." -NoNewline -ForegroundColor White
-                $whisperTest = & $venvPythonCmd -c "import whisper; print(whisper.__version__ if hasattr(whisper, '__version__') else 'installed')" 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-StatusFail "Whisper"
-                    Write-Host ""
-                    Write-Host "Warning: Whisper import failed. AI features will be disabled." -ForegroundColor Yellow
-                    Write-Host "Error: $whisperTest" -ForegroundColor Red
-                    $aiSettingOverride = $false
-                } else {
-                    Write-Host " [ " -NoNewline -ForegroundColor White
-                    Write-Host "OK" -NoNewline -ForegroundColor Green
-                    Write-Host " ] $whisperTest" -ForegroundColor White
-                    
-                    # Verify pysubs2
-                    Write-Host "Verifying pysubs2..." -NoNewline -ForegroundColor White
-                    $pysubs2Test = & $venvPythonCmd -c "import pysubs2; print(pysubs2.VERSION if hasattr(pysubs2, 'VERSION') else 'installed')" 2>&1
-                    if ($LASTEXITCODE -ne 0) {
-                        Write-StatusFail "pysubs2"
-                        Write-Host ""
-                        Write-Host "Warning: pysubs2 import failed." -ForegroundColor Yellow
-                    } else {
-                        Write-Host " [ " -NoNewline -ForegroundColor White
-                        Write-Host "OK" -NoNewline -ForegroundColor Green
-                        Write-Host " ] $pysubs2Test" -ForegroundColor White
-                    }
-
-                    # AI install and verification succeeded.
-                    $aiSettingOverride = $true
-                }
-            }
+    $requiresVc = $false
+    foreach ($def in $selectedDefs) {
+        if ([bool]$def.needs_vcredist) {
+            $requiresVc = $true
+            break
         }
     }
+
+    if ($requiresVc) {
+        Write-Host "Checking Visual C++ Redistributable..." -NoNewline -ForegroundColor White
+        if (-not (Test-VCRedist)) {
+            $script:VCRedistPreExisted = $false
+            if (Test-CommandAvailable "winget") {
+                $script:VCRedistInstallUsed = "winget"
+            } elseif (Test-CommandAvailable "choco") {
+                $script:VCRedistInstallUsed = "choco"
+            } else {
+                $script:VCRedistInstallUsed = "manual"
+            }
+            Write-Host " NOT FOUND" -ForegroundColor Yellow
+            Write-Host "Installing VC++ Redistributable for selected AI backends..." -ForegroundColor White
+            $vcInstalled = Install-VCRedist
+            if (-not $vcInstalled) {
+                Write-Host "WARNING: VC++ install failed. Torch-based backends may fail to install." -ForegroundColor Yellow
+            } else {
+                Write-StatusOK "Visual C++ Redistributable installed"
+            }
+        } else {
+            Write-Host " [ " -NoNewline -ForegroundColor White
+            Write-Host "OK" -NoNewline -ForegroundColor Green
+            Write-Host " ]" -ForegroundColor White
+        }
+    }
+
+    $aiInstallResult = Install-AiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions -SelectedBackends $selectedAiBackends
+    $script:InstalledAiBackends = @($aiInstallResult.installed)
+    $script:FailedAiBackends = @($aiInstallResult.failed)
+    $script:InstalledOptionalAiBackends = @($script:InstalledAiBackends | Where-Object { $_ -ne "openai-whisper" })
+    $script:FailedOptionalAiBackends = @($script:FailedAiBackends | Where-Object { $_ -ne "openai-whisper" })
+
+    if ($script:InstalledAiBackends.Count -gt 0) {
+        Write-Host "Installed AI backends: $($script:InstalledAiBackends -join ', ')" -ForegroundColor Green
+    }
+    if ($script:FailedAiBackends.Count -gt 0) {
+        Write-Host "Backends not ready after install: $($script:FailedAiBackends -join ', ')" -ForegroundColor Yellow
+    }
+}
+
+$speechBrainRequested = ($selectedAiBackends -contains "speechbrain") -or ($existingAiBackends -contains "speechbrain")
+if ($speechBrainRequested) {
+    $speechBrainAudioReady = Ensure-SpeechBrainAudioSupport -PythonExe $venvPythonCmd
+    if (-not $speechBrainAudioReady) {
+        Write-Host "SpeechBrain may still fail to read some audio files. If needed, convert source audio to WAV/FLAC with ffmpeg." -ForegroundColor Yellow
+    }
+}
+
+$finalAiBackends = Get-InstalledAiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions
+if ($finalAiBackends.Count -gt 0) {
+    $aiSettingOverride = $true
+    Write-Host "AI mode enabled (detected backend(s): $($finalAiBackends -join ', '))." -ForegroundColor Green
 } else {
-    if ($showSkipAiMessage) {
-        Write-Host ""
-        Write-Host "Skipping AI libraries installation." -ForegroundColor Yellow
-        Write-Host "You can install them later with:" -ForegroundColor White
-        Write-Host "  pip install -r requirements_ai.txt" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "Note: AI installation requires:" -ForegroundColor White
-        Write-Host "  - Visual C++ Redistributable 2015-2022" -ForegroundColor White
-        Write-Host "  - ~10GB disk space (including models)" -ForegroundColor White
-        Write-Host "  - Stable internet connection" -ForegroundColor White
+    $aiSettingOverride = $false
+    if (-not [bool]$selectionFromFlags.has_flags -and -not $SkipAiSelectionPrompt) {
+        Write-Host "No AI backend selected or installed. Continuing without AI mode." -ForegroundColor Yellow
+    } else {
+        Write-Host "No AI backend detected. Continuing without AI mode." -ForegroundColor Yellow
     }
 }
 
@@ -1507,6 +2819,162 @@ Write-Host "..." -NoNewline -ForegroundColor White
 Write-Host " [ " -NoNewline -ForegroundColor White
 Write-Host "OK" -NoNewline -ForegroundColor Green
 Write-Host " ]" -ForegroundColor White
+
+Write-Host ""
+Write-Host "=== MKVToolNix/HandBrakeCLI/MakeMKV Check (Optional) ==="
+$videoToolsBefore = Get-OptionalVideoToolStatus
+
+$script:MkvtoolnixPreExisted = [bool]$videoToolsBefore["mkvtoolnix"].found
+$script:HandBrakePreExisted = [bool]$videoToolsBefore["handbrake"].found
+$script:MakeMKVPreExisted = [bool]$videoToolsBefore["makemkv"].found
+
+if ($script:AutoPathBridgeEnabled) {
+    foreach ($toolKey in @("mkvtoolnix", "handbrake", "makemkv")) {
+        $tool = $videoToolsBefore[$toolKey]
+        if ([bool]$tool.found -and -not [bool]$tool.command_on_path) {
+            Ensure-ToolCliReachable `
+                -ToolCommand ([string]$tool.command) `
+                -DetectedBinaryPath ([string]$tool.path) `
+                -ToolDisplayName ([string]$tool.display) | Out-Null
+        }
+    }
+    $videoToolsBefore = Get-OptionalVideoToolStatus
+}
+
+foreach ($toolKey in @("mkvtoolnix", "handbrake", "makemkv")) {
+    $tool = $videoToolsBefore[$toolKey]
+    if ($tool.found -and $tool.command_on_path) {
+        Write-Host "$($tool.display): FOUND + CLI READY ($($tool.path))" -ForegroundColor Green
+    } elseif ($tool.found) {
+        Write-Host "$($tool.display): FOUND BUT CLI NOT READY ($($tool.path))" -ForegroundColor Yellow
+    } else {
+        Write-Host "$($tool.display): MISSING" -ForegroundColor Yellow
+    }
+}
+
+$missingToolKeys = @("mkvtoolnix", "handbrake", "makemkv") | Where-Object {
+    -not [bool]$videoToolsBefore[$_].found
+}
+
+if ($missingToolKeys.Count -gt 0) {
+    $selectedMissingToolKeys = @()
+    $selectionResolved = $false
+    $remainingToolKeys = @($missingToolKeys)
+
+    $autoInstallSet = @{}
+    foreach ($toolKey in @($script:OptionalToolAutoInstallKeys)) {
+        if ($toolKey) {
+            $autoInstallSet[[string]$toolKey] = $true
+        }
+    }
+    foreach ($toolKey in $missingToolKeys) {
+        if ($autoInstallSet.ContainsKey($toolKey)) {
+            $selectedMissingToolKeys += $toolKey
+        }
+    }
+    $selectedMissingToolKeys = @($selectedMissingToolKeys | Select-Object -Unique)
+    if ($selectedMissingToolKeys.Count -gt 0) {
+        Write-Host "Installer profile requested auto-install for: $($selectedMissingToolKeys -join ', ')." -ForegroundColor Cyan
+    }
+
+    $remainingToolKeys = @($missingToolKeys | Where-Object { $selectedMissingToolKeys -notcontains $_ })
+    if ($remainingToolKeys.Count -eq 0) {
+        $selectionResolved = $true
+    } elseif ($script:OptionalToolInstallMode -eq "none") {
+        Write-Host "Installer profile requested skipping remaining missing tools: $($remainingToolKeys -join ', ')." -ForegroundColor Cyan
+        $selectionResolved = $true
+    }
+
+    if (-not $selectionResolved -and (Test-ClickSelectionAvailable)) {
+        $toolSelectionDefs = @()
+        foreach ($toolKey in $remainingToolKeys) {
+            $tool = $videoToolsBefore[$toolKey]
+            $toolSelectionDefs += @{ key = [string]$toolKey; display = [string]$tool.display }
+        }
+
+        $mouseToolSelection = Select-DefinitionKeysWithMouse `
+            -Definitions $toolSelectionDefs `
+            -PreselectedKeys $remainingToolKeys `
+            -Title "Select MKVToolNix, HandBrakeCLI, MakeMKV to install (optional)"
+
+        if ([bool]$mouseToolSelection.used_gui -and -not [bool]$mouseToolSelection.cancelled) {
+            $selectedMissingToolKeys += @($mouseToolSelection.selected)
+            $selectedMissingToolKeys = @($selectedMissingToolKeys | Select-Object -Unique)
+            $selectionResolved = $true
+        } elseif ([bool]$mouseToolSelection.cancelled) {
+            Write-Host "Selection window cancelled. Proceeding with any preselected auto-install tools only." -ForegroundColor Yellow
+            $selectionResolved = $true
+        }
+    }
+
+    if (-not $selectionResolved) {
+        Write-Host ""
+        Write-Host "Install missing MKVToolNix, HandBrakeCLI, and MakeMKV tools now? (optional)" -ForegroundColor Yellow
+        Write-Host "These power MKVToolNix/HandBrake/MakeMKV backend options in the app." -ForegroundColor White
+        Write-Host "  [Y] Yes (install all missing)" -ForegroundColor White
+        Write-Host "  [N] No" -ForegroundColor White
+        $installOptionalTools = Read-Host "Your choice [Y/N]"
+        if ($installOptionalTools -match "^[Yy]") {
+            $selectedMissingToolKeys += @($remainingToolKeys)
+            $selectedMissingToolKeys = @($selectedMissingToolKeys | Select-Object -Unique)
+        }
+    }
+
+    if ($selectedMissingToolKeys.Count -gt 0) {
+        foreach ($toolKey in $selectedMissingToolKeys) {
+            $tool = $videoToolsBefore[$toolKey]
+            $toolInstallMethod = $ToolInstallMethod
+            if ($toolKey -eq "mkvtoolnix") {
+                $toolInstallMethod = $script:MkvtoolnixInstallMethod
+            } elseif ($toolKey -eq "handbrake") {
+                $toolInstallMethod = $script:HandBrakeInstallMethod
+            } elseif ($toolKey -eq "makemkv") {
+                $toolInstallMethod = $script:MakeMKVInstallMethod
+            }
+
+            $installResult = Install-OptionalSystemTool `
+                -DisplayName ([string]$tool.display) `
+                -WingetId ([string]$tool.winget_id) `
+                -ChocoId ([string]$tool.choco_id) `
+                -ScoopId ([string]$tool.scoop_id) `
+                -Method $toolInstallMethod
+
+            $videoToolsAfter = Get-OptionalVideoToolStatus
+            if ([bool]$videoToolsAfter[$toolKey].found -and -not [bool]$videoToolsAfter[$toolKey].command_on_path) {
+                Ensure-ToolCliReachable `
+                    -ToolCommand ([string]$videoToolsAfter[$toolKey].command) `
+                    -DetectedBinaryPath ([string]$videoToolsAfter[$toolKey].path) `
+                    -ToolDisplayName ([string]$videoToolsAfter[$toolKey].display) | Out-Null
+                $videoToolsAfter = Get-OptionalVideoToolStatus
+            }
+
+            if ([bool]$videoToolsAfter[$toolKey].found -and [bool]$videoToolsAfter[$toolKey].command_on_path) {
+                Write-StatusOK "$($tool.display) ready"
+                $usedMethod = [string]$installResult.install_method
+                if ($toolKey -eq "mkvtoolnix") {
+                    $script:MkvtoolnixInstallUsed = $usedMethod
+                } elseif ($toolKey -eq "handbrake") {
+                    $script:HandBrakeInstallUsed = $usedMethod
+                } elseif ($toolKey -eq "makemkv") {
+                    $script:MakeMKVInstallUsed = $usedMethod
+                }
+            } else {
+                $attemptedText = ""
+                if ($installResult.attempted.Count -gt 0) {
+                    $attemptedText = " Tried: $($installResult.attempted -join ', ')."
+                }
+                if ([bool]$videoToolsAfter[$toolKey].found) {
+                    Write-Host "$($tool.display) binary found, but CLI command still not reachable.$attemptedText" -ForegroundColor Yellow
+                } else {
+                    Write-Host "$($tool.display) still not detected.$attemptedText" -ForegroundColor Yellow
+                }
+                Write-Host "Configure its executable path later in the GUI Tooling & Diagnostics tab." -ForegroundColor DarkYellow
+            }
+        }
+    } else {
+        Write-Host "Skipping MKVToolNix/HandBrakeCLI/MakeMKV install (optional)." -ForegroundColor Yellow
+    }
+}
 
 Write-Host ""
 Write-Host "=== Package Verification ==="
@@ -1566,6 +3034,69 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "OK" -NoNewline -ForegroundColor Green
     Write-Host " ]" -ForegroundColor White
 }
+
+# Verify optional backend binaries and show paths/fallback guidance.
+$videoToolVerify = Get-OptionalVideoToolStatus
+foreach ($toolKey in @("mkvtoolnix", "handbrake", "makemkv")) {
+    $tool = $videoToolVerify[$toolKey]
+    Write-Host "$($tool.display)" -NoNewline -ForegroundColor White
+    if ([bool]$tool.found -and [bool]$tool.command_on_path) {
+        Write-Host "..." -NoNewline -ForegroundColor White
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "OK" -NoNewline -ForegroundColor Green
+        Write-Host " ] $($tool.path)" -ForegroundColor White
+    } elseif ([bool]$tool.found) {
+        Write-Host "..." -NoNewline -ForegroundColor White
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "PARTIAL" -NoNewline -ForegroundColor Yellow
+        Write-Host " ] $($tool.path)" -ForegroundColor White
+        Write-Host "  Binary exists but CLI command is not callable from PATH yet." -ForegroundColor DarkYellow
+    } else {
+        Write-Host "..." -NoNewline -ForegroundColor White
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "OPTIONAL" -NoNewline -ForegroundColor Yellow
+        Write-Host " ]" -ForegroundColor White
+        Write-Host "  Not detected. Install with package manager or set path in Tooling & Diagnostics." -ForegroundColor DarkYellow
+    }
+}
+
+# Verify AI backend module availability and summarize readiness.
+$aiBackendChecks = @(
+    @{label = "OpenAI Whisper"; import = "whisper"},
+    @{label = "faster-whisper"; import = "faster_whisper"},
+    @{label = "WhisperX"; import = "whisperx"},
+    @{label = "stable-ts"; import = "stable_whisper"},
+    @{label = "whisper-timestamped"; import = "whisper_timestamped"},
+    @{label = "SpeechBrain"; import = "speechbrain"},
+    @{label = "Vosk"; import = "vosk"},
+    @{label = "Aeneas"; import = "aeneas"}
+)
+
+$availableAiBackends = @()
+foreach ($check in $aiBackendChecks) {
+    $label = [string]$check.label
+    $moduleName = [string]$check.import
+    Write-Host "$label backend" -NoNewline -ForegroundColor White
+    & $venvPythonCmd -c "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$moduleName') is not None else 1)" 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $availableAiBackends += $label
+        Write-Host "..." -NoNewline -ForegroundColor White
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "OK" -NoNewline -ForegroundColor Green
+        Write-Host " ]" -ForegroundColor White
+    } else {
+        Write-Host "..." -NoNewline -ForegroundColor White
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "OPTIONAL" -NoNewline -ForegroundColor Yellow
+        Write-Host " ]" -ForegroundColor White
+    }
+}
+
+if ($availableAiBackends.Count -gt 0) {
+    Write-Host "Detected AI backends: $($availableAiBackends -join ', ')" -ForegroundColor Green
+} else {
+    Write-Host "No AI backends detected." -ForegroundColor Yellow
+}
 Write-StatusOK "All components installed and verified"
 
 # ---------------------------------------------------------------------------
@@ -1573,7 +3104,7 @@ Write-StatusOK "All components installed and verified"
 # ---------------------------------------------------------------------------
 $newManifest = @{
     install_date        = (Get-Date -Format "yyyy-MM-dd HH:mm")
-    script_version      = "1.0"
+    script_version      = "1.1"
     python = @{
         pre_existed     = $script:PythonPreExisted
         install_method  = if ($script:PythonPreExisted) { "" } else { $script:PythonInstallUsed }
@@ -1587,12 +3118,28 @@ $newManifest = @{
         pre_existed     = $script:FfmpegPreExisted
         install_method  = if ($script:FfmpegPreExisted) { "" } else { $script:FfmpegInstallUsed }
     }
+    mkvtoolnix = @{
+        pre_existed     = $script:MkvtoolnixPreExisted
+        install_method  = if ($script:MkvtoolnixPreExisted) { "" } else { $script:MkvtoolnixInstallUsed }
+    }
+    handbrake = @{
+        pre_existed     = $script:HandBrakePreExisted
+        install_method  = if ($script:HandBrakePreExisted) { "" } else { $script:HandBrakeInstallUsed }
+    }
+    makemkv = @{
+        pre_existed     = $script:MakeMKVPreExisted
+        install_method  = if ($script:MakeMKVPreExisted) { "" } else { $script:MakeMKVInstallUsed }
+    }
     venv = @{
         path            = $venvPath
         created_by_script = $true
     }
     ai = @{
         installed       = ($aiSettingOverride -eq $true)
+        installed_backends = @($script:InstalledAiBackends)
+        failed_backends = @($script:FailedAiBackends)
+        optional_backends_installed = @($script:InstalledOptionalAiBackends)
+        optional_backends_failed = @($script:FailedOptionalAiBackends)
     }
 }
 Save-InstallManifest -Manifest $newManifest
@@ -1614,9 +3161,19 @@ if ($null -ne $aiSettingOverride) {
     }
 }
 
-& $venvPythonCmd @guiArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "Subtitle Tool failed to launch correctly (exit code: $LASTEXITCODE)."
+$previousPythonWarnings = $env:PYTHONWARNINGS
+try {
+    $env:PYTHONWARNINGS = "ignore::UserWarning:speechbrain.utils.torch_audio_backend"
+    & $venvPythonCmd @guiArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Subtitle Tool failed to launch correctly (exit code: $LASTEXITCODE)."
+    }
+} finally {
+    if ($null -eq $previousPythonWarnings) {
+        Remove-Item Env:PYTHONWARNINGS -ErrorAction SilentlyContinue
+    } else {
+        $env:PYTHONWARNINGS = $previousPythonWarnings
+    }
 }
 
 Cleanup-InstallerArtifacts
