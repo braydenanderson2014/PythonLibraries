@@ -50,7 +50,11 @@
 
     # Uninstall only the AI/IMDB extras: torch, openai-whisper, pysubs2,
     # cinemagoer, plus the downloaded Whisper model cache on disk.
-    [switch]$UninstallAI
+    [switch]$UninstallAI,
+
+    # Full uninstall mode: also allow removing system packages that existed
+    # before this installer was first run.
+    [switch]$UninstallIncludePreexisting
 )
 
 $ErrorActionPreference = "Stop"
@@ -267,6 +271,7 @@ function New-ScriptRelaunchArgs {
     if ($script:QuietOutput) { $relaunchArgs += "-QuietInstallOutput" }
     if ($Uninstall) { $relaunchArgs += "-Uninstall" }
     if ($UninstallAI) { $relaunchArgs += "-UninstallAI" }
+    if ($UninstallIncludePreexisting) { $relaunchArgs += "-UninstallIncludePreexisting" }
     if ($DisableAutoElevation) { $relaunchArgs += "-DisableAutoElevation" }
 
     return @($relaunchArgs)
@@ -628,6 +633,10 @@ function Show-InteractiveInstallerControlPanel {
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.KeyPreview = $true
     $form.AutoScroll = $true
+    # Keep the UI vertically scrollable on smaller displays and avoid horizontal scrolling.
+    $form.AutoScrollMinSize = New-Object System.Drawing.Size(0, 940)
+    $form.HorizontalScroll.Enabled = $false
+    $form.HorizontalScroll.Visible = $false
 
     $titleLabel = New-Object System.Windows.Forms.Label
     $titleLabel.Text = "Configure install options, then click Continue"
@@ -2908,6 +2917,10 @@ function Test-RequestElevationNeeded {
         return $false
     }
 
+    if ($Uninstall -or $UninstallAI) {
+        return $true
+    }
+
     if ($script:WingetInstallScope -eq "machine") {
         return $true
     }
@@ -2928,12 +2941,10 @@ function Request-ElevationAndRelaunch {
         return
     }
 
-    Write-Host "Administrator privileges are recommended for selected install options." -ForegroundColor Yellow
-    $answer = Read-Host "Relaunch installer as Administrator now? [Y/N] (default: Y)"
-    if ([string]::IsNullOrWhiteSpace("$answer")) { $answer = "Y" }
-    if ($answer -notmatch '^[Yy]') {
-        Write-Host "Continuing without elevation. Some installs may be skipped or fail." -ForegroundColor Yellow
-        return
+    if ($Uninstall -or $UninstallAI) {
+        Write-Host "Administrator privileges are required for uninstall mode. Triggering UAC prompt..." -ForegroundColor Yellow
+    } else {
+        Write-Host "Administrator privileges are required for selected install options. Triggering UAC prompt..." -ForegroundColor Yellow
     }
 
     $relaunchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) + (New-ScriptRelaunchArgs)
@@ -2941,7 +2952,8 @@ function Request-ElevationAndRelaunch {
         Start-Process -FilePath "powershell.exe" -ArgumentList $relaunchArgs -Verb RunAs | Out-Null
         exit 0
     } catch {
-        Write-Host "Elevation request was cancelled or failed. Continuing without elevation." -ForegroundColor Yellow
+        Write-Host "Elevation request was cancelled or failed. Exiting without running installer actions." -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -3867,6 +3879,25 @@ if ($Uninstall) {
         $dotnetPreExisted = if ($mDotNetRuntime) { [bool](Get-MfstProp $mDotNetRuntime "pre_existed" $true) } else { $true }
         $dotnetMethod = if ($mDotNetRuntime) { [string](Get-MfstProp $mDotNetRuntime "install_method" "") } else { "" }
 
+    $includePreexisting = [bool]$UninstallIncludePreexisting
+    if (-not $NoPause -and -not $includePreexisting) {
+        Write-Host "" 
+        Write-Host "Optional: also uninstall packages that were already on this system before this installer." -ForegroundColor Yellow
+        $removePreexisting = Read-Host "Also remove pre-existing system packages when possible? [Y/N]"
+        if ($removePreexisting -match "^[Yy]") {
+            $includePreexisting = $true
+            Set-Variable -Name UninstallIncludePreexisting -Scope Script -Value $true
+        }
+    }
+
+    $pyMethodEffective = if ($pyMethod) { $pyMethod } elseif ($includePreexisting -and $pyPreExisted) { "auto" } else { "" }
+    $ffMethodEffective = if ($ffMethod) { $ffMethod } elseif ($includePreexisting -and $ffPreExisted) { "auto" } else { "" }
+    $vcMethodEffective = if ($vcMethod) { $vcMethod } elseif ($includePreexisting -and $vcPreExisted) { "auto" } else { "" }
+    $mkvMethodEffective = if ($mkvMethod) { $mkvMethod } elseif ($includePreexisting -and $mkvPreExisted) { "auto" } else { "" }
+    $hbMethodEffective = if ($hbMethod) { $hbMethod } elseif ($includePreexisting -and $hbPreExisted) { "auto" } else { "" }
+    $mmMethodEffective = if ($mmMethod) { $mmMethod } elseif ($includePreexisting -and $mmPreExisted) { "auto" } else { "" }
+    $dotnetMethodEffective = if ($dotnetMethod) { $dotnetMethod } elseif ($includePreexisting -and $dotnetPreExisted) { "auto" } else { "" }
+
     # Show summary of what will happen
     Write-Host "The following will always be removed:" -ForegroundColor White
     Write-Host "  - Virtual environment:  $venvPath" -ForegroundColor White
@@ -3878,42 +3909,46 @@ if ($Uninstall) {
 
     if (-not $hasMfst) {
         Write-Host "No install manifest found (.install_manifest.json)." -ForegroundColor Yellow
-        Write-Host "System packages (Python, ffmpeg, VC++) will NOT be touched." -ForegroundColor Yellow
-        Write-Host "If you want to remove them, delete them manually via Apps & Features." -ForegroundColor Yellow
+        if ($includePreexisting) {
+            Write-Host "System packages will be uninstalled best-effort via available package managers." -ForegroundColor Yellow
+        } else {
+            Write-Host "System packages (Python, ffmpeg, VC++) will NOT be touched." -ForegroundColor Yellow
+            Write-Host "If you want to remove them, delete them manually via Apps & Features." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "System packages (based on install manifest):" -ForegroundColor White
-        if (-not $pyPreExisted -and $pyMethod) {
-            Write-Host "  - Python 3.11    will be uninstalled via $pyMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $pyPreExisted) -and $pyMethodEffective) {
+            Write-Host "  - Python 3.11    will be uninstalled via $pyMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - Python         was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $ffPreExisted -and $ffMethod) {
-            Write-Host "  - ffmpeg         will be uninstalled via $ffMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $ffPreExisted) -and $ffMethodEffective) {
+            Write-Host "  - ffmpeg         will be uninstalled via $ffMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - ffmpeg         was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $vcPreExisted -and $vcMethod) {
-            Write-Host "  - VC++ Redist    will be uninstalled via $vcMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $vcPreExisted) -and $vcMethodEffective) {
+            Write-Host "  - VC++ Redist    will be uninstalled via $vcMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - VC++ Redist    was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $mkvPreExisted -and $mkvMethod) {
-            Write-Host "  - MKVToolNix     will be uninstalled via $mkvMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $mkvPreExisted) -and $mkvMethodEffective) {
+            Write-Host "  - MKVToolNix     will be uninstalled via $mkvMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - MKVToolNix     was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $hbPreExisted -and $hbMethod) {
-            Write-Host "  - HandBrakeCLI   will be uninstalled via $hbMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $hbPreExisted) -and $hbMethodEffective) {
+            Write-Host "  - HandBrakeCLI   will be uninstalled via $hbMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - HandBrakeCLI   was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $mmPreExisted -and $mmMethod) {
-            Write-Host "  - MakeMKV        will be uninstalled via $mmMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $mmPreExisted) -and $mmMethodEffective) {
+            Write-Host "  - MakeMKV        will be uninstalled via $mmMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - MakeMKV        was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $dotnetPreExisted -and $dotnetMethod) {
-            Write-Host "  - .NET Runtime   will be uninstalled via $dotnetMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $dotnetPreExisted) -and $dotnetMethodEffective) {
+            Write-Host "  - .NET Runtime   will be uninstalled via $dotnetMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - .NET Runtime   was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
@@ -4011,13 +4046,13 @@ if ($Uninstall) {
         }
     }
 
-    # 5. Conditionally remove system packages (only what the script installed)
-    if ($hasMfst) {
+    # 5. Conditionally remove system packages.
+    if ($hasMfst -or $includePreexisting) {
         # --- Python ---
-        if (-not $pyPreExisted -and $pyMethod) {
+        if (($includePreexisting -or -not $pyPreExisted) -and $pyMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling Python 3.11 via $pyMethod..." -ForegroundColor White
-            switch ($pyMethod) {
+            Write-Host "Uninstalling Python 3.11 via $pyMethodEffective..." -ForegroundColor White
+            switch ($pyMethodEffective) {
                 "winget" {
                     winget uninstall --id Python.Python.3.11 --silent --accept-source-agreements 2>&1 | Out-Null
                     if ($LASTEXITCODE -eq 0) {
@@ -4032,17 +4067,33 @@ if ($Uninstall) {
                     choco uninstall python311 -y --remove-dependencies 2>&1 | Out-Null
                     Write-Host "  Python uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Python.Python.3.11 --silent --accept-source-agreements 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --name "Python 3.11" --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall python311 -y --remove-dependencies 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall python311 2>&1 | Out-Null
+                        scoop uninstall python 2>&1 | Out-Null
+                    }
+                    Write-Host "  Python uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$pyMethod' - please remove Python manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$pyMethodEffective' - please remove Python manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- ffmpeg ---
-        if (-not $ffPreExisted -and $ffMethod) {
+        if (($includePreexisting -or -not $ffPreExisted) -and $ffMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling ffmpeg via $ffMethod..." -ForegroundColor White
-            switch ($ffMethod) {
+            Write-Host "Uninstalling ffmpeg via $ffMethodEffective..." -ForegroundColor White
+            switch ($ffMethodEffective) {
                 "winget" {
                     winget uninstall --id Gyan.FFmpeg --silent 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) {
@@ -4059,17 +4110,32 @@ if ($Uninstall) {
                     scoop uninstall ffmpeg 2>&1 | Out-Null
                     Write-Host "  ffmpeg uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Gyan.FFmpeg --silent 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --name "ffmpeg" --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall ffmpeg -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall ffmpeg 2>&1 | Out-Null
+                    }
+                    Write-Host "  ffmpeg uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$ffMethod' - please remove ffmpeg manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$ffMethodEffective' - please remove ffmpeg manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- Visual C++ Redistributable ---
-        if (-not $vcPreExisted -and $vcMethod) {
+        if (($includePreexisting -or -not $vcPreExisted) -and $vcMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling Visual C++ Redistributable via $vcMethod..." -ForegroundColor White
-            switch ($vcMethod) {
+            Write-Host "Uninstalling Visual C++ Redistributable via $vcMethodEffective..." -ForegroundColor White
+            switch ($vcMethodEffective) {
                 "winget" {
                     winget uninstall --id Microsoft.VCRedist.2015+.x64 --silent 2>&1 | Out-Null
                     Write-Host "  VC++ Redistributable uninstalled." -ForegroundColor Green
@@ -4078,17 +4144,26 @@ if ($Uninstall) {
                     choco uninstall vcredist-all -y 2>&1 | Out-Null
                     Write-Host "  VC++ Redistributable uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Microsoft.VCRedist.2015+.x64 --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall vcredist-all -y 2>&1 | Out-Null
+                    }
+                    Write-Host "  VC++ Redistributable uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$vcMethod' - please remove VC++ manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$vcMethodEffective' - please remove VC++ manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- MKVToolNix ---
-        if (-not $mkvPreExisted -and $mkvMethod) {
+        if (($includePreexisting -or -not $mkvPreExisted) -and $mkvMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling MKVToolNix via $mkvMethod..." -ForegroundColor White
-            switch ($mkvMethod) {
+            Write-Host "Uninstalling MKVToolNix via $mkvMethodEffective..." -ForegroundColor White
+            switch ($mkvMethodEffective) {
                 "winget" {
                     winget uninstall --id MoritzBunkus.MKVToolNix --silent 2>&1 | Out-Null
                     Write-Host "  MKVToolNix uninstall attempted." -ForegroundColor Green
@@ -4101,17 +4176,29 @@ if ($Uninstall) {
                     scoop uninstall mkvtoolnix 2>&1 | Out-Null
                     Write-Host "  MKVToolNix uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id MoritzBunkus.MKVToolNix --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall mkvtoolnix -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall mkvtoolnix 2>&1 | Out-Null
+                    }
+                    Write-Host "  MKVToolNix uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$mkvMethod' - please remove MKVToolNix manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$mkvMethodEffective' - please remove MKVToolNix manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- HandBrake ---
-        if (-not $hbPreExisted -and $hbMethod) {
+        if (($includePreexisting -or -not $hbPreExisted) -and $hbMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling HandBrake via $hbMethod..." -ForegroundColor White
-            switch ($hbMethod) {
+            Write-Host "Uninstalling HandBrake via $hbMethodEffective..." -ForegroundColor White
+            switch ($hbMethodEffective) {
                 "winget" {
                     winget uninstall --id HandBrake.HandBrakeCLI --silent 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) {
@@ -4136,17 +4223,38 @@ if ($Uninstall) {
                     }
                     Write-Host "  HandBrake uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id HandBrake.HandBrakeCLI --silent 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --id HandBrake.HandBrake --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall handbrake-cli -y 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            choco uninstall handbrake -y 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall handbrake-cli 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            scoop uninstall handbrake 2>&1 | Out-Null
+                        }
+                    }
+                    Write-Host "  HandBrake uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$hbMethod' - please remove HandBrake manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$hbMethodEffective' - please remove HandBrake manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- MakeMKV ---
-        if (-not $mmPreExisted -and $mmMethod) {
+        if (($includePreexisting -or -not $mmPreExisted) -and $mmMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling MakeMKV via $mmMethod..." -ForegroundColor White
-            switch ($mmMethod) {
+            Write-Host "Uninstalling MakeMKV via $mmMethodEffective..." -ForegroundColor White
+            switch ($mmMethodEffective) {
                 "winget" {
                     winget uninstall --id GuinpinSoft.MakeMKV --silent 2>&1 | Out-Null
                     Write-Host "  MakeMKV uninstall attempted." -ForegroundColor Green
@@ -4159,17 +4267,29 @@ if ($Uninstall) {
                     scoop uninstall makemkv 2>&1 | Out-Null
                     Write-Host "  MakeMKV uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id GuinpinSoft.MakeMKV --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall makemkv -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall makemkv 2>&1 | Out-Null
+                    }
+                    Write-Host "  MakeMKV uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$mmMethod' - please remove MakeMKV manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$mmMethodEffective' - please remove MakeMKV manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- .NET Desktop Runtime ---
-        if (-not $dotnetPreExisted -and $dotnetMethod) {
+        if (($includePreexisting -or -not $dotnetPreExisted) -and $dotnetMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling .NET Desktop Runtime via $dotnetMethod..." -ForegroundColor White
-            switch ($dotnetMethod) {
+            Write-Host "Uninstalling .NET Desktop Runtime via $dotnetMethodEffective..." -ForegroundColor White
+            switch ($dotnetMethodEffective) {
                 "winget" {
                     winget uninstall --id Microsoft.DotNet.DesktopRuntime.8 --silent 2>&1 | Out-Null
                     Write-Host "  .NET Desktop Runtime uninstalled." -ForegroundColor Green
@@ -4178,8 +4298,17 @@ if ($Uninstall) {
                     choco uninstall dotnet-desktopruntime -y 2>&1 | Out-Null
                     Write-Host "  .NET Desktop Runtime uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Microsoft.DotNet.DesktopRuntime.8 --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall dotnet-desktopruntime -y 2>&1 | Out-Null
+                    }
+                    Write-Host "  .NET Desktop Runtime uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$dotnetMethod' - please remove .NET Desktop Runtime manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$dotnetMethodEffective' - please remove .NET Desktop Runtime manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
