@@ -82,7 +82,7 @@ if ($null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Error
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
-function Cleanup-InstallerArtifacts {
+function Clear-InstallerArtifacts {
     if ($KeepInstallArtifacts) {
         return
     }
@@ -166,7 +166,7 @@ trap {
     if ($script:verboseLogPath -and (Test-Path $script:verboseLogPath)) {
         Write-Host "Verbose log with full details: $($script:verboseLogPath)" -ForegroundColor Cyan
     }
-    Cleanup-InstallerArtifacts
+    Clear-InstallerArtifacts
     Write-Host "The window will stay open so you can read the error above." -ForegroundColor Yellow
     if (-not $NoPause) {
         Read-Host "Press Enter to close"
@@ -231,7 +231,7 @@ function Test-CommandAvailable {
     return [bool](Get-Command $CommandName -ErrorAction SilentlyContinue)
 }
 
-function Build-ScriptRelaunchArgs {
+function New-ScriptRelaunchArgs {
     $relaunchArgs = @(
         "-PythonInstallMethod", [string]$PythonInstallMethod,
         "-FfmpegInstallMethod", [string]$FfmpegInstallMethod,
@@ -345,7 +345,7 @@ function Get-ChocoCommonArgs {
     return @($commonArgs)
 }
 
-function Refresh-ProcessPathFromRegistry {
+function Update-ProcessPathFromRegistry {
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
@@ -373,7 +373,7 @@ function Set-UserPathEntries {
     }
 
     [System.Environment]::SetEnvironmentVariable("Path", ($normalized -join ";"), "User")
-    Refresh-ProcessPathFromRegistry
+    Update-ProcessPathFromRegistry
 }
 
 function Add-UserPathEntry {
@@ -429,7 +429,7 @@ function New-MakeMKVCommandShim {
     return $shimPath
 }
 
-function Ensure-ToolCliReachable {
+function Set-ToolCliReachable {
     param(
         [string]$ToolCommand,
         [string]$DetectedBinaryPath,
@@ -477,7 +477,7 @@ function Ensure-ToolCliReachable {
         }
     }
 
-    Refresh-ProcessPathFromRegistry
+    Update-ProcessPathFromRegistry
     $reachable = [bool](Test-CommandAvailable $ToolCommand)
     if (-not $reason) {
         $reason = if ($reachable) { "reachable_after_refresh" } else { "not_reachable" }
@@ -1018,17 +1018,17 @@ function Show-InteractiveInstallerControlPanel {
     $btnContinue.Location = New-Object System.Drawing.Point(710, 784)
     $btnContinue.Size = New-Object System.Drawing.Size(120, 32)
     $btnContinue.Add_Click({
-        $script:PythonInstallMethod = Normalize-InstallMethod -Value $comboPython.SelectedItem
-        $script:FfmpegInstallMethod = Normalize-InstallMethod -Value $comboFfmpeg.SelectedItem
+        $script:PythonInstallMethod = ConvertTo-InstallMethod -Value $comboPython.SelectedItem
+        $script:FfmpegInstallMethod = ConvertTo-InstallMethod -Value $comboFfmpeg.SelectedItem
         $script:PythonPackageInstallBackend = [string]$comboPkgBackend.SelectedItem
         $script:WingetInstallScope = [string]$comboWingetScope.SelectedItem
         $script:WingetInstallLocation = [string]$txtWingetLocation.Text
         $script:ChocoCacheLocation = [string]$txtChocoCache.Text
         if ($script:WingetInstallLocation) { $script:WingetInstallLocation = $script:WingetInstallLocation.Trim() }
         if ($script:ChocoCacheLocation) { $script:ChocoCacheLocation = $script:ChocoCacheLocation.Trim() }
-        $script:MkvtoolnixInstallMethod = Normalize-InstallMethod -Value $comboMkvMethod.SelectedItem
-        $script:HandBrakeInstallMethod = Normalize-InstallMethod -Value $comboHandBrakeMethod.SelectedItem
-        $script:MakeMKVInstallMethod = Normalize-InstallMethod -Value $comboMakeMKVMethod.SelectedItem
+        $script:MkvtoolnixInstallMethod = ConvertTo-InstallMethod -Value $comboMkvMethod.SelectedItem
+        $script:HandBrakeInstallMethod = ConvertTo-InstallMethod -Value $comboHandBrakeMethod.SelectedItem
+        $script:MakeMKVInstallMethod = ConvertTo-InstallMethod -Value $comboMakeMKVMethod.SelectedItem
         $script:AutoPathBridgeEnabled = [bool]$chkAutoPathBridge.Checked
         $script:SkipAiSelectionPrompt = [bool]$chkSkipAiPrompt.Checked
         $script:OptionalToolInstallMode = [string]$comboOptionalToolMode.SelectedItem
@@ -1051,10 +1051,10 @@ function Show-InteractiveInstallerControlPanel {
                 $script:MkvtoolnixInstallMethod,
                 $script:HandBrakeInstallMethod,
                 $script:MakeMKVInstallMethod
-            ) | ForEach-Object { Normalize-InstallMethod -Value $_ } | Select-Object -Unique
+            ) | ForEach-Object { ConvertTo-InstallMethod -Value $_ } | Select-Object -Unique
         )
         if ($methodSet.Count -eq 1) {
-            $script:ToolInstallMethod = Normalize-InstallMethod -Value $methodSet[0]
+            $script:ToolInstallMethod = ConvertTo-InstallMethod -Value $methodSet[0]
         } else {
             $script:ToolInstallMethod = "auto"
         }
@@ -1223,7 +1223,7 @@ function Read-OptionalPathValue {
     return $raw.Trim()
 }
 
-function Normalize-InstallMethod {
+function ConvertTo-InstallMethod {
     param([object]$Value)
 
     $candidate = [string]$Value
@@ -1670,7 +1670,7 @@ function Get-AiBackendSelectionFromFlags {
     return @{ has_flags = $hasFlags; selected = @($selected.ToArray() | Select-Object -Unique) }
 }
 
-function Prompt-AiBackendSelections {
+function Read-AiBackendSelections {
     param([array]$Definitions)
 
     if (Test-ClickSelectionAvailable) {
@@ -1787,7 +1787,7 @@ function Get-EspeakNgInstallDir {
     return ""
 }
 
-function Ensure-EspeakNgForAeneas {
+function Set-EspeakNgForAeneas {
     # Installs eSpeak-NG and generates an 'espeak.lib' import library so aeneas
     # can compile its CEW C extension against the eSpeak-NG DLL.
     # Returns $true when espeak.lib is set up and CEW build can proceed;
@@ -1974,7 +1974,7 @@ function Install-AiBackends {
     Write-Host "Installing selected AI backend packages..." -ForegroundColor White
     $aeneasNoCew = $false
     if ($packageInstallOrder.Contains("aeneas")) {
-        $espeakCewReady = Ensure-EspeakNgForAeneas
+        $espeakCewReady = Set-EspeakNgForAeneas
         if (-not $espeakCewReady) {
             $aeneasNoCew = $true
             Write-Host "  aeneas will be installed without the CEW C extension (eSpeak-NG unavailable)." -ForegroundColor DarkYellow
@@ -2038,7 +2038,7 @@ function Install-AiBackends {
     }
 }
 
-function Ensure-SpeechBrainAudioSupport {
+function Set-SpeechBrainAudioSupport {
     param([string]$PythonExe)
 
     Write-Host "Ensuring SpeechBrain audio backend dependencies (soundfile)..." -ForegroundColor White
@@ -2646,7 +2646,7 @@ function Install-MsvcBuildTools {
     }
 
     if ($success) {
-        Refresh-ProcessPathFromRegistry
+        Update-ProcessPathFromRegistry
         Start-Sleep -Seconds 2
         $success = Test-MsvcBuildTools
     }
@@ -2844,7 +2844,7 @@ function Install-Chocolatey {
     }
 }
 
-function Ensure-PackageManager {
+function Initialize-PackageManager {
     Write-Host "Checking for package managers" -NoNewline -ForegroundColor White
     
     if (Test-CommandAvailable "winget") {
@@ -2899,7 +2899,7 @@ function Test-IsAdministrator {
     }
 }
 
-function Should-RequestElevation {
+function Test-RequestElevationNeeded {
     if (-not $script:AutoElevationEnabled) {
         return $false
     }
@@ -2924,7 +2924,7 @@ function Should-RequestElevation {
 }
 
 function Request-ElevationAndRelaunch {
-    if (-not (Should-RequestElevation)) {
+    if (-not (Test-RequestElevationNeeded)) {
         return
     }
 
@@ -2936,7 +2936,7 @@ function Request-ElevationAndRelaunch {
         return
     }
 
-    $relaunchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) + (Build-ScriptRelaunchArgs)
+    $relaunchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) + (New-ScriptRelaunchArgs)
     try {
         Start-Process -FilePath "powershell.exe" -ArgumentList $relaunchArgs -Verb RunAs | Out-Null
         exit 0
@@ -3377,7 +3377,7 @@ function Install-UV {
     foreach ($c in $candidates) {
         if (Test-Path $c) {
             Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
-            Refresh-ProcessPathFromRegistry
+            Update-ProcessPathFromRegistry
             return $c
         }
     }
@@ -3388,7 +3388,7 @@ function Install-UV {
             -UseBasicParsing -TimeoutSec 60
         # Redirect all streams so UV's own installer messages don't clutter output
         & ([scriptblock]::Create($installScript)) *>&1 | Out-Null
-        Refresh-ProcessPathFromRegistry
+        Update-ProcessPathFromRegistry
     } catch {
         return ""
     }
@@ -3400,7 +3400,7 @@ function Install-UV {
     foreach ($c in $candidates) {
         if (Test-Path $c) {
             Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
-            Refresh-ProcessPathFromRegistry
+            Update-ProcessPathFromRegistry
             return $c
         }
     }
@@ -4231,7 +4231,7 @@ Write-Host ""
 Request-ElevationAndRelaunch
 
 # Ensure we have a package manager
-Ensure-PackageManager
+Initialize-PackageManager
 
 # Log available package managers
 Write-VerboseLogBanner "Package manager availability"
@@ -4500,7 +4500,7 @@ if ($selectedAiBackends.Count -eq 0 -and $existingAiBackends.Count -eq 0 -and -n
     Write-Host ""
     Write-Host "=== AI Backend Selection ===" -ForegroundColor Cyan
     Write-Host "Install only the AI backends you want. The original Whisper backend is available as 'OpenAI Whisper (original)'." -ForegroundColor White
-    $selectedAiBackends = Prompt-AiBackendSelections -Definitions $aiDefinitions
+    $selectedAiBackends = Read-AiBackendSelections -Definitions $aiDefinitions
 }
 
 if ($selectedAiBackends.Count -gt 0) {
@@ -4575,7 +4575,7 @@ if ($selectedAiBackends.Count -gt 0) {
 
 $speechBrainRequested = ($selectedAiBackends -contains "speechbrain") -or ($existingAiBackends -contains "speechbrain")
 if ($speechBrainRequested) {
-    $speechBrainAudioReady = Ensure-SpeechBrainAudioSupport -PythonExe $venvPythonCmd
+    $speechBrainAudioReady = Set-SpeechBrainAudioSupport -PythonExe $venvPythonCmd
     if (-not $speechBrainAudioReady) {
         Write-Host "SpeechBrain may still fail to read some audio files. If needed, convert source audio to WAV/FLAC with ffmpeg." -ForegroundColor Yellow
     }
@@ -4670,7 +4670,7 @@ if ($script:AutoPathBridgeEnabled) {
     foreach ($toolKey in @("mkvtoolnix", "handbrake", "makemkv")) {
         $tool = $videoToolsBefore[$toolKey]
         if ([bool]$tool.found -and -not [bool]$tool.command_on_path) {
-            Ensure-ToolCliReachable `
+            Set-ToolCliReachable `
                 -ToolCommand ([string]$tool.command) `
                 -DetectedBinaryPath ([string]$tool.path) `
                 -ToolDisplayName ([string]$tool.display) | Out-Null
@@ -4805,7 +4805,7 @@ if ($missingToolKeys.Count -gt 0) {
 
             $videoToolsAfter = Get-OptionalVideoToolStatus
             if ([bool]$videoToolsAfter[$toolKey].found -and -not [bool]$videoToolsAfter[$toolKey].command_on_path) {
-                Ensure-ToolCliReachable `
+                Set-ToolCliReachable `
                     -ToolCommand ([string]$videoToolsAfter[$toolKey].command) `
                     -DetectedBinaryPath ([string]$videoToolsAfter[$toolKey].path) `
                     -ToolDisplayName ([string]$videoToolsAfter[$toolKey].display) | Out-Null
@@ -5112,7 +5112,7 @@ try {
     }
 }
 
-Cleanup-InstallerArtifacts
+Clear-InstallerArtifacts
 
 if (-not $NoPause) {
     Write-Host ""
@@ -5120,3 +5120,4 @@ if (-not $NoPause) {
 }
 
 exit 0
+
