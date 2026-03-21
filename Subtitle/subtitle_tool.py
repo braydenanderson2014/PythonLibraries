@@ -2461,38 +2461,53 @@ class SubtitleProcessor:
         return self._normalize_backend_segments(segments), detected
 
     def _transcribe_with_speechbrain_text(self, video: Path, model_cache: Dict[str, object]) -> str:
-        try:
-            module = importlib.import_module("speechbrain.inference.ASR")
-            asr_cls = getattr(module, "ASR", None)
-            if asr_cls is not None:
-                cache_key = "speechbrain_asr"
-                model = model_cache.get(cache_key)
-                if model is None:
-                    model = asr_cls.from_hparams(
-                        source="speechbrain/asr-crdnn-rnnlm-librispeech",
-                        savedir=str(self._get_temp_workspace_root() / "speechbrain_asr"),
-                    )
-                    model_cache[cache_key] = model
-                return str(model.transcribe_file(str(video))).strip()
-        except Exception:
-            pass
+        savedir = str(self._get_temp_workspace_root() / "speechbrain_asr")
+        load_errors: List[str] = []
 
-        try:
-            enc_module = importlib.import_module("speechbrain.inference")
-            enc_cls = getattr(enc_module, "EncoderDecoderASR", None)
-            if enc_cls is not None:
-                cache_key = "speechbrain_enc"
-                model = model_cache.get(cache_key)
-                if model is None:
-                    model = enc_cls.from_hparams(
-                        source="speechbrain/asr-crdnn-rnnlm-librispeech",
-                        savedir=str(self._get_temp_workspace_root() / "speechbrain_asr"),
-                    )
-                    model_cache[cache_key] = model
-                return str(model.transcribe_file(str(video))).strip()
-        except Exception:
-            pass
+        # SpeechBrain is more reliable with explicit PCM WAV input than direct MP4/MKV input.
+        # Some runtime environments lack torchaudio/ffmpeg backend wiring for container decode.
+        with tempfile.TemporaryDirectory(prefix="speechbrain_audio_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+            wav_path = Path(temp_dir) / "speechbrain_16k.wav"
+            if not self._extract_audio_sample(
+                video_path=video,
+                stream_index=0,
+                output_path=wav_path,
+                start_seconds=None,
+                sample_seconds=None,
+            ):
+                raise RuntimeError("SpeechBrain input audio extraction failed (ffmpeg could not produce 16k WAV)")
 
+            asr_variants = [
+                ("speechbrain.inference.ASR", "ASR", "speechbrain_asr"),
+                ("speechbrain.inference", "EncoderDecoderASR", "speechbrain_enc"),
+                ("speechbrain.pretrained", "EncoderDecoderASR", "speechbrain_pretrained_enc"),
+            ]
+
+            for module_name, class_name, cache_key in asr_variants:
+                try:
+                    module = importlib.import_module(module_name)
+                    asr_cls = getattr(module, class_name, None)
+                    if asr_cls is None:
+                        load_errors.append(f"{module_name}.{class_name} unavailable")
+                        continue
+
+                    model = model_cache.get(cache_key)
+                    if model is None:
+                        model = asr_cls.from_hparams(
+                            source="speechbrain/asr-crdnn-rnnlm-librispeech",
+                            savedir=savedir,
+                        )
+                        model_cache[cache_key] = model
+
+                    text = str(model.transcribe_file(str(wav_path))).strip()
+                    if text:
+                        return text
+                    load_errors.append(f"{module_name}.{class_name} returned empty transcript")
+                except Exception as exc:
+                    load_errors.append(f"{module_name}.{class_name}: {type(exc).__name__}: {exc}")
+
+        if load_errors:
+            raise RuntimeError("SpeechBrain ASR failed: " + " | ".join(load_errors[-3:]))
         raise RuntimeError("SpeechBrain ASR model could not be loaded")
 
     def _transcribe_with_backend(
@@ -6627,6 +6642,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             ui_state = {
                 "folders": folders,
                 "target_files": target_files,
+                "selected_folders": [item.text() for item in self.folder_list.selectedItems()],
+                "selected_targets": [item.text() for item in self.target_file_list.selectedItems()],
                 "manual_sidecars": self.manual_sidecars_by_video,
                 "recursive": self.recursive_checkbox.isChecked(),
                 "overwrite": self.overwrite_checkbox.isChecked(),
@@ -6666,6 +6683,12 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "hw_accel": self.hw_accel_checkbox.isChecked(),
                 "save_next_to_source": self.save_next_to_source_checkbox.isChecked(),
                 "custom_output_dir": self.custom_output_dir_input.text(),
+                "tools_tab_index": self.tools_tabs.currentIndex(),
+                "window_x": self.x(),
+                "window_y": self.y(),
+                "window_width": self.width(),
+                "window_height": self.height(),
+                "window_maximized": self.isMaximized(),
             }
             
             settings["ui_state"] = ui_state
@@ -6700,6 +6723,20 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             for file_path in ui_state.get("target_files", []):
                 if file_path and Path(file_path).exists():
                     self.target_file_list.addItem(QListWidgetItem(file_path))
+
+            selected_folders = set(ui_state.get("selected_folders", []))
+            if selected_folders:
+                for i in range(self.folder_list.count()):
+                    item = self.folder_list.item(i)
+                    if item.text() in selected_folders:
+                        item.setSelected(True)
+
+            selected_targets = set(ui_state.get("selected_targets", []))
+            if selected_targets:
+                for i in range(self.target_file_list.count()):
+                    item = self.target_file_list.item(i)
+                    if item.text() in selected_targets:
+                        item.setSelected(True)
             
             # Restore manual sidecars
             manual_sidecars = ui_state.get("manual_sidecars", {})
@@ -6797,6 +6834,21 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     self.sync_overwrite_checkbox.setChecked(bool(ui_state.get("sync_overwrite", False)))
 
             self.hw_accel_checkbox.setChecked(bool(ui_state.get("hw_accel", False)))
+
+            tools_tab_index = int(ui_state.get("tools_tab_index", 0))
+            if 0 <= tools_tab_index < self.tools_tabs.count():
+                self.tools_tabs.setCurrentIndex(tools_tab_index)
+
+            if bool(ui_state.get("window_maximized", False)):
+                self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+            else:
+                x = int(ui_state.get("window_x", self.x()))
+                y = int(ui_state.get("window_y", self.y()))
+                w = int(ui_state.get("window_width", self.width()))
+                h = int(ui_state.get("window_height", self.height()))
+                if w > 200 and h > 150:
+                    self.setGeometry(x, y, w, h)
+
             self._refresh_dependency_status(log_missing=False, announce=False)
             
             self._log("Previous session restored from memory")

@@ -176,16 +176,16 @@ powershell -ExecutionPolicy Bypass -File "Python Projects/Subtitle/install_ffmpe
 
 ```bash
 # Launch with default settings (uses saved 'use_ai' preference)
-python "Python Projects/Subtitle/subtitle_tool.py" gui
+python "Python Projects/Subtitle/subtitle_ui.py"
 
 # Disable AI features and save preference
-python "Python Projects/Subtitle/subtitle_tool.py" gui --no-ai
+python "Python Projects/Subtitle/subtitle_ui.py" --no-ai
 
 # Enable AI features and save preference
-python "Python Projects/Subtitle/subtitle_tool.py" gui --use-ai
+python "Python Projects/Subtitle/subtitle_ui.py" --use-ai
 
 # Clear saved UI state/memory
-python "Python Projects/Subtitle/subtitle_tool.py" gui --clear
+python "Python Projects/Subtitle/subtitle_ui.py" --clear
 ```
 
 Or use the quick launcher:
@@ -279,7 +279,7 @@ The installer now allows per-backend selection (including original OpenAI Whispe
 pip install -r "Python Projects/Subtitle/requirements_ai.txt"
 
 # Then enable AI in settings
-python "Python Projects/Subtitle/subtitle_tool.py" gui --use-ai
+python "Python Projects/Subtitle/subtitle_ui.py" --use-ai
 ```
 
 ### Using AI Subtitle Generation
@@ -303,7 +303,7 @@ Use Whisper to detect language for each audio stream, then write language tags b
 CLI example:
 
 ```bash
-python "Python Projects/Subtitle/subtitle_tool.py" tag-audio-language --folders "D:\\Videos" --strategy snippets --snippets 3 --sample-seconds 25
+python "Python Projects/Subtitle/subtitle_cli.py" tag-audio-language --folders "D:\\Videos" --strategy snippets --snippets 3 --sample-seconds 25
 ```
 
 ### Model Sizes
@@ -331,25 +331,25 @@ Settings are stored in `.subtitle_tool_settings.json` in the same directory as t
 Scan:
 
 ```bash
-python "Python Projects/Subtitle/subtitle_tool.py" scan --folders "D:\\Videos" --only-with-embedded
+python "Python Projects/Subtitle/subtitle_cli.py" scan --folders "D:\\Videos" --only-with-embedded
 ```
 
 Scan with custom tool binaries and verbose command feedback:
 
 ```bash
-python "Python Projects/Subtitle/subtitle_tool.py" scan --folders "D:\\Videos" --ffmpeg-bin "C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe" --ffprobe-bin "C:\\Tools\\ffmpeg\\bin\\ffprobe.exe" --command-feedback verbose --ffprobe-loglevel warning
+python "Python Projects/Subtitle/subtitle_cli.py" scan --folders "D:\\Videos" --ffmpeg-bin "C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe" --ffprobe-bin "C:\\Tools\\ffmpeg\\bin\\ffprobe.exe" --command-feedback verbose --ffprobe-loglevel warning
 ```
 
 Remove subtitles:
 
 ```bash
-python "Python Projects/Subtitle/subtitle_tool.py" remove --folders "D:\\Videos" --suffix _nosubs
+python "Python Projects/Subtitle/subtitle_cli.py" remove --folders "D:\\Videos" --suffix _nosubs
 ```
 
 Include subtitles:
 
 ```bash
-python "Python Projects/Subtitle/subtitle_tool.py" include --folders "D:\\Videos" --suffix _withsubs
+python "Python Projects/Subtitle/subtitle_cli.py" include --folders "D:\\Videos" --suffix _withsubs
 ```
 
 ## Full Windows Install Automation

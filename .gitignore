@@ -12,3 +12,12 @@ venv/
 **/.venv/
 env/
 **/env/
+
+# Installer artifacts
+*.exe
+*.msi
+*.zip
+*.log
+.install_manifest.json
+.subtitle_tool_settings.json
+*.tmp
