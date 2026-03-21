@@ -220,8 +220,10 @@ function Write-VerboseLogBanner {
         Add-Content -Path $script:verboseLogPath -Value "" -Encoding UTF8 -ErrorAction SilentlyContinue
         Add-Content -Path $script:verboseLogPath -Value $banner -Encoding UTF8 -ErrorAction SilentlyContinue
     } catch { }
-    # Also emit to host so transcript captures the timestamp
-    Write-Host "[$ts] $Message" -ForegroundColor DarkGray
+    # Emit phase banners to console only in verbose mode.
+    if (-not $script:QuietOutput) {
+        Write-Host "[$ts] $Message" -ForegroundColor DarkGray
+    }
 }
 
 function Test-CommandAvailable {
@@ -230,7 +232,7 @@ function Test-CommandAvailable {
 }
 
 function Build-ScriptRelaunchArgs {
-    $args = @(
+    $relaunchArgs = @(
         "-PythonInstallMethod", [string]$PythonInstallMethod,
         "-FfmpegInstallMethod", [string]$FfmpegInstallMethod,
         "-ToolInstallMethod", [string]$ToolInstallMethod,
@@ -239,43 +241,43 @@ function Build-ScriptRelaunchArgs {
     )
 
     if ($script:WingetInstallLocation) {
-        $args += "-WingetInstallLocation", ([string]$script:WingetInstallLocation)
+        $relaunchArgs += "-WingetInstallLocation", ([string]$script:WingetInstallLocation)
     }
     if ($script:ChocoCacheLocation) {
-        $args += "-ChocoCacheLocation", ([string]$script:ChocoCacheLocation)
+        $relaunchArgs += "-ChocoCacheLocation", ([string]$script:ChocoCacheLocation)
     }
 
-    if ($InstallAiAll) { $args += "-InstallAiAll" }
-    if ($InstallAiOpenAIWhisper) { $args += "-InstallAiOpenAIWhisper" }
-    if ($InstallAiFasterWhisper) { $args += "-InstallAiFasterWhisper" }
-    if ($InstallAiWhisperX) { $args += "-InstallAiWhisperX" }
-    if ($InstallAiStableTs) { $args += "-InstallAiStableTs" }
-    if ($InstallAiWhisperTimestamped) { $args += "-InstallAiWhisperTimestamped" }
-    if ($InstallAiSpeechBrain) { $args += "-InstallAiSpeechBrain" }
-    if ($InstallAiVosk) { $args += "-InstallAiVosk" }
-    if ($InstallAiAeneas) { $args += "-InstallAiAeneas" }
+    if ($InstallAiAll) { $relaunchArgs += "-InstallAiAll" }
+    if ($InstallAiOpenAIWhisper) { $relaunchArgs += "-InstallAiOpenAIWhisper" }
+    if ($InstallAiFasterWhisper) { $relaunchArgs += "-InstallAiFasterWhisper" }
+    if ($InstallAiWhisperX) { $relaunchArgs += "-InstallAiWhisperX" }
+    if ($InstallAiStableTs) { $relaunchArgs += "-InstallAiStableTs" }
+    if ($InstallAiWhisperTimestamped) { $relaunchArgs += "-InstallAiWhisperTimestamped" }
+    if ($InstallAiSpeechBrain) { $relaunchArgs += "-InstallAiSpeechBrain" }
+    if ($InstallAiVosk) { $relaunchArgs += "-InstallAiVosk" }
+    if ($InstallAiAeneas) { $relaunchArgs += "-InstallAiAeneas" }
 
-    if ($SkipAiSelectionPrompt) { $args += "-SkipAiSelectionPrompt" }
-    if ($InteractiveMenu) { $args += "-InteractiveMenu" }
-    if ($NoMenu) { $args += "-NoMenu" }
-    if ($DisableAutoPathBridge) { $args += "-DisableAutoPathBridge" }
-    if ($DisableClickSelection) { $args += "-DisableClickSelection" }
-    if ($NoPause) { $args += "-NoPause" }
-    if ($KeepInstallArtifacts) { $args += "-KeepInstallArtifacts" }
-    if ($QuietInstallOutput) { $args += "-QuietInstallOutput" }
-    if ($Uninstall) { $args += "-Uninstall" }
-    if ($UninstallAI) { $args += "-UninstallAI" }
-    if ($DisableAutoElevation) { $args += "-DisableAutoElevation" }
+    if ($SkipAiSelectionPrompt) { $relaunchArgs += "-SkipAiSelectionPrompt" }
+    if ($InteractiveMenu) { $relaunchArgs += "-InteractiveMenu" }
+    if ($NoMenu) { $relaunchArgs += "-NoMenu" }
+    if ($DisableAutoPathBridge) { $relaunchArgs += "-DisableAutoPathBridge" }
+    if ($DisableClickSelection) { $relaunchArgs += "-DisableClickSelection" }
+    if ($NoPause) { $relaunchArgs += "-NoPause" }
+    if ($KeepInstallArtifacts) { $relaunchArgs += "-KeepInstallArtifacts" }
+    if ($script:QuietOutput) { $relaunchArgs += "-QuietInstallOutput" }
+    if ($Uninstall) { $relaunchArgs += "-Uninstall" }
+    if ($UninstallAI) { $relaunchArgs += "-UninstallAI" }
+    if ($DisableAutoElevation) { $relaunchArgs += "-DisableAutoElevation" }
 
-    return @($args)
+    return @($relaunchArgs)
 }
 
 function Get-WingetInstallBaseArgs {
-    $args = @("--silent", "--accept-package-agreements", "--accept-source-agreements")
+    $baseArgs = @("--silent", "--accept-package-agreements", "--accept-source-agreements")
     if ($script:WingetInstallScope -eq "user" -or $script:WingetInstallScope -eq "machine") {
-        $args += "--scope", $script:WingetInstallScope
+        $baseArgs += "--scope", $script:WingetInstallScope
     }
-    return @($args)
+    return @($baseArgs)
 }
 
 function Invoke-WingetInstallCommand {
@@ -329,7 +331,7 @@ function Get-ChocoCommonArgs {
         [switch]$DisableCustomCache
     )
 
-    $args = @("-y")
+    $commonArgs = @("-y")
     if (-not $DisableCustomCache -and $script:ChocoCacheLocation) {
         $cache = [string]$script:ChocoCacheLocation
         $cache = $cache.Trim()
@@ -337,10 +339,10 @@ function Get-ChocoCommonArgs {
             if (-not (Test-Path -LiteralPath $cache)) {
                 New-Item -ItemType Directory -Path $cache -Force | Out-Null
             }
-            $args += "--cache-location", $cache
+            $commonArgs += "--cache-location", $cache
         }
     }
-    return @($args)
+    return @($commonArgs)
 }
 
 function Refresh-ProcessPathFromRegistry {
@@ -621,8 +623,8 @@ function Show-InteractiveInstallerControlPanel {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Subtitle Tool Installer Control Panel"
-    $form.Size = New-Object System.Drawing.Size(980, 880)
-    $form.MinimumSize = New-Object System.Drawing.Size(940, 820)
+    $form.Size = New-Object System.Drawing.Size(980, 910)
+    $form.MinimumSize = New-Object System.Drawing.Size(940, 850)
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.KeyPreview = $true
     $form.AutoScroll = $true
@@ -871,15 +873,23 @@ function Show-InteractiveInstallerControlPanel {
         }
     })
 
+    $chkVerboseOutput = New-Object System.Windows.Forms.CheckBox
+    $chkVerboseOutput.Text = "Show verbose package install output (Downloading..., Installed... lines from uv/pip)"
+    $chkVerboseOutput.Checked = (-not [bool]$script:QuietOutput)
+    $chkVerboseOutput.AutoSize = $false
+    $chkVerboseOutput.Size = New-Object System.Drawing.Size(900, 24)
+    $chkVerboseOutput.Location = New-Object System.Drawing.Point(20, 592)
+    $form.Controls.Add($chkVerboseOutput)
+
     $aiLabel = New-Object System.Windows.Forms.Label
     $aiLabel.Text = "AI backends to install"
     $aiLabel.AutoSize = $false
     $aiLabel.Size = New-Object System.Drawing.Size(300, 22)
-    $aiLabel.Location = New-Object System.Drawing.Point(20, 590)
+    $aiLabel.Location = New-Object System.Drawing.Point(20, 620)
     $form.Controls.Add($aiLabel)
 
     $aiCheckedList = New-Object System.Windows.Forms.CheckedListBox
-    $aiCheckedList.Location = New-Object System.Drawing.Point(20, 614)
+    $aiCheckedList.Location = New-Object System.Drawing.Point(20, 644)
     $aiCheckedList.Size = New-Object System.Drawing.Size(920, 120)
     $aiCheckedList.CheckOnClick = $true
     foreach ($def in $Definitions) {
@@ -934,6 +944,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $false
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "prompt"
         & $setToolAutoInstallCheckedState @()
         & $setAiCheckedState @("openai-whisper")
@@ -953,6 +964,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $true
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "none"
         & $setToolAutoInstallCheckedState @($toolDefs | ForEach-Object { [string]$_.key })
         & $setAiCheckedState @($Definitions | ForEach-Object { [string]$_.key })
@@ -972,6 +984,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $true
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "none"
         & $setToolAutoInstallCheckedState @()
         & $setAiCheckedState @()
@@ -979,21 +992,21 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnRecommended = New-Object System.Windows.Forms.Button
     $btnRecommended.Text = "Recommended"
-    $btnRecommended.Location = New-Object System.Drawing.Point(20, 754)
+    $btnRecommended.Location = New-Object System.Drawing.Point(20, 784)
     $btnRecommended.Size = New-Object System.Drawing.Size(120, 32)
     $btnRecommended.Add_Click({ & $applyRecommended })
     $form.Controls.Add($btnRecommended)
 
     $btnFull = New-Object System.Windows.Forms.Button
     $btnFull.Text = "Full AI"
-    $btnFull.Location = New-Object System.Drawing.Point(150, 754)
+    $btnFull.Location = New-Object System.Drawing.Point(150, 784)
     $btnFull.Size = New-Object System.Drawing.Size(120, 32)
     $btnFull.Add_Click({ & $applyFull })
     $form.Controls.Add($btnFull)
 
     $btnMinimal = New-Object System.Windows.Forms.Button
     $btnMinimal.Text = "Minimal"
-    $btnMinimal.Location = New-Object System.Drawing.Point(280, 754)
+    $btnMinimal.Location = New-Object System.Drawing.Point(280, 784)
     $btnMinimal.Size = New-Object System.Drawing.Size(120, 32)
     $btnMinimal.Add_Click({ & $applyMinimal })
     $form.Controls.Add($btnMinimal)
@@ -1002,7 +1015,7 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnContinue = New-Object System.Windows.Forms.Button
     $btnContinue.Text = "Continue Install"
-    $btnContinue.Location = New-Object System.Drawing.Point(710, 754)
+    $btnContinue.Location = New-Object System.Drawing.Point(710, 784)
     $btnContinue.Size = New-Object System.Drawing.Size(120, 32)
     $btnContinue.Add_Click({
         $script:PythonInstallMethod = Normalize-InstallMethod -Value $comboPython.SelectedItem
@@ -1019,17 +1032,18 @@ function Show-InteractiveInstallerControlPanel {
         $script:AutoPathBridgeEnabled = [bool]$chkAutoPathBridge.Checked
         $script:SkipAiSelectionPrompt = [bool]$chkSkipAiPrompt.Checked
         $script:OptionalToolInstallMode = [string]$comboOptionalToolMode.SelectedItem
+        $script:QuietOutput = (-not [bool]$chkVerboseOutput.Checked)
 
         # Installer action mode (mutually exclusive).
         if ([bool]$chkRunUninstall.Checked) {
-            $Uninstall = $true
-            $UninstallAI = $false
+            Set-Variable -Name Uninstall -Scope Script -Value $true
+            Set-Variable -Name UninstallAI -Scope Script -Value $false
         } elseif ([bool]$chkRunUninstallAI.Checked) {
-            $Uninstall = $false
-            $UninstallAI = $true
+            Set-Variable -Name Uninstall -Scope Script -Value $false
+            Set-Variable -Name UninstallAI -Scope Script -Value $true
         } else {
-            $Uninstall = $false
-            $UninstallAI = $false
+            Set-Variable -Name Uninstall -Scope Script -Value $false
+            Set-Variable -Name UninstallAI -Scope Script -Value $false
         }
 
         $methodSet = @(
@@ -1072,7 +1086,7 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(840, 754)
+    $btnCancel.Location = New-Object System.Drawing.Point(840, 784)
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
     $btnCancel.Add_Click({
         $script:__InstallerControlPanelSubmitted = $false
@@ -1083,7 +1097,7 @@ function Show-InteractiveInstallerControlPanel {
     $form.AcceptButton = $btnContinue
     $form.CancelButton = $btnCancel
     $form.Add_KeyDown({
-        param($sender, $e)
+        param($eventSender, $e)
         if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::R) {
             & $applyRecommended
             $e.SuppressKeyPress = $true
@@ -1359,13 +1373,13 @@ function Show-InteractiveInstallerMenu {
             "11" { $script:ChocoCacheLocation = Read-OptionalPathValue -Title "Chocolatey cache location" -CurrentValue $script:ChocoCacheLocation }
             "12" { return }
             "13" {
-                $Uninstall = $true
-                $UninstallAI = $false
+                Set-Variable -Name Uninstall -Scope Script -Value $true
+                Set-Variable -Name UninstallAI -Scope Script -Value $false
                 return
             }
             "14" {
-                $Uninstall = $false
-                $UninstallAI = $true
+                Set-Variable -Name Uninstall -Scope Script -Value $false
+                Set-Variable -Name UninstallAI -Scope Script -Value $true
                 return
             }
             "15" { exit 0 }
@@ -1988,9 +2002,15 @@ function Install-AiBackends {
             Write-Host "OK" -NoNewline -ForegroundColor Green
             Write-Host " ]" -ForegroundColor White
         } else {
-            Write-Host " [ " -NoNewline -ForegroundColor White
-            Write-Host " failed" -ForegroundColor Yellow
-            Write-Host " ]" -ForegroundColor White
+            if ($pkg -eq "aeneas") {
+                Write-Host " [ " -NoNewline -ForegroundColor White
+                Write-Host "OPTIONAL" -NoNewline -ForegroundColor Yellow
+                Write-Host " ] (Sometimes Aeneas fails; continuing.)" -ForegroundColor White
+            } else {
+                Write-Host " [ " -NoNewline -ForegroundColor White
+                Write-Host "failed" -NoNewline -ForegroundColor Red
+                Write-Host " ]" -ForegroundColor White
+            }
         }
     }
 
@@ -2440,7 +2460,7 @@ function Install-MsvcBuildToolsWithBootstrapper {
         return $false
     }
 
-    $args = @(
+    $bootstrapperArgs = @(
         "--quiet",
         "--wait",
         "--norestart",
@@ -2450,12 +2470,12 @@ function Install-MsvcBuildToolsWithBootstrapper {
     )
 
     if ($CachePath) {
-        $args += "--path", "cache=$CachePath"
+        $bootstrapperArgs += "--path", "cache=$CachePath"
     }
 
     try {
         Write-Host "Installing Microsoft C++ Build Tools via Visual Studio bootstrapper fallback..." -ForegroundColor Yellow
-        $proc = Start-Process -FilePath $bootstrapperExe -ArgumentList $args -Wait -NoNewWindow -PassThru
+        $proc = Start-Process -FilePath $bootstrapperExe -ArgumentList $bootstrapperArgs -Wait -NoNewWindow -PassThru
         if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
             return $true
         }
@@ -2468,11 +2488,64 @@ function Install-MsvcBuildToolsWithBootstrapper {
     }
 }
 
+function Stop-StaleVisualStudioInstallerProcesses {
+    # Kill VS installer processes that may have been left running from a previous
+    # aborted installation attempt.  These block any subsequent choco/winget/
+    # bootstrapper install with "There are Visual Studio installer processes
+    # already running."
+    $vsProcessNames = @(
+        "vs_setup_bootstrapper",
+        "vs_installer",
+        "vs_bootstrapper"
+    )
+
+    # "setup" is ambiguous – only target it when it lives inside the VS Installer
+    # directory to avoid killing unrelated setup.exe processes.
+    $vsInstallerDir = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer"
+
+    $killed = @()
+
+    foreach ($name in $vsProcessNames) {
+        $procs = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+        foreach ($p in $procs) {
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                $killed += "$name (PID $($p.Id))"
+            } catch { }
+        }
+    }
+
+    # Targeted "setup" kill: only processes whose executable is inside the VS
+    # installer folder.  Use CIM instead of $p.MainModule.FileName because
+    # accessing MainModule on elevated 64-bit processes from a lower-trust shell
+    # raises Access Denied and silently skips the kill.
+    $setupProcs = @(Get-Process -Name "setup" -ErrorAction SilentlyContinue)
+    foreach ($p in $setupProcs) {
+        try {
+            $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)" -ErrorAction SilentlyContinue
+            $exePath = if ($cim) { [string]$cim.ExecutablePath } else { "" }
+            if ($exePath -and $exePath.StartsWith($vsInstallerDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                $killed += "setup (PID $($p.Id))"
+            }
+        } catch { }
+    }
+
+    if ($killed.Count -gt 0) {
+        Write-Host "Terminated stale Visual Studio installer process(es): $($killed -join ', ')" -ForegroundColor DarkYellow
+        Start-Sleep -Seconds 3
+    }
+}
+
 function Install-MsvcBuildTools {
     param(
         [ValidateSet("auto", "winget", "choco")]
         [string]$Method = "auto"
     )
+
+    # Kill any VS installer processes left over from a previous aborted attempt
+    # before touching the installer state.
+    Stop-StaleVisualStudioInstallerProcesses
 
     $attempted = @()
     $usedMethod = ""
@@ -2521,6 +2594,15 @@ function Install-MsvcBuildTools {
                         "install", "--id", "Microsoft.VisualStudio.2022.BuildTools", "--exact"
                     ) + (Get-WingetInstallBaseArgs) + @("--override", $overrideArgs)
                     if (Invoke-WingetInstallCommand -CommandArgs $wingetArgs -AllowRetryWithoutLocation -DisableCustomLocation) {
+                        $usedMethod = "winget"
+                        $success = $true
+                        break
+                    }
+                    # winget exits non-zero with "No available upgrade found" when
+                    # Build Tools are already installed at the right version.
+                    # Verify actual tool presence before falling through to choco.
+                    if (Test-MsvcBuildTools) {
+                        Write-Host "Microsoft C++ Build Tools already present (no upgrade needed)." -ForegroundColor Green
                         $usedMethod = "winget"
                         $success = $true
                         break
@@ -2578,8 +2660,8 @@ function Install-MsvcBuildTools {
 
 function Install-VCRedistWithWinget {
     Write-Host "Installing Visual C++ Redistributable via winget..." -ForegroundColor Yellow
-    $args = @("install", "--id", "Microsoft.VCRedist.2015+.x64", "--exact") + (Get-WingetInstallBaseArgs)
-    if (Invoke-WingetInstallCommand -CommandArgs $args -AllowRetryWithoutLocation) {
+    $wingetArgs = @("install", "--id", "Microsoft.VCRedist.2015+.x64", "--exact") + (Get-WingetInstallBaseArgs)
+    if (Invoke-WingetInstallCommand -CommandArgs $wingetArgs -AllowRetryWithoutLocation) {
         Write-Host "Visual C++ Redistributable ready via winget." -ForegroundColor Green
         return $true
     }
@@ -2640,7 +2722,7 @@ function Install-VCRedist {
             
             Invoke-WebRequest -Uri $vcRedistUrl -OutFile $vcRedistInstaller -UseBasicParsing
             Write-Host "Installing Visual C++ Redistributable..." -ForegroundColor Yellow
-            $process = Start-Process -FilePath $vcRedistInstaller -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
+            $null = Start-Process -FilePath $vcRedistInstaller -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
             
             # Wait a moment for registry to update
             Start-Sleep -Seconds 2
@@ -3049,7 +3131,40 @@ function Install-PythonWithChoco {
 }
 
 function Install-PythonWithScoop {
-    throw "Scoop automatic Python install is not configured for the required 3.12 version. Use winget or Chocolatey."
+    Write-Host "Installing Python using Scoop..."
+
+    # If Scoop already has a suitable Python package installed, reuse it.
+    foreach ($pkg in @("python311", "python312", "python")) {
+        try {
+            $listOut = & scoop list $pkg 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $listOut -match "(?im)^\s*$([regex]::Escape($pkg))\s+(\d+\.\d+)") {
+                $installedMinor = $matches[1]
+                if ($installedMinor -match '^3\.(10|11|12)$') {
+                    Write-Host "Scoop already has $pkg ($installedMinor); reusing existing installation." -ForegroundColor Green
+                    return
+                }
+            }
+        } catch {
+            # Ignore and continue probing/installing.
+        }
+    }
+
+    # Prefer a version-pinned package first; fall back to default python package.
+    foreach ($pkg in @("python311", "python")) {
+        try {
+            $proc = Start-Process scoop -ArgumentList "install", $pkg -Wait -NoNewWindow -PassThru
+            if ($proc.ExitCode -eq 0) {
+                $resolved = Wait-ForPythonCommand -Seconds 30
+                if ($resolved) {
+                    return
+                }
+            }
+        } catch {
+            # Try next package candidate.
+        }
+    }
+
+    throw "Scoop Python install failed or produced an unsupported version."
 }
 
 function Install-PythonManually {
@@ -3229,9 +3344,13 @@ function Repair-TorchInVenv {
     & $PythonExe -m pip cache purge 2>&1 | Out-Null
 
     # Install a fresh CPU wheel directly from the official PyTorch CPU index.
-    & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | ForEach-Object {
-        if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
-            Write-Host "  $_" -ForegroundColor Gray
+    if ($script:QuietOutput) {
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | Out-Null
+    } else {
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | ForEach-Object {
+            if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
+                Write-Host "  $_" -ForegroundColor Gray
+            }
         }
     }
 
@@ -3478,7 +3597,6 @@ function Invoke-PipInstall {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $requirementsPath = Join-Path $scriptDir "requirements.txt"
-$requirementsAIPath = Join-Path $scriptDir "requirements_ai.txt"
 $ffmpegInstallerPath = Join-Path $scriptDir "install_ffmpeg_windows.ps1"
 $subtitleToolPath = Join-Path $scriptDir "subtitle_tool.py"
 $venvPath = Join-Path $scriptDir "venv"
@@ -3602,7 +3720,7 @@ if ($UninstallAI) {
         Write-Host "Uninstalling AI packages from venv..." -ForegroundColor White
         foreach ($pkg in $aiPackages) {
             Write-Host "  Removing $pkg..." -NoNewline -ForegroundColor Gray
-            $result = & $venvPy -m pip uninstall -y $pkg 2>&1
+            & $venvPy -m pip uninstall -y $pkg 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host " [ " -NoNewline -ForegroundColor White
                 Write-Host "OK" -NoNewline -ForegroundColor Green
@@ -3867,7 +3985,7 @@ if ($Uninstall) {
             Write-Host "OK" -NoNewline -ForegroundColor Green
             Write-Host " ]" -ForegroundColor White
         } else {
-            Write-Host " [ failed ]" -ForegroundColor Yellow
+            Write-Host " [ failed ]" -ForegroundColor Red
         }
     }
 
@@ -4185,6 +4303,9 @@ Write-Host "OK" -NoNewline -ForegroundColor Green
 Write-Host " ]" -ForegroundColor White
 # Log Python detection result
 $_pyDetectedVersion = Get-PythonCommandVersion $pythonCmd 2>$null
+if ($_pyDetectedVersion) {
+    Write-Host "Detected Python version: $_pyDetectedVersion" -ForegroundColor DarkGray
+}
 Write-VerboseLog -Lines @(
     "Status  : $(if ($script:PythonPreExisted) { 'pre-existed' } else { 'installed by script (method: ' + $script:PythonInstallUsed + ')' })",
     "Command : $pythonCmd",
@@ -4597,6 +4718,24 @@ if ($missingToolKeys.Count -gt 0) {
             $selectedMissingToolKeys += $toolKey
         }
     }
+
+    # Treat an explicit per-tool install method as an install request, even if
+    # the tool is not checked in the auto-install list.
+    foreach ($toolKey in $missingToolKeys) {
+        $explicitMethod = "auto"
+        if ($toolKey -eq "mkvtoolnix") {
+            $explicitMethod = [string]$script:MkvtoolnixInstallMethod
+        } elseif ($toolKey -eq "handbrake") {
+            $explicitMethod = [string]$script:HandBrakeInstallMethod
+        } elseif ($toolKey -eq "makemkv") {
+            $explicitMethod = [string]$script:MakeMKVInstallMethod
+        }
+
+        if ($explicitMethod -in @("winget", "choco", "scoop") -and ($selectedMissingToolKeys -notcontains $toolKey)) {
+            $selectedMissingToolKeys += $toolKey
+        }
+    }
+
     $selectedMissingToolKeys = @($selectedMissingToolKeys | Select-Object -Unique)
     if ($selectedMissingToolKeys.Count -gt 0) {
         Write-Host "Installer profile requested auto-install for: $($selectedMissingToolKeys -join ', ')." -ForegroundColor Cyan
@@ -4773,7 +4912,7 @@ Write-Host " ]" -ForegroundColor White
 Write-Host "cinemagoer (IMDB lookup)" -NoNewline -ForegroundColor White
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-$cinemagoerTest = & $venvPythonCmd -c "from imdb import Cinemagoer; print('ok')" 2>&1
+& $venvPythonCmd -c "from imdb import Cinemagoer; print('ok')" 2>&1 | Out-Null
 $ErrorActionPreference = $previousErrorActionPreference
 if ($LASTEXITCODE -ne 0) {
     Write-Host "..." -NoNewline -ForegroundColor White
