@@ -1,11 +1,10 @@
-"""Jobs tab widget with visual behavior-tree builder and workflow scheduling."""
+"""Jobs tab widget with Node-RED style flow builder and workflow scheduling."""
 
 import json
 from datetime import datetime, timedelta
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -13,8 +12,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
@@ -24,6 +21,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .node_red_canvas import NodeRedFlowCanvas
 
 
 class JobsWidget(QWidget):
@@ -87,13 +86,17 @@ class JobsWidget(QWidget):
         builder_row.addWidget(lib_group)
 
         controls_layout = QVBoxLayout()
-        add_btn = QPushButton(">>")
+        add_btn = QPushButton("Add Node")
         add_btn.clicked.connect(self._add_selected_node_to_tree)
         controls_layout.addWidget(add_btn)
 
-        remove_btn = QPushButton("Remove")
+        remove_btn = QPushButton("Remove Selected")
         remove_btn.clicked.connect(self._remove_selected_tree_node)
         controls_layout.addWidget(remove_btn)
+
+        auto_layout_btn = QPushButton("Auto Layout")
+        auto_layout_btn.clicked.connect(self._auto_layout_tree)
+        controls_layout.addWidget(auto_layout_btn)
 
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._clear_tree_builder)
@@ -101,15 +104,12 @@ class JobsWidget(QWidget):
         controls_layout.addStretch()
         builder_row.addLayout(controls_layout)
 
-        tree_group = QGroupBox("Tree Builder (Drag/Drop to reorder)")
+        tree_group = QGroupBox("Node-RED Style Flow Canvas")
         tree_layout = QVBoxLayout()
-        self.tree_builder_list = QListWidget()
-        self.tree_builder_list.setMaximumHeight(200)
-        self.tree_builder_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.tree_builder_list.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.tree_builder_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.tree_builder_list.currentItemChanged.connect(self._on_tree_node_selected)
-        tree_layout.addWidget(self.tree_builder_list)
+        self.flow_canvas = NodeRedFlowCanvas()
+        self.flow_canvas.setMinimumHeight(300)
+        self.flow_canvas.selected_node_changed.connect(self._on_tree_node_selected)
+        tree_layout.addWidget(self.flow_canvas)
         tree_group.setLayout(tree_layout)
         builder_row.addWidget(tree_group)
 
@@ -286,44 +286,20 @@ class JobsWidget(QWidget):
         group.setLayout(layout)
         return group
 
-    def _create_tree_item(self, node_id: str, params: dict | None = None) -> QListWidgetItem:
-        params = params or {}
-        item = QListWidgetItem(self._format_tree_node_text(node_id, params))
-        item.setData(Qt.ItemDataRole.UserRole, {"node_id": node_id, "params": dict(params)})
-        return item
-
-    @staticmethod
-    def _format_tree_node_text(node_id: str, params: dict) -> str:
-        return f"{node_id} [params]" if params else node_id
-
-    def _node_def_from_item(self, item: QListWidgetItem) -> dict:
-        payload = item.data(Qt.ItemDataRole.UserRole)
-        if isinstance(payload, dict):
-            node_id = str(payload.get("node_id", "")).strip()
-            params = payload.get("params", {})
-            if isinstance(params, dict) and node_id:
-                return {"node_id": node_id, "params": dict(params)}
-        node_id = item.text().split(" ", 1)[0].strip()
-        return {"node_id": node_id, "params": {}}
-
     def _collect_tree_definitions(self) -> list[dict]:
-        defs = []
-        for i in range(self.tree_builder_list.count()):
-            defs.append(self._node_def_from_item(self.tree_builder_list.item(i)))
-        return defs
+        return self.flow_canvas.collect_tree_definitions()
 
-    def _on_tree_node_selected(self, current: QListWidgetItem, _previous: QListWidgetItem):
-        if not current:
+    def _on_tree_node_selected(self, node_def: dict | None):
+        if not node_def:
             self.selected_node_label.setText("Selected node: none")
             self.node_params_edit.setPlainText("{}")
             return
-        node_def = self._node_def_from_item(current)
         self.selected_node_label.setText(f"Selected node: {node_def.get('node_id', '')}")
         self.node_params_edit.setPlainText(json.dumps(node_def.get("params", {}), indent=2))
 
     def _apply_selected_node_params(self):
-        item = self.tree_builder_list.currentItem()
-        if not item:
+        selected = self.flow_canvas.get_selected_node_definition()
+        if not selected:
             QMessageBox.warning(self, "No Node Selected", "Select a tree node to apply parameters.")
             return
 
@@ -341,19 +317,11 @@ class JobsWidget(QWidget):
             QMessageBox.warning(self, "Invalid Parameters", "Node parameters must be a JSON object.")
             return
 
-        node_def = self._node_def_from_item(item)
-        node_def["params"] = parsed
-        item.setData(Qt.ItemDataRole.UserRole, node_def)
-        item.setText(self._format_tree_node_text(node_def["node_id"], parsed))
+        self.flow_canvas.set_selected_node_params(parsed)
 
     def _reset_selected_node_params(self):
-        item = self.tree_builder_list.currentItem()
-        if not item:
+        if not self.flow_canvas.set_selected_node_params({}):
             return
-        node_def = self._node_def_from_item(item)
-        node_def["params"] = {}
-        item.setData(Qt.ItemDataRole.UserRole, node_def)
-        item.setText(node_def["node_id"])
         self.node_params_edit.setPlainText("{}")
 
     def _on_schedule_mode_changed(self, mode: str):
@@ -376,7 +344,7 @@ class JobsWidget(QWidget):
         self.save_threshold_btn.setVisible(is_workflow)
         self.tree_combo.setEnabled(is_workflow)
         self.custom_tree_name_edit.setEnabled(is_workflow)
-        self.tree_builder_list.setEnabled(is_workflow)
+        self.flow_canvas.setEnabled(is_workflow)
         self.node_params_edit.setEnabled(is_workflow)
 
     def _browse_input(self):
@@ -411,15 +379,16 @@ class JobsWidget(QWidget):
         node_item = self.nodes_table.item(row, 0)
         if not node_item:
             return
-        self.tree_builder_list.addItem(self._create_tree_item(node_item.text(), {}))
+        self.flow_canvas.add_node(node_item.text(), {})
 
     def _remove_selected_tree_node(self):
-        row = self.tree_builder_list.currentRow()
-        if row >= 0:
-            self.tree_builder_list.takeItem(row)
+        self.flow_canvas.remove_selected_node()
+
+    def _auto_layout_tree(self):
+        self.flow_canvas.auto_layout()
 
     def _clear_tree_builder(self):
-        self.tree_builder_list.clear()
+        self.flow_canvas.clear_nodes()
         self.selected_node_label.setText("Selected node: none")
         self.node_params_edit.setPlainText("{}")
 
@@ -431,22 +400,10 @@ class JobsWidget(QWidget):
     def _load_selected_tree_into_builder(self, tree_name: str):
         trees = self.task_manager.get_behavior_trees()
         nodes = trees.get(tree_name, [])
-        self.tree_builder_list.clear()
-        for node_def in nodes:
-            if isinstance(node_def, str):
-                self.tree_builder_list.addItem(self._create_tree_item(node_def, {}))
-                continue
-            if isinstance(node_def, dict):
-                node_id = str(node_def.get("node_id", "")).strip()
-                if not node_id:
-                    continue
-                params = node_def.get("params", {})
-                if not isinstance(params, dict):
-                    params = {}
-                self.tree_builder_list.addItem(self._create_tree_item(node_id, params))
+        self.flow_canvas.load_tree(nodes)
         if tree_name:
             self.custom_tree_name_edit.setText(tree_name)
-        self._on_tree_node_selected(self.tree_builder_list.currentItem(), None)
+        self._on_tree_node_selected(self.flow_canvas.get_selected_node_definition())
 
     def _save_custom_tree(self):
         name = self.custom_tree_name_edit.text().strip()
@@ -562,7 +519,7 @@ class JobsWidget(QWidget):
                 self.tree_combo.setCurrentIndex(idx)
         self.tree_combo.blockSignals(False)
 
-        if self.tree_combo.count() > 0 and self.tree_builder_list.count() == 0:
+        if self.tree_combo.count() > 0 and self.flow_canvas.node_count() == 0:
             self._load_selected_tree_into_builder(self.tree_combo.currentText())
 
     def _refresh_jobs_table(self):
