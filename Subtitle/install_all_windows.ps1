@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet("auto", "winget", "choco", "scoop")]
     [string]$PythonInstallMethod = "auto",
 
@@ -50,7 +50,11 @@
 
     # Uninstall only the AI/IMDB extras: torch, openai-whisper, pysubs2,
     # cinemagoer, plus the downloaded Whisper model cache on disk.
-    [switch]$UninstallAI
+    [switch]$UninstallAI,
+
+    # Full uninstall mode: also allow removing system packages that existed
+    # before this installer was first run.
+    [switch]$UninstallIncludePreexisting
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,7 +88,7 @@ if ($null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Error
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
-function Cleanup-InstallerArtifacts {
+function Clear-InstallerArtifacts {
     if ($KeepInstallArtifacts) {
         return
     }
@@ -168,7 +172,7 @@ trap {
     if ($script:verboseLogPath -and (Test-Path $script:verboseLogPath)) {
         Write-Host "Verbose log with full details: $($script:verboseLogPath)" -ForegroundColor Cyan
     }
-    Cleanup-InstallerArtifacts
+    Clear-InstallerArtifacts
     Write-Host "The window will stay open so you can read the error above." -ForegroundColor Yellow
     if (-not $NoPause) {
         Read-Host "Press Enter to close"
@@ -222,8 +226,10 @@ function Write-VerboseLogBanner {
         Add-Content -Path $script:verboseLogPath -Value "" -Encoding UTF8 -ErrorAction SilentlyContinue
         Add-Content -Path $script:verboseLogPath -Value $banner -Encoding UTF8 -ErrorAction SilentlyContinue
     } catch { }
-    # Also emit to host so transcript captures the timestamp
-    Write-Host "[$ts] $Message" -ForegroundColor DarkGray
+    # Emit phase banners to console only in verbose mode.
+    if (-not $script:QuietOutput) {
+        Write-Host "[$ts] $Message" -ForegroundColor DarkGray
+    }
 }
 
 function Test-CommandAvailable {
@@ -231,8 +237,8 @@ function Test-CommandAvailable {
     return [bool](Get-Command $CommandName -ErrorAction SilentlyContinue)
 }
 
-function Build-ScriptRelaunchArgs {
-    $args = @(
+function New-ScriptRelaunchArgs {
+    $relaunchArgs = @(
         "-PythonInstallMethod", [string]$PythonInstallMethod,
         "-FfmpegInstallMethod", [string]$FfmpegInstallMethod,
         "-ToolInstallMethod", [string]$ToolInstallMethod,
@@ -241,43 +247,44 @@ function Build-ScriptRelaunchArgs {
     )
 
     if ($script:WingetInstallLocation) {
-        $args += "-WingetInstallLocation", ([string]$script:WingetInstallLocation)
+        $relaunchArgs += "-WingetInstallLocation", ([string]$script:WingetInstallLocation)
     }
     if ($script:ChocoCacheLocation) {
-        $args += "-ChocoCacheLocation", ([string]$script:ChocoCacheLocation)
+        $relaunchArgs += "-ChocoCacheLocation", ([string]$script:ChocoCacheLocation)
     }
 
-    if ($InstallAiAll) { $args += "-InstallAiAll" }
-    if ($InstallAiOpenAIWhisper) { $args += "-InstallAiOpenAIWhisper" }
-    if ($InstallAiFasterWhisper) { $args += "-InstallAiFasterWhisper" }
-    if ($InstallAiWhisperX) { $args += "-InstallAiWhisperX" }
-    if ($InstallAiStableTs) { $args += "-InstallAiStableTs" }
-    if ($InstallAiWhisperTimestamped) { $args += "-InstallAiWhisperTimestamped" }
-    if ($InstallAiSpeechBrain) { $args += "-InstallAiSpeechBrain" }
-    if ($InstallAiVosk) { $args += "-InstallAiVosk" }
-    if ($InstallAiAeneas) { $args += "-InstallAiAeneas" }
+    if ($InstallAiAll) { $relaunchArgs += "-InstallAiAll" }
+    if ($InstallAiOpenAIWhisper) { $relaunchArgs += "-InstallAiOpenAIWhisper" }
+    if ($InstallAiFasterWhisper) { $relaunchArgs += "-InstallAiFasterWhisper" }
+    if ($InstallAiWhisperX) { $relaunchArgs += "-InstallAiWhisperX" }
+    if ($InstallAiStableTs) { $relaunchArgs += "-InstallAiStableTs" }
+    if ($InstallAiWhisperTimestamped) { $relaunchArgs += "-InstallAiWhisperTimestamped" }
+    if ($InstallAiSpeechBrain) { $relaunchArgs += "-InstallAiSpeechBrain" }
+    if ($InstallAiVosk) { $relaunchArgs += "-InstallAiVosk" }
+    if ($InstallAiAeneas) { $relaunchArgs += "-InstallAiAeneas" }
 
-    if ($SkipAiSelectionPrompt) { $args += "-SkipAiSelectionPrompt" }
-    if ($InteractiveMenu) { $args += "-InteractiveMenu" }
-    if ($NoMenu) { $args += "-NoMenu" }
-    if ($DisableAutoPathBridge) { $args += "-DisableAutoPathBridge" }
-    if ($DisableClickSelection) { $args += "-DisableClickSelection" }
-    if ($NoPause) { $args += "-NoPause" }
-    if ($KeepInstallArtifacts) { $args += "-KeepInstallArtifacts" }
-    if ($QuietInstallOutput) { $args += "-QuietInstallOutput" }
-    if ($script:RequestedUninstall) { $args += "-Uninstall" }
-    if ($script:RequestedUninstallAI) { $args += "-UninstallAI" }
-    if ($DisableAutoElevation) { $args += "-DisableAutoElevation" }
+    if ($SkipAiSelectionPrompt) { $relaunchArgs += "-SkipAiSelectionPrompt" }
+    if ($InteractiveMenu) { $relaunchArgs += "-InteractiveMenu" }
+    if ($NoMenu) { $relaunchArgs += "-NoMenu" }
+    if ($DisableAutoPathBridge) { $relaunchArgs += "-DisableAutoPathBridge" }
+    if ($DisableClickSelection) { $relaunchArgs += "-DisableClickSelection" }
+    if ($NoPause) { $relaunchArgs += "-NoPause" }
+    if ($KeepInstallArtifacts) { $relaunchArgs += "-KeepInstallArtifacts" }
+    if ($script:QuietOutput) { $relaunchArgs += "-QuietInstallOutput" }
+    if ($script:RequestedUninstall) { $relaunchArgs += "-Uninstall" }
+    if ($script:RequestedUninstallAI) { $relaunchArgs += "-UninstallAI" }
+    if ($UninstallIncludePreexisting) { $relaunchArgs += "-UninstallIncludePreexisting" }
+    if ($DisableAutoElevation) { $relaunchArgs += "-DisableAutoElevation" }
 
-    return @($args)
+    return @($relaunchArgs)
 }
 
 function Get-WingetInstallBaseArgs {
-    $args = @("--silent", "--accept-package-agreements", "--accept-source-agreements")
+    $baseArgs = @("--silent", "--accept-package-agreements", "--accept-source-agreements")
     if ($script:WingetInstallScope -eq "user" -or $script:WingetInstallScope -eq "machine") {
-        $args += "--scope", $script:WingetInstallScope
+        $baseArgs += "--scope", $script:WingetInstallScope
     }
-    return @($args)
+    return @($baseArgs)
 }
 
 function Invoke-WingetInstallCommand {
@@ -331,7 +338,7 @@ function Get-ChocoCommonArgs {
         [switch]$DisableCustomCache
     )
 
-    $args = @("-y")
+    $commonArgs = @("-y")
     if (-not $DisableCustomCache -and $script:ChocoCacheLocation) {
         $cache = [string]$script:ChocoCacheLocation
         $cache = $cache.Trim()
@@ -339,13 +346,13 @@ function Get-ChocoCommonArgs {
             if (-not (Test-Path -LiteralPath $cache)) {
                 New-Item -ItemType Directory -Path $cache -Force | Out-Null
             }
-            $args += "--cache-location", $cache
+            $commonArgs += "--cache-location", $cache
         }
     }
-    return @($args)
+    return @($commonArgs)
 }
 
-function Refresh-ProcessPathFromRegistry {
+function Update-ProcessPathFromRegistry {
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
@@ -373,7 +380,7 @@ function Set-UserPathEntries {
     }
 
     [System.Environment]::SetEnvironmentVariable("Path", ($normalized -join ";"), "User")
-    Refresh-ProcessPathFromRegistry
+    Update-ProcessPathFromRegistry
 }
 
 function Add-UserPathEntry {
@@ -429,7 +436,7 @@ function New-MakeMKVCommandShim {
     return $shimPath
 }
 
-function Ensure-ToolCliReachable {
+function Set-ToolCliReachable {
     param(
         [string]$ToolCommand,
         [string]$DetectedBinaryPath,
@@ -477,7 +484,7 @@ function Ensure-ToolCliReachable {
         }
     }
 
-    Refresh-ProcessPathFromRegistry
+    Update-ProcessPathFromRegistry
     $reachable = [bool](Test-CommandAvailable $ToolCommand)
     if (-not $reason) {
         $reason = if ($reachable) { "reachable_after_refresh" } else { "not_reachable" }
@@ -623,11 +630,15 @@ function Show-InteractiveInstallerControlPanel {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Subtitle Tool Installer Control Panel"
-    $form.Size = New-Object System.Drawing.Size(980, 880)
-    $form.MinimumSize = New-Object System.Drawing.Size(940, 820)
+    $form.Size = New-Object System.Drawing.Size(980, 910)
+    $form.MinimumSize = New-Object System.Drawing.Size(940, 850)
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.KeyPreview = $true
     $form.AutoScroll = $true
+    # Keep the UI vertically scrollable on smaller displays and avoid horizontal scrolling.
+    $form.AutoScrollMinSize = New-Object System.Drawing.Size(0, 940)
+    $form.HorizontalScroll.Enabled = $false
+    $form.HorizontalScroll.Visible = $false
 
     $titleLabel = New-Object System.Windows.Forms.Label
     $titleLabel.Text = "Configure install options, then click Continue"
@@ -932,15 +943,23 @@ function Show-InteractiveInstallerControlPanel {
         & $updateActionModeLabel
     })
 
+    $chkVerboseOutput = New-Object System.Windows.Forms.CheckBox
+    $chkVerboseOutput.Text = "Show verbose package install output (Downloading..., Installed... lines from uv/pip)"
+    $chkVerboseOutput.Checked = (-not [bool]$script:QuietOutput)
+    $chkVerboseOutput.AutoSize = $false
+    $chkVerboseOutput.Size = New-Object System.Drawing.Size(900, 24)
+    $chkVerboseOutput.Location = New-Object System.Drawing.Point(20, 592)
+    $form.Controls.Add($chkVerboseOutput)
+
     $aiLabel = New-Object System.Windows.Forms.Label
     $aiLabel.Text = "AI backends to install"
     $aiLabel.AutoSize = $false
     $aiLabel.Size = New-Object System.Drawing.Size(300, 22)
-    $aiLabel.Location = New-Object System.Drawing.Point(20, 590)
+    $aiLabel.Location = New-Object System.Drawing.Point(20, 620)
     $form.Controls.Add($aiLabel)
 
     $aiCheckedList = New-Object System.Windows.Forms.CheckedListBox
-    $aiCheckedList.Location = New-Object System.Drawing.Point(20, 614)
+    $aiCheckedList.Location = New-Object System.Drawing.Point(20, 644)
     $aiCheckedList.Size = New-Object System.Drawing.Size(920, 120)
     $aiCheckedList.CheckOnClick = $true
     foreach ($def in $Definitions) {
@@ -995,6 +1014,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $false
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "prompt"
         & $setToolAutoInstallCheckedState @()
         & $setAiCheckedState @("openai-whisper")
@@ -1033,6 +1053,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $true
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "none"
         & $setToolAutoInstallCheckedState @($toolDefs | ForEach-Object { [string]$_.key })
         & $setAiCheckedState @($Definitions | ForEach-Object { [string]$_.key })
@@ -1052,6 +1073,7 @@ function Show-InteractiveInstallerControlPanel {
         $chkSkipAiPrompt.Checked = $true
         $chkRunUninstall.Checked = $false
         $chkRunUninstallAI.Checked = $false
+        $chkVerboseOutput.Checked = $false
         $comboOptionalToolMode.SelectedItem = "none"
         & $setToolAutoInstallCheckedState @()
         & $setAiCheckedState @()
@@ -1092,20 +1114,21 @@ function Show-InteractiveInstallerControlPanel {
     $btnContinue.Location = New-Object System.Drawing.Point(710, 774)
     $btnContinue.Size = New-Object System.Drawing.Size(130, 32)
     $btnContinue.Add_Click({
-        $script:PythonInstallMethod = Normalize-InstallMethod -Value $comboPython.SelectedItem
-        $script:FfmpegInstallMethod = Normalize-InstallMethod -Value $comboFfmpeg.SelectedItem
+        $script:PythonInstallMethod = ConvertTo-InstallMethod -Value $comboPython.SelectedItem
+        $script:FfmpegInstallMethod = ConvertTo-InstallMethod -Value $comboFfmpeg.SelectedItem
         $script:PythonPackageInstallBackend = [string]$comboPkgBackend.SelectedItem
         $script:WingetInstallScope = [string]$comboWingetScope.SelectedItem
         $script:WingetInstallLocation = [string]$txtWingetLocation.Text
         $script:ChocoCacheLocation = [string]$txtChocoCache.Text
         if ($script:WingetInstallLocation) { $script:WingetInstallLocation = $script:WingetInstallLocation.Trim() }
         if ($script:ChocoCacheLocation) { $script:ChocoCacheLocation = $script:ChocoCacheLocation.Trim() }
-        $script:MkvtoolnixInstallMethod = Normalize-InstallMethod -Value $comboMkvMethod.SelectedItem
-        $script:HandBrakeInstallMethod = Normalize-InstallMethod -Value $comboHandBrakeMethod.SelectedItem
-        $script:MakeMKVInstallMethod = Normalize-InstallMethod -Value $comboMakeMKVMethod.SelectedItem
+        $script:MkvtoolnixInstallMethod = ConvertTo-InstallMethod -Value $comboMkvMethod.SelectedItem
+        $script:HandBrakeInstallMethod = ConvertTo-InstallMethod -Value $comboHandBrakeMethod.SelectedItem
+        $script:MakeMKVInstallMethod = ConvertTo-InstallMethod -Value $comboMakeMKVMethod.SelectedItem
         $script:AutoPathBridgeEnabled = [bool]$chkAutoPathBridge.Checked
         $script:SkipAiSelectionPrompt = [bool]$chkSkipAiPrompt.Checked
         $script:OptionalToolInstallMode = [string]$comboOptionalToolMode.SelectedItem
+        $script:QuietOutput = (-not [bool]$chkVerboseOutput.Checked)
 
         # Installer action mode (mutually exclusive).
         if ([bool]$chkRunUninstall.Checked) {
@@ -1124,10 +1147,10 @@ function Show-InteractiveInstallerControlPanel {
                 $script:MkvtoolnixInstallMethod,
                 $script:HandBrakeInstallMethod,
                 $script:MakeMKVInstallMethod
-            ) | ForEach-Object { Normalize-InstallMethod -Value $_ } | Select-Object -Unique
+            ) | ForEach-Object { ConvertTo-InstallMethod -Value $_ } | Select-Object -Unique
         )
         if ($methodSet.Count -eq 1) {
-            $script:ToolInstallMethod = Normalize-InstallMethod -Value $methodSet[0]
+            $script:ToolInstallMethod = ConvertTo-InstallMethod -Value $methodSet[0]
         } else {
             $script:ToolInstallMethod = "auto"
         }
@@ -1170,7 +1193,7 @@ function Show-InteractiveInstallerControlPanel {
     $form.AcceptButton = $btnContinue
     $form.CancelButton = $btnCancel
     $form.Add_KeyDown({
-        param($sender, $e)
+        param($eventSender, $e)
         if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::R) {
             & $applyRecommended
             $e.SuppressKeyPress = $true
@@ -1303,7 +1326,7 @@ function Read-OptionalPathValue {
     return $raw.Trim()
 }
 
-function Normalize-InstallMethod {
+function ConvertTo-InstallMethod {
     param([object]$Value)
 
     $candidate = [string]$Value
@@ -1750,7 +1773,7 @@ function Get-AiBackendSelectionFromFlags {
     return @{ has_flags = $hasFlags; selected = @($selected.ToArray() | Select-Object -Unique) }
 }
 
-function Prompt-AiBackendSelections {
+function Read-AiBackendSelections {
     param([array]$Definitions)
 
     if (Test-ClickSelectionAvailable) {
@@ -1867,7 +1890,7 @@ function Get-EspeakNgInstallDir {
     return ""
 }
 
-function Ensure-EspeakNgForAeneas {
+function Set-EspeakNgForAeneas {
     # Installs eSpeak-NG and generates an 'espeak.lib' import library so aeneas
     # can compile its CEW C extension against the eSpeak-NG DLL.
     # Returns $true when espeak.lib is set up and CEW build can proceed;
@@ -2054,7 +2077,7 @@ function Install-AiBackends {
     Write-Host "Installing selected AI backend packages..." -ForegroundColor White
     $aeneasNoCew = $false
     if ($packageInstallOrder.Contains("aeneas")) {
-        $espeakCewReady = Ensure-EspeakNgForAeneas
+        $espeakCewReady = Set-EspeakNgForAeneas
         if (-not $espeakCewReady) {
             $aeneasNoCew = $true
             Write-Host "  aeneas will be installed without the CEW C extension (eSpeak-NG unavailable)." -ForegroundColor DarkYellow
@@ -2082,9 +2105,15 @@ function Install-AiBackends {
             Write-Host "OK" -NoNewline -ForegroundColor Green
             Write-Host " ]" -ForegroundColor White
         } else {
-            Write-Host " [ " -NoNewline -ForegroundColor White
-            Write-Host " failed" -ForegroundColor Yellow
-            Write-Host " ]" -ForegroundColor White
+            if ($pkg -eq "aeneas") {
+                Write-Host " [ " -NoNewline -ForegroundColor White
+                Write-Host "OPTIONAL" -NoNewline -ForegroundColor Yellow
+                Write-Host " ] (Sometimes Aeneas fails; continuing.)" -ForegroundColor White
+            } else {
+                Write-Host " [ " -NoNewline -ForegroundColor White
+                Write-Host "failed" -NoNewline -ForegroundColor Red
+                Write-Host " ]" -ForegroundColor White
+            }
         }
     }
 
@@ -2112,7 +2141,7 @@ function Install-AiBackends {
     }
 }
 
-function Ensure-SpeechBrainAudioSupport {
+function Set-SpeechBrainAudioSupport {
     param([string]$PythonExe)
 
     Write-Host "Ensuring SpeechBrain audio backend dependencies (soundfile)..." -ForegroundColor White
@@ -2534,7 +2563,7 @@ function Install-MsvcBuildToolsWithBootstrapper {
         return $false
     }
 
-    $args = @(
+    $bootstrapperArgs = @(
         "--quiet",
         "--wait",
         "--norestart",
@@ -2544,12 +2573,12 @@ function Install-MsvcBuildToolsWithBootstrapper {
     )
 
     if ($CachePath) {
-        $args += "--path", "cache=$CachePath"
+        $bootstrapperArgs += "--path", "cache=$CachePath"
     }
 
     try {
         Write-Host "Installing Microsoft C++ Build Tools via Visual Studio bootstrapper fallback..." -ForegroundColor Yellow
-        $proc = Start-Process -FilePath $bootstrapperExe -ArgumentList $args -Wait -NoNewWindow -PassThru
+        $proc = Start-Process -FilePath $bootstrapperExe -ArgumentList $bootstrapperArgs -Wait -NoNewWindow -PassThru
         if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
             return $true
         }
@@ -2562,11 +2591,64 @@ function Install-MsvcBuildToolsWithBootstrapper {
     }
 }
 
+function Stop-StaleVisualStudioInstallerProcesses {
+    # Kill VS installer processes that may have been left running from a previous
+    # aborted installation attempt.  These block any subsequent choco/winget/
+    # bootstrapper install with "There are Visual Studio installer processes
+    # already running."
+    $vsProcessNames = @(
+        "vs_setup_bootstrapper",
+        "vs_installer",
+        "vs_bootstrapper"
+    )
+
+    # "setup" is ambiguous – only target it when it lives inside the VS Installer
+    # directory to avoid killing unrelated setup.exe processes.
+    $vsInstallerDir = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer"
+
+    $killed = @()
+
+    foreach ($name in $vsProcessNames) {
+        $procs = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+        foreach ($p in $procs) {
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                $killed += "$name (PID $($p.Id))"
+            } catch { }
+        }
+    }
+
+    # Targeted "setup" kill: only processes whose executable is inside the VS
+    # installer folder.  Use CIM instead of $p.MainModule.FileName because
+    # accessing MainModule on elevated 64-bit processes from a lower-trust shell
+    # raises Access Denied and silently skips the kill.
+    $setupProcs = @(Get-Process -Name "setup" -ErrorAction SilentlyContinue)
+    foreach ($p in $setupProcs) {
+        try {
+            $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)" -ErrorAction SilentlyContinue
+            $exePath = if ($cim) { [string]$cim.ExecutablePath } else { "" }
+            if ($exePath -and $exePath.StartsWith($vsInstallerDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                $killed += "setup (PID $($p.Id))"
+            }
+        } catch { }
+    }
+
+    if ($killed.Count -gt 0) {
+        Write-Host "Terminated stale Visual Studio installer process(es): $($killed -join ', ')" -ForegroundColor DarkYellow
+        Start-Sleep -Seconds 3
+    }
+}
+
 function Install-MsvcBuildTools {
     param(
         [ValidateSet("auto", "winget", "choco")]
         [string]$Method = "auto"
     )
+
+    # Kill any VS installer processes left over from a previous aborted attempt
+    # before touching the installer state.
+    Stop-StaleVisualStudioInstallerProcesses
 
     $attempted = @()
     $usedMethod = ""
@@ -2619,6 +2701,15 @@ function Install-MsvcBuildTools {
                         $success = $true
                         break
                     }
+                    # winget exits non-zero with "No available upgrade found" when
+                    # Build Tools are already installed at the right version.
+                    # Verify actual tool presence before falling through to choco.
+                    if (Test-MsvcBuildTools) {
+                        Write-Host "Microsoft C++ Build Tools already present (no upgrade needed)." -ForegroundColor Green
+                        $usedMethod = "winget"
+                        $success = $true
+                        break
+                    }
                 } catch {
                     # Try next method.
                 }
@@ -2658,7 +2749,7 @@ function Install-MsvcBuildTools {
     }
 
     if ($success) {
-        Refresh-ProcessPathFromRegistry
+        Update-ProcessPathFromRegistry
         Start-Sleep -Seconds 2
         $success = Test-MsvcBuildTools
     }
@@ -2672,8 +2763,8 @@ function Install-MsvcBuildTools {
 
 function Install-VCRedistWithWinget {
     Write-Host "Installing Visual C++ Redistributable via winget..." -ForegroundColor Yellow
-    $args = @("install", "--id", "Microsoft.VCRedist.2015+.x64", "--exact") + (Get-WingetInstallBaseArgs)
-    if (Invoke-WingetInstallCommand -CommandArgs $args -AllowRetryWithoutLocation) {
+    $wingetArgs = @("install", "--id", "Microsoft.VCRedist.2015+.x64", "--exact") + (Get-WingetInstallBaseArgs)
+    if (Invoke-WingetInstallCommand -CommandArgs $wingetArgs -AllowRetryWithoutLocation) {
         Write-Host "Visual C++ Redistributable ready via winget." -ForegroundColor Green
         return $true
     }
@@ -2734,7 +2825,7 @@ function Install-VCRedist {
             
             Invoke-WebRequest -Uri $vcRedistUrl -OutFile $vcRedistInstaller -UseBasicParsing
             Write-Host "Installing Visual C++ Redistributable..." -ForegroundColor Yellow
-            $process = Start-Process -FilePath $vcRedistInstaller -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
+            $null = Start-Process -FilePath $vcRedistInstaller -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
             
             # Wait a moment for registry to update
             Start-Sleep -Seconds 2
@@ -2856,7 +2947,7 @@ function Install-Chocolatey {
     }
 }
 
-function Ensure-PackageManager {
+function Initialize-PackageManager {
     Write-Host "Checking for package managers" -NoNewline -ForegroundColor White
     
     if (Test-CommandAvailable "winget") {
@@ -2911,13 +3002,17 @@ function Test-IsAdministrator {
     }
 }
 
-function Should-RequestElevation {
+function Test-RequestElevationNeeded {
     if (-not $script:AutoElevationEnabled) {
         return $false
     }
 
     if (Test-IsAdministrator) {
         return $false
+    }
+
+    if ($Uninstall -or $UninstallAI) {
+        return $true
     }
 
     if ($script:WingetInstallScope -eq "machine") {
@@ -2936,24 +3031,23 @@ function Should-RequestElevation {
 }
 
 function Request-ElevationAndRelaunch {
-    if (-not (Should-RequestElevation)) {
+    if (-not (Test-RequestElevationNeeded)) {
         return
     }
 
-    Write-Host "Administrator privileges are recommended for selected install options." -ForegroundColor Yellow
-    $answer = Read-Host "Relaunch installer as Administrator now? [Y/N] (default: Y)"
-    if ([string]::IsNullOrWhiteSpace("$answer")) { $answer = "Y" }
-    if ($answer -notmatch '^[Yy]') {
-        Write-Host "Continuing without elevation. Some installs may be skipped or fail." -ForegroundColor Yellow
-        return
+    if ($Uninstall -or $UninstallAI) {
+        Write-Host "Administrator privileges are required for uninstall mode. Triggering UAC prompt..." -ForegroundColor Yellow
+    } else {
+        Write-Host "Administrator privileges are required for selected install options. Triggering UAC prompt..." -ForegroundColor Yellow
     }
 
-    $relaunchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) + (Build-ScriptRelaunchArgs)
+    $relaunchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) + (New-ScriptRelaunchArgs)
     try {
         Start-Process -FilePath "powershell.exe" -ArgumentList $relaunchArgs -Verb RunAs | Out-Null
         exit 0
     } catch {
-        Write-Host "Elevation request was cancelled or failed. Continuing without elevation." -ForegroundColor Yellow
+        Write-Host "Elevation request was cancelled or failed. Exiting without running installer actions." -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -3143,7 +3237,40 @@ function Install-PythonWithChoco {
 }
 
 function Install-PythonWithScoop {
-    throw "Scoop automatic Python install is not configured for the required 3.12 version. Use winget or Chocolatey."
+    Write-Host "Installing Python using Scoop..."
+
+    # If Scoop already has a suitable Python package installed, reuse it.
+    foreach ($pkg in @("python311", "python312", "python")) {
+        try {
+            $listOut = & scoop list $pkg 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $listOut -match "(?im)^\s*$([regex]::Escape($pkg))\s+(\d+\.\d+)") {
+                $installedMinor = $matches[1]
+                if ($installedMinor -match '^3\.(10|11|12)$') {
+                    Write-Host "Scoop already has $pkg ($installedMinor); reusing existing installation." -ForegroundColor Green
+                    return
+                }
+            }
+        } catch {
+            # Ignore and continue probing/installing.
+        }
+    }
+
+    # Prefer a version-pinned package first; fall back to default python package.
+    foreach ($pkg in @("python311", "python")) {
+        try {
+            $proc = Start-Process scoop -ArgumentList "install", $pkg -Wait -NoNewWindow -PassThru
+            if ($proc.ExitCode -eq 0) {
+                $resolved = Wait-ForPythonCommand -Seconds 30
+                if ($resolved) {
+                    return
+                }
+            }
+        } catch {
+            # Try next package candidate.
+        }
+    }
+
+    throw "Scoop Python install failed or produced an unsupported version."
 }
 
 function Install-PythonManually {
@@ -3323,9 +3450,13 @@ function Repair-TorchInVenv {
     & $PythonExe -m pip cache purge 2>&1 | Out-Null
 
     # Install a fresh CPU wheel directly from the official PyTorch CPU index.
-    & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | ForEach-Object {
-        if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
-            Write-Host "  $_" -ForegroundColor Gray
+    if ($script:QuietOutput) {
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | Out-Null
+    } else {
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | ForEach-Object {
+            if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
+                Write-Host "  $_" -ForegroundColor Gray
+            }
         }
     }
 
@@ -3352,7 +3483,7 @@ function Install-UV {
     foreach ($c in $candidates) {
         if (Test-Path $c) {
             Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
-            Refresh-ProcessPathFromRegistry
+            Update-ProcessPathFromRegistry
             return $c
         }
     }
@@ -3363,7 +3494,7 @@ function Install-UV {
             -UseBasicParsing -TimeoutSec 60
         # Redirect all streams so UV's own installer messages don't clutter output
         & ([scriptblock]::Create($installScript)) *>&1 | Out-Null
-        Refresh-ProcessPathFromRegistry
+        Update-ProcessPathFromRegistry
     } catch {
         return ""
     }
@@ -3375,7 +3506,7 @@ function Install-UV {
     foreach ($c in $candidates) {
         if (Test-Path $c) {
             Add-UserPathEntry -PathEntry (Split-Path $c -Parent) | Out-Null
-            Refresh-ProcessPathFromRegistry
+            Update-ProcessPathFromRegistry
             return $c
         }
     }
@@ -3572,7 +3703,6 @@ function Invoke-PipInstall {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $requirementsPath = Join-Path $scriptDir "requirements.txt"
-$requirementsAIPath = Join-Path $scriptDir "requirements_ai.txt"
 $ffmpegInstallerPath = Join-Path $scriptDir "install_ffmpeg_windows.ps1"
 $subtitleToolPath = Join-Path $scriptDir "subtitle_tool.py"
 $venvPath = Join-Path $scriptDir "venv"
@@ -3696,7 +3826,7 @@ if ($script:RequestedUninstallAI) {
         Write-Host "Uninstalling AI packages from venv..." -ForegroundColor White
         foreach ($pkg in $aiPackages) {
             Write-Host "  Removing $pkg..." -NoNewline -ForegroundColor Gray
-            $result = & $venvPy -m pip uninstall -y $pkg 2>&1
+            & $venvPy -m pip uninstall -y $pkg 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host " [ " -NoNewline -ForegroundColor White
                 Write-Host "OK" -NoNewline -ForegroundColor Green
@@ -3843,6 +3973,25 @@ if ($script:RequestedUninstall) {
         $dotnetPreExisted = if ($mDotNetRuntime) { [bool](Get-MfstProp $mDotNetRuntime "pre_existed" $true) } else { $true }
         $dotnetMethod = if ($mDotNetRuntime) { [string](Get-MfstProp $mDotNetRuntime "install_method" "") } else { "" }
 
+    $includePreexisting = [bool]$UninstallIncludePreexisting
+    if (-not $NoPause -and -not $includePreexisting) {
+        Write-Host "" 
+        Write-Host "Optional: also uninstall packages that were already on this system before this installer." -ForegroundColor Yellow
+        $removePreexisting = Read-Host "Also remove pre-existing system packages when possible? [Y/N]"
+        if ($removePreexisting -match "^[Yy]") {
+            $includePreexisting = $true
+            Set-Variable -Name UninstallIncludePreexisting -Scope Script -Value $true
+        }
+    }
+
+    $pyMethodEffective = if ($pyMethod) { $pyMethod } elseif ($includePreexisting -and $pyPreExisted) { "auto" } else { "" }
+    $ffMethodEffective = if ($ffMethod) { $ffMethod } elseif ($includePreexisting -and $ffPreExisted) { "auto" } else { "" }
+    $vcMethodEffective = if ($vcMethod) { $vcMethod } elseif ($includePreexisting -and $vcPreExisted) { "auto" } else { "" }
+    $mkvMethodEffective = if ($mkvMethod) { $mkvMethod } elseif ($includePreexisting -and $mkvPreExisted) { "auto" } else { "" }
+    $hbMethodEffective = if ($hbMethod) { $hbMethod } elseif ($includePreexisting -and $hbPreExisted) { "auto" } else { "" }
+    $mmMethodEffective = if ($mmMethod) { $mmMethod } elseif ($includePreexisting -and $mmPreExisted) { "auto" } else { "" }
+    $dotnetMethodEffective = if ($dotnetMethod) { $dotnetMethod } elseif ($includePreexisting -and $dotnetPreExisted) { "auto" } else { "" }
+
     # Show summary of what will happen
     Write-Host "The following will always be removed:" -ForegroundColor White
     Write-Host "  - Virtual environment:  $venvPath" -ForegroundColor White
@@ -3854,42 +4003,46 @@ if ($script:RequestedUninstall) {
 
     if (-not $hasMfst) {
         Write-Host "No install manifest found (.install_manifest.json)." -ForegroundColor Yellow
-        Write-Host "System packages (Python, ffmpeg, VC++) will NOT be touched." -ForegroundColor Yellow
-        Write-Host "If you want to remove them, delete them manually via Apps & Features." -ForegroundColor Yellow
+        if ($includePreexisting) {
+            Write-Host "System packages will be uninstalled best-effort via available package managers." -ForegroundColor Yellow
+        } else {
+            Write-Host "System packages (Python, ffmpeg, VC++) will NOT be touched." -ForegroundColor Yellow
+            Write-Host "If you want to remove them, delete them manually via Apps & Features." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "System packages (based on install manifest):" -ForegroundColor White
-        if (-not $pyPreExisted -and $pyMethod) {
-            Write-Host "  - Python 3.11    will be uninstalled via $pyMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $pyPreExisted) -and $pyMethodEffective) {
+            Write-Host "  - Python 3.11    will be uninstalled via $pyMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - Python         was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $ffPreExisted -and $ffMethod) {
-            Write-Host "  - ffmpeg         will be uninstalled via $ffMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $ffPreExisted) -and $ffMethodEffective) {
+            Write-Host "  - ffmpeg         will be uninstalled via $ffMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - ffmpeg         was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $vcPreExisted -and $vcMethod) {
-            Write-Host "  - VC++ Redist    will be uninstalled via $vcMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $vcPreExisted) -and $vcMethodEffective) {
+            Write-Host "  - VC++ Redist    will be uninstalled via $vcMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - VC++ Redist    was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $mkvPreExisted -and $mkvMethod) {
-            Write-Host "  - MKVToolNix     will be uninstalled via $mkvMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $mkvPreExisted) -and $mkvMethodEffective) {
+            Write-Host "  - MKVToolNix     will be uninstalled via $mkvMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - MKVToolNix     was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $hbPreExisted -and $hbMethod) {
-            Write-Host "  - HandBrakeCLI   will be uninstalled via $hbMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $hbPreExisted) -and $hbMethodEffective) {
+            Write-Host "  - HandBrakeCLI   will be uninstalled via $hbMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - HandBrakeCLI   was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $mmPreExisted -and $mmMethod) {
-            Write-Host "  - MakeMKV        will be uninstalled via $mmMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $mmPreExisted) -and $mmMethodEffective) {
+            Write-Host "  - MakeMKV        will be uninstalled via $mmMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - MakeMKV        was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
-        if (-not $dotnetPreExisted -and $dotnetMethod) {
-            Write-Host "  - .NET Runtime   will be uninstalled via $dotnetMethod" -ForegroundColor Cyan
+        if (($includePreexisting -or -not $dotnetPreExisted) -and $dotnetMethodEffective) {
+            Write-Host "  - .NET Runtime   will be uninstalled via $dotnetMethodEffective" -ForegroundColor Cyan
         } else {
             Write-Host "  - .NET Runtime   was already installed before this script - will NOT be touched" -ForegroundColor Gray
         }
@@ -3961,7 +4114,7 @@ if ($script:RequestedUninstall) {
             Write-Host "OK" -NoNewline -ForegroundColor Green
             Write-Host " ]" -ForegroundColor White
         } else {
-            Write-Host " [ failed ]" -ForegroundColor Yellow
+            Write-Host " [ failed ]" -ForegroundColor Red
         }
     }
 
@@ -3987,13 +4140,13 @@ if ($script:RequestedUninstall) {
         }
     }
 
-    # 5. Conditionally remove system packages (only what the script installed)
-    if ($hasMfst) {
+    # 5. Conditionally remove system packages.
+    if ($hasMfst -or $includePreexisting) {
         # --- Python ---
-        if (-not $pyPreExisted -and $pyMethod) {
+        if (($includePreexisting -or -not $pyPreExisted) -and $pyMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling Python 3.11 via $pyMethod..." -ForegroundColor White
-            switch ($pyMethod) {
+            Write-Host "Uninstalling Python 3.11 via $pyMethodEffective..." -ForegroundColor White
+            switch ($pyMethodEffective) {
                 "winget" {
                     winget uninstall --id Python.Python.3.11 --silent --accept-source-agreements 2>&1 | Out-Null
                     if ($LASTEXITCODE -eq 0) {
@@ -4008,17 +4161,33 @@ if ($script:RequestedUninstall) {
                     choco uninstall python311 -y --remove-dependencies 2>&1 | Out-Null
                     Write-Host "  Python uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Python.Python.3.11 --silent --accept-source-agreements 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --name "Python 3.11" --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall python311 -y --remove-dependencies 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall python311 2>&1 | Out-Null
+                        scoop uninstall python 2>&1 | Out-Null
+                    }
+                    Write-Host "  Python uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$pyMethod' - please remove Python manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$pyMethodEffective' - please remove Python manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- ffmpeg ---
-        if (-not $ffPreExisted -and $ffMethod) {
+        if (($includePreexisting -or -not $ffPreExisted) -and $ffMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling ffmpeg via $ffMethod..." -ForegroundColor White
-            switch ($ffMethod) {
+            Write-Host "Uninstalling ffmpeg via $ffMethodEffective..." -ForegroundColor White
+            switch ($ffMethodEffective) {
                 "winget" {
                     winget uninstall --id Gyan.FFmpeg --silent 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) {
@@ -4035,17 +4204,32 @@ if ($script:RequestedUninstall) {
                     scoop uninstall ffmpeg 2>&1 | Out-Null
                     Write-Host "  ffmpeg uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Gyan.FFmpeg --silent 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --name "ffmpeg" --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall ffmpeg -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall ffmpeg 2>&1 | Out-Null
+                    }
+                    Write-Host "  ffmpeg uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$ffMethod' - please remove ffmpeg manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$ffMethodEffective' - please remove ffmpeg manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- Visual C++ Redistributable ---
-        if (-not $vcPreExisted -and $vcMethod) {
+        if (($includePreexisting -or -not $vcPreExisted) -and $vcMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling Visual C++ Redistributable via $vcMethod..." -ForegroundColor White
-            switch ($vcMethod) {
+            Write-Host "Uninstalling Visual C++ Redistributable via $vcMethodEffective..." -ForegroundColor White
+            switch ($vcMethodEffective) {
                 "winget" {
                     winget uninstall --id Microsoft.VCRedist.2015+.x64 --silent 2>&1 | Out-Null
                     Write-Host "  VC++ Redistributable uninstalled." -ForegroundColor Green
@@ -4054,17 +4238,26 @@ if ($script:RequestedUninstall) {
                     choco uninstall vcredist-all -y 2>&1 | Out-Null
                     Write-Host "  VC++ Redistributable uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Microsoft.VCRedist.2015+.x64 --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall vcredist-all -y 2>&1 | Out-Null
+                    }
+                    Write-Host "  VC++ Redistributable uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$vcMethod' - please remove VC++ manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$vcMethodEffective' - please remove VC++ manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- MKVToolNix ---
-        if (-not $mkvPreExisted -and $mkvMethod) {
+        if (($includePreexisting -or -not $mkvPreExisted) -and $mkvMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling MKVToolNix via $mkvMethod..." -ForegroundColor White
-            switch ($mkvMethod) {
+            Write-Host "Uninstalling MKVToolNix via $mkvMethodEffective..." -ForegroundColor White
+            switch ($mkvMethodEffective) {
                 "winget" {
                     winget uninstall --id MoritzBunkus.MKVToolNix --silent 2>&1 | Out-Null
                     Write-Host "  MKVToolNix uninstall attempted." -ForegroundColor Green
@@ -4077,17 +4270,29 @@ if ($script:RequestedUninstall) {
                     scoop uninstall mkvtoolnix 2>&1 | Out-Null
                     Write-Host "  MKVToolNix uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id MoritzBunkus.MKVToolNix --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall mkvtoolnix -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall mkvtoolnix 2>&1 | Out-Null
+                    }
+                    Write-Host "  MKVToolNix uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$mkvMethod' - please remove MKVToolNix manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$mkvMethodEffective' - please remove MKVToolNix manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- HandBrake ---
-        if (-not $hbPreExisted -and $hbMethod) {
+        if (($includePreexisting -or -not $hbPreExisted) -and $hbMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling HandBrake via $hbMethod..." -ForegroundColor White
-            switch ($hbMethod) {
+            Write-Host "Uninstalling HandBrake via $hbMethodEffective..." -ForegroundColor White
+            switch ($hbMethodEffective) {
                 "winget" {
                     winget uninstall --id HandBrake.HandBrakeCLI --silent 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) {
@@ -4112,17 +4317,38 @@ if ($script:RequestedUninstall) {
                     }
                     Write-Host "  HandBrake uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id HandBrake.HandBrakeCLI --silent 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            winget uninstall --id HandBrake.HandBrake --silent 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall handbrake-cli -y 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            choco uninstall handbrake -y 2>&1 | Out-Null
+                        }
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall handbrake-cli 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            scoop uninstall handbrake 2>&1 | Out-Null
+                        }
+                    }
+                    Write-Host "  HandBrake uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$hbMethod' - please remove HandBrake manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$hbMethodEffective' - please remove HandBrake manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- MakeMKV ---
-        if (-not $mmPreExisted -and $mmMethod) {
+        if (($includePreexisting -or -not $mmPreExisted) -and $mmMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling MakeMKV via $mmMethod..." -ForegroundColor White
-            switch ($mmMethod) {
+            Write-Host "Uninstalling MakeMKV via $mmMethodEffective..." -ForegroundColor White
+            switch ($mmMethodEffective) {
                 "winget" {
                     winget uninstall --id GuinpinSoft.MakeMKV --silent 2>&1 | Out-Null
                     Write-Host "  MakeMKV uninstall attempted." -ForegroundColor Green
@@ -4135,17 +4361,29 @@ if ($script:RequestedUninstall) {
                     scoop uninstall makemkv 2>&1 | Out-Null
                     Write-Host "  MakeMKV uninstalled via Scoop." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id GuinpinSoft.MakeMKV --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall makemkv -y 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "scoop") {
+                        scoop uninstall makemkv 2>&1 | Out-Null
+                    }
+                    Write-Host "  MakeMKV uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$mmMethod' - please remove MakeMKV manually." -ForegroundColor Yellow
+                    Write-Host "  Install method '$mmMethodEffective' - please remove MakeMKV manually." -ForegroundColor Yellow
                 }
             }
         }
 
         # --- .NET Desktop Runtime ---
-        if (-not $dotnetPreExisted -and $dotnetMethod) {
+        if (($includePreexisting -or -not $dotnetPreExisted) -and $dotnetMethodEffective) {
             Write-Host ""
-            Write-Host "Uninstalling .NET Desktop Runtime via $dotnetMethod..." -ForegroundColor White
-            switch ($dotnetMethod) {
+            Write-Host "Uninstalling .NET Desktop Runtime via $dotnetMethodEffective..." -ForegroundColor White
+            switch ($dotnetMethodEffective) {
                 "winget" {
                     winget uninstall --id Microsoft.DotNet.DesktopRuntime.8 --silent 2>&1 | Out-Null
                     Write-Host "  .NET Desktop Runtime uninstalled." -ForegroundColor Green
@@ -4154,8 +4392,17 @@ if ($script:RequestedUninstall) {
                     choco uninstall dotnet-desktopruntime -y 2>&1 | Out-Null
                     Write-Host "  .NET Desktop Runtime uninstalled via Chocolatey." -ForegroundColor Green
                 }
+                "auto" {
+                    if (Test-CommandAvailable "winget") {
+                        winget uninstall --id Microsoft.DotNet.DesktopRuntime.8 --silent 2>&1 | Out-Null
+                    }
+                    if (Test-CommandAvailable "choco") {
+                        choco uninstall dotnet-desktopruntime -y 2>&1 | Out-Null
+                    }
+                    Write-Host "  .NET Desktop Runtime uninstall attempted via available managers." -ForegroundColor Yellow
+                }
                 default {
-                    Write-Host "  Install method '$dotnetMethod' - please remove .NET Desktop Runtime manually via Apps & Features." -ForegroundColor Yellow
+                    Write-Host "  Install method '$dotnetMethodEffective' - please remove .NET Desktop Runtime manually via Apps & Features." -ForegroundColor Yellow
                 }
             }
         }
@@ -4207,7 +4454,7 @@ Write-Host ""
 Request-ElevationAndRelaunch
 
 # Ensure we have a package manager
-Ensure-PackageManager
+Initialize-PackageManager
 
 # Log available package managers
 Write-VerboseLogBanner "Package manager availability"
@@ -4279,6 +4526,9 @@ Write-Host "OK" -NoNewline -ForegroundColor Green
 Write-Host " ]" -ForegroundColor White
 # Log Python detection result
 $_pyDetectedVersion = Get-PythonCommandVersion $pythonCmd 2>$null
+if ($_pyDetectedVersion) {
+    Write-Host "Detected Python version: $_pyDetectedVersion" -ForegroundColor DarkGray
+}
 Write-VerboseLog -Lines @(
     "Status  : $(if ($script:PythonPreExisted) { 'pre-existed' } else { 'installed by script (method: ' + $script:PythonInstallUsed + ')' })",
     "Command : $pythonCmd",
@@ -4473,7 +4723,7 @@ if ($selectedAiBackends.Count -eq 0 -and $existingAiBackends.Count -eq 0 -and -n
     Write-Host ""
     Write-Host "=== AI Backend Selection ===" -ForegroundColor Cyan
     Write-Host "Install only the AI backends you want. The original Whisper backend is available as 'OpenAI Whisper (original)'." -ForegroundColor White
-    $selectedAiBackends = Prompt-AiBackendSelections -Definitions $aiDefinitions
+    $selectedAiBackends = Read-AiBackendSelections -Definitions $aiDefinitions
 }
 
 if ($selectedAiBackends.Count -gt 0) {
@@ -4548,7 +4798,7 @@ if ($selectedAiBackends.Count -gt 0) {
 
 $speechBrainRequested = ($selectedAiBackends -contains "speechbrain") -or ($existingAiBackends -contains "speechbrain")
 if ($speechBrainRequested) {
-    $speechBrainAudioReady = Ensure-SpeechBrainAudioSupport -PythonExe $venvPythonCmd
+    $speechBrainAudioReady = Set-SpeechBrainAudioSupport -PythonExe $venvPythonCmd
     if (-not $speechBrainAudioReady) {
         Write-Host "SpeechBrain may still fail to read some audio files. If needed, convert source audio to WAV/FLAC with ffmpeg." -ForegroundColor Yellow
     }
@@ -4643,7 +4893,7 @@ if ($script:AutoPathBridgeEnabled) {
     foreach ($toolKey in @("mkvtoolnix", "handbrake", "makemkv")) {
         $tool = $videoToolsBefore[$toolKey]
         if ([bool]$tool.found -and -not [bool]$tool.command_on_path) {
-            Ensure-ToolCliReachable `
+            Set-ToolCliReachable `
                 -ToolCommand ([string]$tool.command) `
                 -DetectedBinaryPath ([string]$tool.path) `
                 -ToolDisplayName ([string]$tool.display) | Out-Null
@@ -4691,6 +4941,24 @@ if ($missingToolKeys.Count -gt 0) {
             $selectedMissingToolKeys += $toolKey
         }
     }
+
+    # Treat an explicit per-tool install method as an install request, even if
+    # the tool is not checked in the auto-install list.
+    foreach ($toolKey in $missingToolKeys) {
+        $explicitMethod = "auto"
+        if ($toolKey -eq "mkvtoolnix") {
+            $explicitMethod = [string]$script:MkvtoolnixInstallMethod
+        } elseif ($toolKey -eq "handbrake") {
+            $explicitMethod = [string]$script:HandBrakeInstallMethod
+        } elseif ($toolKey -eq "makemkv") {
+            $explicitMethod = [string]$script:MakeMKVInstallMethod
+        }
+
+        if ($explicitMethod -in @("winget", "choco", "scoop") -and ($selectedMissingToolKeys -notcontains $toolKey)) {
+            $selectedMissingToolKeys += $toolKey
+        }
+    }
+
     $selectedMissingToolKeys = @($selectedMissingToolKeys | Select-Object -Unique)
     if ($selectedMissingToolKeys.Count -gt 0) {
         Write-Host "Installer profile requested auto-install for: $($selectedMissingToolKeys -join ', ')." -ForegroundColor Cyan
@@ -4760,7 +5028,7 @@ if ($missingToolKeys.Count -gt 0) {
 
             $videoToolsAfter = Get-OptionalVideoToolStatus
             if ([bool]$videoToolsAfter[$toolKey].found -and -not [bool]$videoToolsAfter[$toolKey].command_on_path) {
-                Ensure-ToolCliReachable `
+                Set-ToolCliReachable `
                     -ToolCommand ([string]$videoToolsAfter[$toolKey].command) `
                     -DetectedBinaryPath ([string]$videoToolsAfter[$toolKey].path) `
                     -ToolDisplayName ([string]$videoToolsAfter[$toolKey].display) | Out-Null
@@ -4867,7 +5135,7 @@ Write-Host " ]" -ForegroundColor White
 Write-Host "cinemagoer (IMDB lookup)" -NoNewline -ForegroundColor White
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-$cinemagoerTest = & $venvPythonCmd -c "from imdb import Cinemagoer; print('ok')" 2>&1
+& $venvPythonCmd -c "from imdb import Cinemagoer; print('ok')" 2>&1 | Out-Null
 $ErrorActionPreference = $previousErrorActionPreference
 if ($LASTEXITCODE -ne 0) {
     Write-Host "..." -NoNewline -ForegroundColor White
@@ -5077,7 +5345,7 @@ try {
     }
 }
 
-Cleanup-InstallerArtifacts
+Clear-InstallerArtifacts
 
 if (-not $NoPause) {
     Write-Host ""
@@ -5085,3 +5353,5 @@ if (-not $NoPause) {
 }
 
 exit 0
+
+
