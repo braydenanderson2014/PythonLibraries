@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+
+# Local runtime config and outputs
+config.json
+output/
+temp/

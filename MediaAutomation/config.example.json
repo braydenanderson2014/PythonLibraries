@@ -1,0 +1,124 @@
+{
+  "paths": {
+    "output_root": "./output",
+    "temp_root": "./temp"
+  },
+  "executables": {
+    "makemkv": "C:/Program Files (x86)/MakeMKV/makemkvcon64.exe",
+    "handbrake": "C:/Program Files/HandBrake/HandBrakeCLI.exe",
+    "subtitle_tool": "python",
+    "tuneboto": "",
+    "vidicable": "",
+    "dispcam": "",
+    "flixicam": "",
+    "streamfab": ""
+  },
+  "defaults": {
+    "dry_run": true,
+    "rip_format": "mkv",
+    "handbrake_preset": "Fast 1080p30",
+    "subtitle_profile": "default",
+    "online_ripper_priority": [
+      "vidicable",
+      "dispcam",
+      "flixicam",
+      "streamfab",
+      "tuneboto"
+    ],
+    "download_watch_dir": "D:/Downloads",
+    "download_timeout_sec": 1800,
+    "download_stable_for_sec": 8,
+    "download_extensions": [
+      ".mkv",
+      ".mp4"
+    ],
+    "launch_with_source_url": true,
+    "first_use_signin_required": true,
+    "first_use_signin_wait_sec": 45
+  },
+  "jobs": [
+    {
+      "name": "Example Disc Job",
+      "enabled": true,
+      "source_type": "disc",
+      "source": "disc:0",
+      "title": "0",
+      "ripper": "makemkv",
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "ExampleMovie",
+      "metadata": {
+        "notes": "Reads title 0 from disc 0"
+      }
+    },
+    {
+      "name": "Example Online Job",
+      "enabled": false,
+      "source_type": "online",
+      "source": "https://service.example/media/123",
+      "ripper": "tuneboto",
+      "ripper_candidates": [
+        "vidicable",
+        "dispcam",
+        "flixicam",
+        "streamfab",
+        "tuneboto"
+      ],
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "OnlineExample"
+    },
+    {
+      "name": "Example Vidicable Job",
+      "enabled": false,
+      "source_type": "online",
+      "source": "https://service.example/media/vidicable",
+      "ripper": "vidicable",
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "VidicableExample",
+      "metadata": {
+        "download_watch_dir": "D:/Downloads/Vidicable"
+      }
+    },
+    {
+      "name": "Example DispCam Job",
+      "enabled": false,
+      "source_type": "online",
+      "source": "https://service.example/media/dispcam",
+      "ripper": "dispcam",
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "DispCamExample",
+      "metadata": {
+        "download_watch_dir": "D:/Downloads/DispCam"
+      }
+    },
+    {
+      "name": "Example Flixicam Job",
+      "enabled": false,
+      "source_type": "online",
+      "source": "https://service.example/media/flixicam",
+      "ripper": "flixicam",
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "FlixicamExample",
+      "metadata": {
+        "download_watch_dir": "D:/Downloads/Flixicam"
+      }
+    },
+    {
+      "name": "Example StreamFab Job",
+      "enabled": false,
+      "source_type": "online",
+      "source": "https://service.example/media/streamfab",
+      "ripper": "streamfab",
+      "subtitle_adapter": "subtitle_tool",
+      "encoder": "handbrake",
+      "output_name": "StreamFabExample",
+      "metadata": {
+        "download_watch_dir": "D:/Downloads/StreamFab"
+      }
+    }
+  ]
+}

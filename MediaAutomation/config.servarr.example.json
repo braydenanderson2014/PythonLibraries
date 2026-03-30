@@ -1,0 +1,159 @@
+{
+  "paths": {
+    "output_root": "./output",
+    "temp_root": "./temp"
+  },
+  "executables": {
+    "makemkv": "makemkvcon64",
+    "handbrake": "HandBrakeCLI",
+    "subtitle_tool": "python",
+    "tuneboto": "",
+    "vidicable": "",
+    "dispcam": "",
+    "flixicam": "",
+    "streamfab": ""
+  },
+  "defaults": {
+    "dry_run": true,
+    "rip_format": "mkv",
+    "handbrake_preset": "Fast 1080p30",
+    "subtitle_profile": "default",
+    "online_ripper_priority": [
+      "vidicable",
+      "dispcam",
+      "flixicam",
+      "streamfab",
+      "tuneboto"
+    ],
+    "download_watch_dir": "D:/Downloads",
+    "download_timeout_sec": 1800,
+    "download_stable_for_sec": 8,
+    "download_extensions": [
+      ".mkv",
+      ".mp4"
+    ],
+    "launch_with_source_url": true,
+    "first_use_signin_required": true,
+    "first_use_signin_wait_sec": 45
+  },
+  "servarr": {
+    "prowlarr": {
+      "enabled": false,
+      "base_url": "http://localhost:9696",
+      "api_key": "your_prowlarr_api_key"
+    },
+    "sonarr": {
+      "enabled": false,
+      "base_url": "http://localhost:8989",
+      "api_key": "your_sonarr_api_key",
+      "quality_profile_id": 1,
+      "root_folder_path": "/tv",
+      "season_folder": true
+    },
+    "radarr": {
+      "enabled": false,
+      "base_url": "http://localhost:7878",
+      "api_key": "your_radarr_api_key",
+      "quality_profile_id": 1,
+      "root_folder_path": "/movies"
+    },
+    "lidarr": {
+      "enabled": false,
+      "base_url": "http://localhost:8686",
+      "api_key": "your_lidarr_api_key",
+      "quality_profile_id": 1,
+      "metadata_profile_id": 1,
+      "root_folder_path": "/music"
+    },
+    "readarr": {
+      "enabled": false,
+      "base_url": "http://localhost:8787",
+      "api_key": "your_readarr_api_key",
+      "quality_profile_id": 1,
+      "metadata_profile_id": 1,
+      "root_folder_path": "/books"
+    }
+  },
+  "jobs": [
+    {
+      "name": "Local DVD Rip",
+      "enabled": true,
+      "source_type": "disc",
+      "source": "disc:0",
+      "output_name": "example_movie",
+      "ripper": "makemkv",
+      "encoder": "handbrake",
+      "subtitle_adapter": "subtitle_tool",
+      "metadata": {
+        "description": "Rip from local DVD drive"
+      }
+    },
+    {
+      "name": "Online Stream Rip",
+      "enabled": false,
+      "source_type": "url",
+      "source": "https://example.com/stream",
+      "output_name": "streamed_content",
+      "ripper": "vidicable",
+      "encoder": "handbrake",
+      "subtitle_adapter": "subtitle_tool",
+      "metadata": {
+        "url": "https://example.com/stream",
+        "service": "custom_site"
+      }
+    },
+    {
+      "name": "Add Movie to Radarr",
+      "enabled": false,
+      "source_type": "radarr_search",
+      "source": "Inception",
+      "output_name": "inception_search",
+      "ripper": "radarr",
+      "encoder": "none",
+      "metadata": {
+        "quality_profile_id": 1,
+        "root_folder_path": "/movies"
+      }
+    },
+    {
+      "name": "Add TV Show to Sonarr",
+      "enabled": false,
+      "source_type": "sonarr_search",
+      "source": "Breaking Bad",
+      "output_name": "breaking_bad_search",
+      "ripper": "sonarr",
+      "encoder": "none",
+      "metadata": {
+        "quality_profile_id": 1,
+        "root_folder_path": "/tv",
+        "season_folder": true
+      }
+    },
+    {
+      "name": "Add Artist to Lidarr",
+      "enabled": false,
+      "source_type": "lidarr_search",
+      "source": "The Beatles",
+      "output_name": "beatles_search",
+      "ripper": "lidarr",
+      "encoder": "none",
+      "metadata": {
+        "quality_profile_id": 1,
+        "metadata_profile_id": 1,
+        "root_folder_path": "/music"
+      }
+    },
+    {
+      "name": "Search Prowlarr",
+      "enabled": false,
+      "source_type": "prowlarr_search",
+      "source": "Doctor Who Season 1",
+      "output_name": "doctor_who_search",
+      "ripper": "prowlarr",
+      "encoder": "none",
+      "metadata": {
+        "categories": []
+      }
+    }
+  ]
+}
