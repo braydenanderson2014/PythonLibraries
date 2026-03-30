@@ -176,8 +176,8 @@ def setup_splash_screen(app: QApplication):
     return splash
 
 
-def main():
-    """Main entry point for the application."""
+def run_app() -> int:
+    """Run the full Media Automation desktop app and return process exit code."""
     logger.info("="*60)
     logger.info("Media Automation System Starting")
     logger.info("="*60)
@@ -261,12 +261,17 @@ def main():
         logger.info("="*60)
         
         # Start event loop
-        sys.exit(app.exec())
+        return app.exec()
         
     except Exception as e:
         logger.critical(f"Error starting application: {e}", exc_info=True)
         print(f"Fatal error: {e}")
-        sys.exit(1)
+        return 1
+
+
+def main():
+    """Main entry point for direct script execution."""
+    sys.exit(run_app())
 
 
 if __name__ == "__main__":

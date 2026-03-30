@@ -194,7 +194,12 @@ class StatusDashboard(QWidget):
         """Update the active tasks display."""
         # Clear existing widgets
         while self.tasks_layout.count():
-            self.tasks_layout.takeAt(0).widget().deleteLater()
+            item = self.tasks_layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
         
         tasks = self.status_tracker.get_all_task_statuses()
         
