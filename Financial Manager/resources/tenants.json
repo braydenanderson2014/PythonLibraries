@@ -7,7 +7,7 @@
       "end_date": "2026-06-13",
       "lease_type": "Fixed Term"
     },
-    "deposit_amount": 0.0,
+    "deposit_amount": 700.0,
     "contact_info": {
       "phone": "",
       "email": "",
@@ -17,7 +17,8 @@
     "notes": [
       "[2025-12-14 16:48:46] Tenant details updated: Rental period changed from 2024-12-14 to 2026-12-14 \u2192 2025-12-13 to 2026-06-13; Account status changed from 'Active' to 'active'",
       "[2025-12-14] Monthly override for 2025-12: $550.00 - First Month/Partial",
-      "[2025-12-23] Monthly override removed for 2025-12 - Override removed"
+      "[2025-12-23] Monthly override removed for 2025-12 - Override removed",
+      "[2026-04-02 21:29:05] Deposit changed from $0.00 to $700.00. Reason: Never added"
     ],
     "rent_amount": 1600.0,
     "monthly_exceptions": {
@@ -53,7 +54,7 @@
         6
       ]
     ],
-    "total_rent_paid": 5350.0,
+    "total_rent_paid": 6950.0,
     "delinquency_balance": 0.0,
     "delinquent_months": [],
     "account_status": "active",
@@ -62,7 +63,7 @@
       "2026-01": "Paid in Full",
       "2026-02": "Paid in Full",
       "2026-03": "Paid in Full",
-      "2026-04": "Pending",
+      "2026-04": "Paid in Full",
       "2026-05": "Pending",
       "2026-06": "Pending"
     },
@@ -108,6 +109,16 @@
         "month": 3,
         "is_credit_usage": false,
         "notes": "May Not have date Accurate"
+      },
+      {
+        "amount": 1600.0,
+        "type": "Venmo",
+        "date": "2026-03-24",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": ""
       }
     ],
     "service_credit": 0.0,
@@ -116,7 +127,7 @@
       "admin"
     ],
     "user_id": "admin",
-    "last_modified": "2025-12-29T22:59:56.031353"
+    "last_modified": "2026-04-02T21:29:05.353035"
   },
   "iBZA8nOmUm": {
     "name": "Eduardo/Maria(Current)",
@@ -228,16 +239,16 @@
         12
       ]
     ],
-    "total_rent_paid": 20990.0,
-    "delinquency_balance": 1750.0,
+    "total_rent_paid": 22440.0,
+    "delinquency_balance": 1850.0,
     "delinquent_months": [
       [
         2026,
-        2
+        3
       ],
       [
         2026,
-        3
+        4
       ]
     ],
     "account_status": "active",
@@ -255,9 +266,9 @@
       "2025-11": "Overpayment",
       "2025-12": "Paid in Full",
       "2026-01": "Overpayment",
-      "2026-02": "Delinquent",
+      "2026-02": "Overpayment",
       "2026-03": "Delinquent",
-      "2026-04": "Pending",
+      "2026-04": "Delinquent",
       "2026-05": "Pending",
       "2026-06": "Pending",
       "2026-07": "Pending",
@@ -619,6 +630,36 @@
         "month": 2,
         "is_credit_usage": false,
         "notes": ""
+      },
+      {
+        "amount": 600.0,
+        "type": "Zelle",
+        "date": "2026-04-01",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 650.0,
+        "type": "Zelle",
+        "date": "2026-04-02",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 200.0,
+        "type": "Overpayment Credit (Applied: $200.00)",
+        "date": "2026-04-02",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": true,
+        "notes": "Random applied to current month"
       }
     ],
     "service_credit": 0.0,

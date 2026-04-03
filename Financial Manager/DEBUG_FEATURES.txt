@@ -1,0 +1,35 @@
+[FEATURE]: Rent system should support late fee's. This should include an amount ($ or %) 
+and a time frame (e.g. per day, per week, etc.). The system should automatically calculate 
+the late fee based on the due date and the current date when a rental is returned late. 
+Additionally, the system should provide notifications to users about upcoming due dates 
+and potential late fees to encourage timely returns. admins should have the ability to override the
+late fee for a particular day or user, and the system should keep a record of any overrides 
+for auditing purposes.
+
+[FEATURE]: (SERVERIZE) The rent system should either have a separate server, or allow the program 
+to be run on a server, to allow for remote access and management. This would enable users 
+to access the rent system from different locations and devices, and allow for centralized 
+data management. The Rent features are the important part. The system will need to support a 
+"System" account and a "remote user" role to allow for secure access and management of the rent system. 
+The "System" account would have full access to all features and settings, while the "remote user" role would have 
+limited access. Notification settings will need this modification
+
+[BUG]: The dark mode for the rental system does not work properly which causes "Invisible text" especially
+in menus. 
+
+[BUG]: The system doesnt seem to deal with settings changes, and there doesnt appear to be a settings menu.
+
+[BUG]: Rent Dashboard graphs show No Data.
+
+[Feature]: We should fix the layout of the buttons on the rent management screen. 
+(we got a row of 4, then a row of 5, then a row of 3, and a row of 3)
+
+[MODIFICATION]: We have an automation state json file that the system uses when it runs an automation,
+but we should just add this to the settings.json instead. Actually better yet, we should add it to a db.
+
+[DOCUMENTATION]: WITHOUT CREATING NEW FILES UNNECCESARILY, we should update the current documentation and bring it up to date
+
+[FEATURE]: We should separate program styles out into separate css/qss files to make it easier to maintain.
+
+[BUG]: the Tenant analytics screen has a chart (payment methods by amount) that is a circle graph (perfect) but the small slivers 
+are visible, but their labels are all bunched. So if its possible to do like lines/arrows pointing to each sliver, that would make more sense.

@@ -28,12 +28,10 @@ logger = Logger()
 
 class RentManagementTab(QWidget):
     tenant_viewed = pyqtSignal(bool)  # True if tenant is loaded, False otherwise
-    
+
     def __init__(self, rent_tracker):
         super().__init__()
         logger.debug("RentManagementTab", "Initializing RentManagementTab")
-    def __init__(self, rent_tracker):
-        super().__init__()
         self.rent_tracker = rent_tracker
         self.action_queue = ActionQueue()  # Initialize action queue
         self.rental_summaries = RentalSummaries(rent_tracker=rent_tracker)  # Initialize rental summaries system
@@ -49,9 +47,6 @@ class RentManagementTab(QWidget):
         
         # Initialize references for tenant-specific UI elements
         self.rent_buttons_container = None  # Reference to button container layout
-        
-        # Set clean background
-        self.setStyleSheet("QWidget { background-color: #ffffff; }")
         
         # Tenant Selection Section
         self.create_tenant_selection()
@@ -92,21 +87,94 @@ class RentManagementTab(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: #ffffff;
-            }
-            QScrollArea > QWidget > QWidget {
-                background-color: #ffffff;
-            }
-        """)
+        self.scroll_area.setStyleSheet("")
         
         # Create main layout for the entire tab
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.scroll_area)
         self.setLayout(main_layout)
+
+        self.apply_theme()
+
+    def _theme_palette(self):
+        return self.settings.get_theme_palette()
+
+    def apply_theme(self):
+        palette = self._theme_palette()
+        self.setStyleSheet(f'''
+            QWidget {{
+                background-color: {palette['window_bg']};
+                color: {palette['text']};
+            }}
+            QLineEdit, QComboBox, QDoubleSpinBox, QTextEdit, QTableWidget {{
+                background-color: {palette['input_bg']};
+                color: {palette['text']};
+                border: 1px solid {palette['border']};
+                border-radius: 6px;
+            }}
+            QHeaderView::section {{
+                background-color: {palette['header_bg']};
+                color: {palette['text']};
+                border: none;
+                padding: 8px;
+                font-weight: bold;
+            }}
+            QScrollArea {{
+                border: none;
+                background-color: {palette['window_bg']};
+            }}
+        ''')
+
+        if hasattr(self, 'scroll_area'):
+            self.scroll_area.setStyleSheet(f'''
+                QScrollArea {{
+                    border: none;
+                    background-color: {palette['window_bg']};
+                }}
+                QScrollArea > QWidget > QWidget {{
+                    background-color: {palette['window_bg']};
+                }}
+            ''')
+
+        if hasattr(self, 'tenant_dropdown'):
+            self.tenant_dropdown.setStyleSheet(f'''
+                QComboBox {{
+                    background-color: {palette['input_bg']};
+                    color: {palette['text']};
+                    border: 2px solid {palette['accent']};
+                    border-radius: 5px;
+                    padding: 10px;
+                    font-size: 14px;
+                    min-height: 20px;
+                    padding-right: 25px;
+                }}
+                QComboBox:focus {{
+                    border-color: {palette['accent_hover']};
+                }}
+                QComboBox::drop-down {{
+                    border: none;
+                    width: 20px;
+                    background-color: {palette['accent']};
+                    border-top-right-radius: 5px;
+                    border-bottom-right-radius: 5px;
+                }}
+                QComboBox QAbstractItemView {{
+                    background-color: {palette['input_bg']};
+                    color: {palette['text']};
+                    border: 1px solid {palette['border']};
+                    selection-background-color: {palette['accent']};
+                    selection-color: {palette['button_text']};
+                }}
+            ''')
+
+    def refresh_theme(self):
+        self.apply_theme()
+        if self.selected_tenant:
+            refreshed_tenant = self.rent_tracker.tenant_manager.get_tenant(self.selected_tenant.tenant_id) or self.selected_tenant
+            self.load_tenant(refreshed_tenant)
+        else:
+            self.refresh_tenant_dropdown()
     
     def save_tenants_async(self, on_success=None, on_error=None):
         """
@@ -187,18 +255,19 @@ class RentManagementTab(QWidget):
         # Tenant selection frame
         selection_frame = QWidget()
         selection_layout = QVBoxLayout()
+        palette = self._theme_palette()
         
         # Title
         selection_title = QLabel('Select Tenant')
-        selection_title.setStyleSheet("""
-            font-size: 16px; 
-            font-weight: bold; 
-            color: #0056b3; 
-            margin: 5px 0; 
-            background-color: #f8f9fa; 
-            padding: 8px; 
+        selection_title.setStyleSheet(f'''
+            font-size: 16px;
+            font-weight: bold;
+            color: {palette['text']};
+            margin: 5px 0;
+            background-color: {palette['header_bg']};
+            padding: 8px;
             border-radius: 4px;
-        """)
+        ''')
         selection_layout.addWidget(selection_title)
         
         # Tenant dropdown with search
@@ -207,41 +276,7 @@ class RentManagementTab(QWidget):
         self.tenant_dropdown.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)  # Don't add typed text as items
         self.tenant_dropdown.activated.connect(self.on_tenant_selected_by_index)  # When item selected from dropdown
         self.tenant_dropdown.currentTextChanged.connect(self.on_tenant_text_changed)  # When text changes
-        self.tenant_dropdown.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #0056b3;
-                border-radius: 5px;
-                padding: 10px;
-                font-size: 14px;
-                min-height: 20px;
-                padding-right: 25px;  /* Make room for dropdown arrow */
-            }
-            QComboBox:focus {
-                border-color: #004085;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-                background-color: #0056b3;
-                border-top-right-radius: 5px;
-                border-bottom-right-radius: 5px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid white;
-                margin-left: 5px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                border: 1px solid #0056b3;
-                selection-background-color: #0056b3;
-                selection-color: white;
-                outline: none;
-            }
-        """)
+        self.tenant_dropdown.setStyleSheet("")
         
         # Set up completer for search functionality
         self.tenant_completer = QCompleter()
@@ -572,34 +607,37 @@ class RentManagementTab(QWidget):
             
         # Create a professional tenant info section with proper styling
         from PyQt6.QtWidgets import QFrame, QGridLayout
+        palette = self._theme_palette()
+        section_header_style = f"font-size: 16px; font-weight: bold; color: {palette['text']}; margin: 5px 0; background-color: {palette['header_bg']}; padding: 8px; border-radius: 4px;"
         
         tenant_info_frame = QFrame()
         tenant_info_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         tenant_info_frame.setLineWidth(2)
-        tenant_info_frame.setStyleSheet("""
-            QFrame {
-                background-color: #ffffff;
-                border: 2px solid #0056b3;
+        tenant_info_frame.setStyleSheet(f'''
+            QFrame {{
+                background-color: {palette['panel_bg']};
+                border: 2px solid {palette['accent']};
                 border-radius: 10px;
                 margin: 5px;
-            }
-        """)
+            }}
+        ''')
         
         grid_layout = QGridLayout()
         grid_layout.setSpacing(5)  # Reduce spacing between items
         grid_layout.setContentsMargins(15, 15, 15, 15)  # Reduce margins
         
         # Tenant header
-        header_label = QLabel(f"Tenant Information - {tenant.name} ({tenant.account_status})")
-        header_label.setStyleSheet("""
-            font-size: 20px; 
-            font-weight: bold; 
-            color: #0056b3; 
+        status_text = (tenant.account_status or 'active').title()
+        header_label = QLabel(f"Tenant Information - {tenant.name} ({status_text})")
+        header_label.setStyleSheet(f'''
+            font-size: 20px;
+            font-weight: bold;
+            color: {palette['text']};
             margin-bottom: 15px;
             padding: 10px;
-            background-color: #f8f9fa;
+            background-color: {palette['header_bg']};
             border-radius: 5px;
-        """)
+        ''')
         grid_layout.addWidget(header_label, 0, 0, 1, 2)
         
         # Debug: print tenant information
@@ -652,17 +690,17 @@ class RentManagementTab(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             value = QLabel(str(value_text))
-            value.setStyleSheet("""
-                QLabel {
-                    color: #212529; 
+            value.setStyleSheet(f'''
+                QLabel {{
+                    color: {palette['text']};
                     font-size: 13px;
                     padding: 8px;
-                    background-color: white;
-                    border: 1px solid #e9ecef;
+                    background-color: {palette['surface_bg']};
+                    border: 1px solid {palette['border']};
                     border-radius: 4px;
                     min-height: 20px;
-                }
-            """)
+                }}
+            ''')
             value.setWordWrap(True)
             value.setAlignment(Qt.AlignmentFlag.AlignLeft)
             
@@ -680,17 +718,17 @@ class RentManagementTab(QWidget):
         scroll_area.setMaximumHeight(300)  # Ensure it doesn't expand
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: 2px solid #0056b3;
+        scroll_area.setStyleSheet(f'''
+            QScrollArea {{
+                border: 2px solid {palette['accent']};
                 border-radius: 10px;
-                background-color: white;
+                background-color: {palette['panel_bg']};
                 max-height: 300px;
-            }
-            QScrollArea > QWidget > QWidget {
-                background-color: white;
-            }
-        """)
+            }}
+            QScrollArea > QWidget > QWidget {{
+                background-color: {palette['panel_bg']};
+            }}
+        ''')
         
         self.tenant_info_label = scroll_area  # Keep reference for clearing
         self.layout.addWidget(scroll_area)
@@ -703,11 +741,13 @@ class RentManagementTab(QWidget):
         
         # Rent Management Section
         rent_mgmt_label = QLabel('Rent Management')
-        rent_mgmt_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #0056b3; margin: 5px 0; background-color: #f8f9fa; padding: 8px; border-radius: 4px;")
+        rent_mgmt_label.setStyleSheet(section_header_style)
         self.layout.addWidget(rent_mgmt_label)
         
-        # Rent management buttons - organized in two rows
-        self.rent_buttons_container = QVBoxLayout()
+        # Rent management buttons - organized in a consistent grid
+        self.rent_buttons_container = QGridLayout()
+        self.rent_buttons_container.setHorizontalSpacing(10)
+        self.rent_buttons_container.setVerticalSpacing(10)
         
         # Define consistent button style
         button_style = """
@@ -719,7 +759,7 @@ class RentManagementTab(QWidget):
                 font-weight: bold;
                 border-radius: 4px;
                 min-width: 120px;
-                max-width: 140px;
+                max-width: 160px;
             }}
             QPushButton:hover {{
                 background-color: {hover_color};
@@ -760,15 +800,6 @@ class RentManagementTab(QWidget):
             pressed_color='#1e7e34'
         ).replace('QPushButton {', 'QPushButton { background-color: #28a745;'))
         self.service_credit_btn_original_style = self.service_credit_btn.styleSheet()
-        
-        rent_buttons_row1.addWidget(self.modify_rent_btn)
-        rent_buttons_row1.addWidget(self.monthly_override_btn)
-        rent_buttons_row1.addWidget(self.yearly_override_btn)
-        rent_buttons_row1.addWidget(self.service_credit_btn)
-        rent_buttons_row1.addStretch()
-        
-        # Second row: Tools and actions
-        rent_buttons_row2 = QHBoxLayout()
         
         # Add Query System button
         self.query_system_btn = QPushButton('Query System')
@@ -839,23 +870,6 @@ class RentManagementTab(QWidget):
         ).replace('QPushButton {', 'QPushButton { background-color: #dc3545; color: #ffffff;'))
         self.add_refund_btn_original_style = self.add_refund_btn.styleSheet()
             
-        rent_buttons_row2.addWidget(self.query_system_btn)
-        rent_buttons_row2.addWidget(self.renew_lease_btn)
-        rent_buttons_row2.addWidget(self.scheduled_actions_btn)
-        rent_buttons_row2.addWidget(self.schedule_notification_btn)
-        rent_buttons_row2.addWidget(self.export_csv_btn)
-        rent_buttons_row2.addStretch()
-            
-        # Third row: Payment actions  
-        rent_buttons_row3 = QHBoxLayout()
-        rent_buttons_row3.addWidget(self.add_payment_btn)
-        rent_buttons_row3.addWidget(self.modify_payment_btn)
-        rent_buttons_row3.addWidget(self.add_refund_btn)
-        rent_buttons_row3.addStretch()
-        
-        # Fourth row: Rental Summaries
-        rent_buttons_row4 = QHBoxLayout()
-        
         self.view_summary_btn = QPushButton('View Summary')
         self.view_summary_btn.clicked.connect(self.show_rental_period_summary)
         self.view_summary_btn.setStyleSheet(button_style.format(
@@ -877,16 +891,34 @@ class RentManagementTab(QWidget):
             pressed_color='#081a50'
         ).replace('QPushButton {', 'QPushButton { background-color: #1565c0;'))
         
-        rent_buttons_row4.addWidget(self.view_summary_btn)
-        rent_buttons_row4.addWidget(self.monthly_summary_btn)
-        rent_buttons_row4.addWidget(self.yearly_summary_btn)
-        rent_buttons_row4.addStretch()
-        
-        # Add all rows to the container
-        self.rent_buttons_container.addLayout(rent_buttons_row1)
-        self.rent_buttons_container.addLayout(rent_buttons_row2)
-        self.rent_buttons_container.addLayout(rent_buttons_row3)
-        self.rent_buttons_container.addLayout(rent_buttons_row4)
+        action_buttons = [
+            # Row 0: Primary payment actions + quick summaries (most frequent tasks)
+            self.add_payment_btn,
+            self.modify_payment_btn,
+            self.add_refund_btn,
+            self.view_summary_btn,
+            self.monthly_summary_btn,
+            # Row 1: Rent adjustments
+            self.modify_rent_btn,
+            self.monthly_override_btn,
+            self.yearly_override_btn,
+            self.service_credit_btn,
+            self.yearly_summary_btn,
+            # Row 2: Lease management & tools
+            self.renew_lease_btn,
+            self.scheduled_actions_btn,
+            self.schedule_notification_btn,
+            self.export_csv_btn,
+            self.query_system_btn,
+        ]
+
+        for index, button in enumerate(action_buttons):
+            row = index // 5
+            column = index % 5
+            self.rent_buttons_container.addWidget(button, row, column)
+
+        for column in range(5):
+            self.rent_buttons_container.setColumnStretch(column, 1)
         
         self.layout.addLayout(self.rent_buttons_container)
         print(f"[DEBUG] Added rent buttons container to layout")
@@ -894,7 +926,7 @@ class RentManagementTab(QWidget):
         
         # Payment history section with better styling (outside scroll area)
         history_label = QLabel('Payment History')
-        history_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #0056b3; margin: 5px 0; background-color: #f8f9fa; padding: 8px; border-radius: 4px;")
+        history_label.setStyleSheet(section_header_style)
         self.payment_table_label = history_label
         self.layout.addWidget(self.payment_table_label)
         self.layout.addSpacing(3)
@@ -916,26 +948,27 @@ class RentManagementTab(QWidget):
         self.payment_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.payment_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.payment_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Make table read-only
-        self.payment_table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                border: 1px solid #dee2e6;
+        self.payment_table.setStyleSheet(f'''
+            QTableWidget {{
+                background-color: {palette['input_bg']};
+                border: 1px solid {palette['border']};
                 border-radius: 8px;
-                gridline-color: #dee2e6;
+                gridline-color: {palette['border']};
                 font-size: 13px;
-            }
-            QHeaderView::section {
-                background-color: #e9ecef;
+                color: {palette['text']};
+            }}
+            QHeaderView::section {{
+                background-color: {palette['header_bg']};
                 padding: 8px;
                 border: none;
                 font-weight: bold;
-                color: #495057;
-            }
-            QTableWidget::item {
+                color: {palette['text']};
+            }}
+            QTableWidget::item {{
                 padding: 8px;
-                border-bottom: 1px solid #dee2e6;
-            }
-        """)
+                border-bottom: 1px solid {palette['border']};
+            }}
+        ''')
         self.payment_table.setAlternatingRowColors(True)
         self.payment_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.payment_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -4112,10 +4145,22 @@ class RentManagementTab(QWidget):
             QMessageBox.critical(self, "Payment Error", f"Failed to submit payment: {str(e)}")
 
     def save_defaults(self):
+        due_day_text = self.default_due_day.text().strip()
+        try:
+            due_day = int(due_day_text)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Due Day", "Default due day must be a whole number between 1 and 31.")
+            return
+
+        if due_day < 1 or due_day > 31:
+            QMessageBox.warning(self, "Invalid Due Day", "Default due day must be between 1 and 31.")
+            return
+
         self.settings.set('default_rent_amount', self.default_rent.value())
         self.settings.set('default_deposit_amount', self.default_deposit.value())
-        self.settings.set('default_due_day', self.default_due_day.text().strip())
-        self.info_label.setText('Defaults saved!')
+        self.settings.set('default_due_day', str(due_day))
+        self.default_due_day.setText(str(due_day))
+        QMessageBox.information(self, "Defaults Saved", "Default rent settings were updated successfully.")
 
     def show_modify_rent_dialog(self):
         """Show dialog to modify base rent amount"""

@@ -4,17 +4,20 @@ from PyQt6.QtCore import Qt
 
 # Set matplotlib backend before importing matplotlib components
 import matplotlib
-matplotlib.use('Qt5Agg')  # Ensure we use the correct backend for PyQt6
+matplotlib.use('qtagg')
 import matplotlib.pyplot as plt
 plt.ioff()  # Turn off interactive mode to prevent issues
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import datetime
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from settings import SettingsController
+try:
+    from src.settings import SettingsController
+except ImportError:
+    from settings import SettingsController
 from src.rent_tracker import RentTracker
 from ui.create_tenant_dialog import CreateTenantDialog
 from ui.tenant_details_dialog import TenantDetailsDialog
@@ -26,12 +29,10 @@ logger = Logger()
 class RentDashboardTab(QWidget):
     from PyQt6.QtCore import pyqtSignal
     tenant_selected = pyqtSignal(object)  # Emits tenant object
-    
+
     def __init__(self, current_user_id=None):
         super().__init__()
         logger.debug("RentDashboardTab", f"Initializing RentDashboardTab for user {current_user_id}")
-    def __init__(self, current_user_id=None):
-        super().__init__()
         self.current_user_id = current_user_id  # Store the current user ID
         self.apply_theme()
         self.rent_tracker = RentTracker(current_user_id)
@@ -100,19 +101,49 @@ class RentDashboardTab(QWidget):
         self.rent_management_tab = None  # Will be set by main window
         self.table.cellDoubleClicked.connect(self.show_tenant_details)
 
+    def _is_active_tenant(self, tenant):
+        return (getattr(tenant, 'account_status', 'active') or 'active').lower() == 'active'
+
+    def _apply_chart_theme(self, figure, axis):
+        palette = SettingsController().get_theme_palette()
+        figure.patch.set_facecolor(palette['surface_bg'])
+        axis.set_facecolor(palette['surface_bg'])
+        axis.title.set_color(palette['text'])
+        return palette
+
     def apply_theme(self):
         settings = SettingsController()
-        theme = settings.get_theme()
-        if theme == 'dark':
-            self.setStyleSheet('QWidget { background-color: #181818; color: #f0f0f0; } QTableWidget { background: #232323; color: #f0f0f0; } QHeaderView::section { background: #282828; color: #f0f0f0; }')
-        elif theme == 'light':
-            self.setStyleSheet('QWidget { background-color: #f8f8f8; color: #232323; } QTableWidget { background: #fff; color: #232323; } QHeaderView::section { background: #eaeaea; color: #232323; }')
-        elif theme == 'blue':
-            self.setStyleSheet('QWidget { background-color: #e3f2fd; color: #0d47a1; } QTableWidget { background: #bbdefb; color: #0d47a1; } QHeaderView::section { background: #90caf9; color: #0d47a1; }')
-        elif theme == 'high-contrast':
-            self.setStyleSheet('QWidget { background-color: #000; color: #fff; } QTableWidget { background: #222; color: #fff; } QHeaderView::section { background: #fff; color: #000; }')
-        else:
-            self.setStyleSheet('')
+        palette = settings.get_theme_palette()
+        self.setStyleSheet(f'''
+            QWidget {{
+                background-color: {palette['window_bg']};
+                color: {palette['text']};
+            }}
+            QTableWidget {{
+                background-color: {palette['input_bg']};
+                color: {palette['text']};
+                border: 1px solid {palette['border']};
+                gridline-color: {palette['border']};
+            }}
+            QHeaderView::section {{
+                background-color: {palette['header_bg']};
+                color: {palette['text']};
+                border: none;
+                padding: 6px;
+                font-weight: bold;
+            }}
+            QLineEdit, QComboBox {{
+                background-color: {palette['input_bg']};
+                color: {palette['text']};
+                border: 1px solid {palette['border']};
+                border-radius: 6px;
+                padding: 6px;
+            }}
+        ''')
+
+    def refresh_theme(self):
+        self.apply_theme()
+        self.update_table()
 
     def create_tenant(self):
         dialog = CreateTenantDialog(self)
@@ -145,7 +176,7 @@ class RentDashboardTab(QWidget):
     def update_table(self):
         tenants = self.rent_tracker.tenant_manager.list_tenants()
         # Filter to only show active tenants
-        active_tenants = [t for t in tenants if getattr(t, 'account_status', 'Active') == 'Active']
+        active_tenants = [t for t in tenants if self._is_active_tenant(t)]
         search_text = self.search_edit.text().strip().lower()
         filtered = [t for t in active_tenants if search_text in t.name.lower()]
         # Default sorting: delinquent first, else alphabetical
@@ -162,7 +193,8 @@ class RentDashboardTab(QWidget):
         self.table.setRowCount(len(filtered))
         for row, t in enumerate(filtered):
             is_delinquent = t.delinquency_balance > 0
-            for col, val in enumerate([t.name, t.account_status, str(t.rent_amount), str(t.delinquency_balance), str(t.deposit_amount), t.tenant_id]):
+            status_text = (getattr(t, 'account_status', 'active') or 'active').title()
+            for col, val in enumerate([t.name, status_text, str(t.rent_amount), str(t.delinquency_balance), str(t.deposit_amount), t.tenant_id]):
                 item = QTableWidgetItem(val)
                 if is_delinquent:
                     item.setBackground(QBrush(QColor(255, 80, 80)))
@@ -173,7 +205,7 @@ class RentDashboardTab(QWidget):
 
     def update_charts(self, tenants):
         # Filter to only show active tenants in charts
-        active_tenants = [t for t in tenants if getattr(t, 'account_status', 'Active') == 'Active']
+        active_tenants = [t for t in tenants if self._is_active_tenant(t)]
         
         # Delinquency vs total expected - only for months that are due (past + current)
         now = datetime.date.today()
@@ -223,25 +255,27 @@ class RentDashboardTab(QWidget):
                 # Clear the figure completely and create a single subplot
                 self.delinq_chart.figure.clear()
                 ax1 = self.delinq_chart.figure.add_subplot(111)
+                palette = self._apply_chart_theme(self.delinq_chart.figure, ax1)
                 
                 if sum(delinq_data) == 0:
-                    ax1.text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14)
-                    ax1.set_title('Delinquency vs Expected (Due Months)', fontsize=12, pad=20)
+                    ax1.text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14, color=palette['text'])
+                    ax1.set_title('Delinquency vs Expected (Due Months)', fontsize=12, pad=20, color=palette['text'])
                 else:
                     # Create pie chart with better spacing
                     wedges, texts, autotexts = ax1.pie(delinq_data, labels=delinq_labels, autopct='%1.1f%%', 
                                                      colors=['#ff5050', '#0078d4'], startangle=90,
-                                                     textprops={'fontsize': 10})
+                                                     textprops={'fontsize': 10, 'color': palette['text']})
                     # Improve text positioning
                     for text in texts:
                         text.set_fontsize(10)
+                        text.set_color(palette['text'])
                     for autotext in autotexts:
                         autotext.set_fontsize(10)
                         autotext.set_color('white')
                         autotext.set_weight('bold')
                     
                     ax1.set_title(f'Delinquency vs Expected (Due Months)\n${adjusted_delinq:.0f} / ${total_expected_due:.0f}', 
-                                 fontsize=12, pad=20)
+                                 fontsize=12, pad=20, color=palette['text'])
                 
                 # Adjust layout to prevent text overlap
                 self.delinq_chart.figure.tight_layout(pad=1.5)
@@ -296,25 +330,27 @@ class RentDashboardTab(QWidget):
                 # Clear the figure completely and create a single subplot
                 self.month_chart.figure.clear()
                 ax2 = self.month_chart.figure.add_subplot(111)
+                palette = self._apply_chart_theme(self.month_chart.figure, ax2)
                 
                 if sum(month_data) == 0:
-                    ax2.text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14)
-                    ax2.set_title('This Month: Paid vs Expected', fontsize=12, pad=20)
+                    ax2.text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14, color=palette['text'])
+                    ax2.set_title('This Month: Paid vs Expected', fontsize=12, pad=20, color=palette['text'])
                 else:
                     # Create pie chart with better spacing
                     wedges, texts, autotexts = ax2.pie(month_data, labels=month_labels, autopct='%1.1f%%', 
                                                      colors=['#0078d4', '#ffb300'], startangle=90,
-                                                     textprops={'fontsize': 10})
+                                                     textprops={'fontsize': 10, 'color': palette['text']})
                     # Improve text positioning
                     for text in texts:
                         text.set_fontsize(10)
+                        text.set_color(palette['text'])
                     for autotext in autotexts:
                         autotext.set_fontsize(10)
                         autotext.set_color('white')
                         autotext.set_weight('bold')
                     
                     ax2.set_title(f'This Month: Paid vs Expected\n${month_paid:.0f} / ${month_expected:.0f}', 
-                                 fontsize=12, pad=20)
+                                 fontsize=12, pad=20, color=palette['text'])
                 
                 # Adjust layout to prevent text overlap
                 self.month_chart.figure.tight_layout(pad=1.5)

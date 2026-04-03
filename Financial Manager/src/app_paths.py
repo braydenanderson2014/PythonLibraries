@@ -3,12 +3,31 @@ Path utilities for Financial Manager
 Handles proper file paths for both development and PyInstaller bundled modes
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
-from assets.Logger import Logger
 
-logger = Logger()
+
+class _CompatLogger:
+    def __init__(self):
+        self._logger = logging.getLogger('financial_tracker.app_paths')
+
+    def debug(self, title, message):
+        self._logger.debug(f'[{title}]: {message}')
+
+    def info(self, title, message):
+        self._logger.info(f'[{title}]: {message}')
+
+    def warning(self, title, message):
+        self._logger.warning(f'[{title}]: {message}')
+
+    def error(self, title, message):
+        self._logger.error(f'[{title}]: {message}')
+
+
+logger = _CompatLogger()
+
 def get_app_data_dir():
     """
     Get the application data directory that persists across runs.
@@ -154,14 +173,14 @@ ACTION_QUEUE_FILE = None
 USER_DB = None
 
 def _initialize_paths():
-    """Initialize all paths - call this after Logger is ready"""
+    """Initialize all paths for modules that import path constants directly."""
     global ACCOUNT_DB, TENANT_DB, WATCHLIST_DB, STOCK_DB, PORTFOLIO_DB
     global BANK_DATA_FILE, RECURRING_DATA_FILE, USER_FINANCE_SETTINGS_FILE
     global LOANS_DATA_FILE, BUDGETS_DATA_FILE, BANK_ACCOUNTS_FILE
     global BANKING_API_CONFIG_FILE, LINKED_ACCOUNTS_FILE, NOTIFICATION_STATE_FILE
     global SETTINGS_FILE, LOG_FILE
     global RULES_FILE, AUTOMATION_STATE_FILE, AUTOMATION_SETTINGS_FILE, ACTION_QUEUE_FILE, USER_DB
-    
+
     ACCOUNT_DB = get_resource_path('accounts.json')
     TENANT_DB = get_resource_path('tenants.json')
     WATCHLIST_DB = get_resource_path('watchlists.json')
@@ -183,6 +202,9 @@ def _initialize_paths():
     AUTOMATION_SETTINGS_FILE = get_resource_path('automation_settings.json')
     ACTION_QUEUE_FILE = get_resource_path('action_queue.json')
     USER_DB = get_resource_path('users.db')
+
+
+_initialize_paths()
 
 # Attachments directory (not a file)
 ATTACHMENTS_DIR = os.path.join(get_app_data_dir(), 'attachments')

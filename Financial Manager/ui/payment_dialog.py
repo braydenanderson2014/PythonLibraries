@@ -1,7 +1,13 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, QLineEdit, QPushButton, QMessageBox, QDateEdit, QTextEdit
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, QLineEdit, QPushButton, QMessageBox, QDateEdit, QTextEdit, QInputDialog
 from PyQt6.QtCore import Qt, QDate
 from datetime import datetime
 from assets.Logger import Logger
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+try:
+    from src.settings import SettingsController
+except ImportError:
+    from settings import SettingsController
 
 logger = Logger()
 
@@ -13,6 +19,10 @@ class PaymentDialog(QDialog):
         self.payment_data = payment_data
         self.delete_requested = False
         self.tenant = tenant  # Store tenant for overpayment credit access
+        try:
+            self.settings = SettingsController()
+        except Exception:
+            self.settings = None
         
         if mode == 'refund':
             title = 'Refund/Reverse Payment'
@@ -84,12 +94,25 @@ class PaymentDialog(QDialog):
         type_label.setStyleSheet("font-weight: bold; min-width: 100px;")
         
         self.type_combo = QComboBox()
-        self.type_combo.addItems(['Cash', 'Zelle', 'Bank Transfer', 'Check', 'Venmo', 'Overpayment Credit', 'Service Credit', 'Other'])
+        self.type_combo.addItems(self._get_payment_types())
         self.type_combo.setStyleSheet("padding: 8px; font-size: 14px; border: 1px solid #dee2e6; border-radius: 4px;")
         self.type_combo.currentTextChanged.connect(self.on_type_changed)
         
+        add_type_btn = QPushButton('+')
+        add_type_btn.setFixedSize(30, 30)
+        add_type_btn.setToolTip('Add a custom payment type')
+        add_type_btn.clicked.connect(self.add_custom_type)
+        add_type_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d; color: white; border: none;
+                border-radius: 4px; font-size: 16px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #5a6268; }
+        """)
+
         type_layout.addWidget(type_label)
         type_layout.addWidget(self.type_combo)
+        type_layout.addWidget(add_type_btn)
         layout.addLayout(type_layout)
         
         # Disable credit options in refund mode (can't refund credits)
@@ -345,6 +368,40 @@ class PaymentDialog(QDialog):
             # Reset amount input maximum for other payment types
             self.amount_input.setMaximum(999999.99)
     
+    def _get_payment_types(self):
+        """Load payment types from settings, fall back to defaults."""
+        if self.settings:
+            try:
+                return self.settings.get_payment_types()
+            except Exception:
+                pass
+        return ['Cash', 'Bilt', 'Zelle', 'Bank Transfer', 'Check', 'Venmo',
+                'Overpayment Credit', 'Service Credit', 'Other']
+
+    def add_custom_type(self):
+        """Prompt the user to add a new payment type and persist it to settings."""
+        text, ok = QInputDialog.getText(
+            self, 'Add Payment Type', 'New payment type name:',
+            text=''
+        )
+        if not ok or not text.strip():
+            return
+        type_name = text.strip()
+        if self.settings:
+            added = self.settings.add_payment_type(type_name)
+        else:
+            added = True  # No settings available; just add to combo for this session
+        if added:
+            other_idx = self.type_combo.findText('Other')
+            if other_idx >= 0:
+                self.type_combo.insertItem(other_idx, type_name)
+            else:
+                self.type_combo.addItem(type_name)
+            self.type_combo.setCurrentText(type_name)
+        else:
+            QMessageBox.information(self, 'Already Exists',
+                                    f'"{type_name}" is already in the payment types list.')
+
     def populate_smart_months(self):
         """Populate month dropdown with intelligent selection based on rental period"""
         self.month_combo.clear()

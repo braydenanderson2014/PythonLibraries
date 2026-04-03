@@ -10,6 +10,7 @@ from ui.pos_tab import POSTab
 from ui.store_settings_dialog import StoreSettingsDialog
 #from ui.settings_tab import SettingsTab
 from src.account import AccountManager
+from src.settings import SettingsController
 from ui.action_queue_dialog import ActionQueueDialog
 from assets.Logger import Logger
 import os
@@ -21,6 +22,7 @@ class MainWindow(QMainWindow):
     def __init__(self, username=None):
         super().__init__()
         logger.debug("MainWindow", f"Initializing MainWindow for user {username}")
+        self.settings = SettingsController()
         self.setWindowTitle('Financial Manager')
         # Set a reasonable default size for the window
         self.resize(1200, 800)
@@ -105,6 +107,7 @@ class MainWindow(QMainWindow):
         # Initialize rent_menu before menu bar
         self.rent_menu = None
         self.init_menu_bar()
+        self.apply_theme()
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.rent_management_tab.tenant_viewed.connect(self.on_tenant_viewed)
         self.rent_dashboard_tab.tenant_selected.connect(self.on_dashboard_tenant_selected)
@@ -156,6 +159,7 @@ class MainWindow(QMainWindow):
         
         # Edit menu
         edit_menu = QMenu('Edit', self)
+        edit_menu.addAction(QAction('Settings', self, triggered=self.show_application_settings))
         menu_bar.addMenu(edit_menu)
         
         # Rent menu
@@ -262,6 +266,82 @@ class MainWindow(QMainWindow):
         help_menu = QMenu('Help', self)
         help_menu.addAction(QAction('About', self, triggered=self.show_about))
         menu_bar.addMenu(help_menu)
+
+    def apply_theme(self):
+        self.settings.load()
+        self.setStyleSheet(self.settings.get_main_window_stylesheet())
+
+    def refresh_theme(self):
+        self.apply_theme()
+
+        if hasattr(self.rent_dashboard_tab, 'refresh_theme'):
+            self.rent_dashboard_tab.refresh_theme()
+        if hasattr(self.rent_management_tab, 'refresh_theme'):
+            self.rent_management_tab.refresh_theme()
+        if hasattr(self.comprehensive_analysis_tab, 'apply_theme'):
+            self.comprehensive_analysis_tab.apply_theme()
+
+    def show_application_settings(self):
+        from PyQt6.QtWidgets import QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QDoubleSpinBox, QSpinBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Application Settings')
+        dialog.setModal(True)
+        dialog.resize(420, 260)
+
+        layout = QVBoxLayout(dialog)
+        description = QLabel('Manage the theme and default rent settings used by the rent workflow.')
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        form_layout = QFormLayout()
+
+        theme_combo = QComboBox(dialog)
+        theme_combo.addItems(self.settings.THEMES)
+        theme_combo.setCurrentText(self.settings.get_theme())
+        form_layout.addRow('Theme', theme_combo)
+
+        default_rent = QDoubleSpinBox(dialog)
+        default_rent.setMaximum(100000)
+        default_rent.setPrefix('$')
+        default_rent.setValue(float(self.settings.get('default_rent_amount')))
+        form_layout.addRow('Default rent amount', default_rent)
+
+        default_deposit = QDoubleSpinBox(dialog)
+        default_deposit.setMaximum(100000)
+        default_deposit.setPrefix('$')
+        default_deposit.setValue(float(self.settings.get('default_deposit_amount')))
+        form_layout.addRow('Default deposit amount', default_deposit)
+
+        default_due_day = QSpinBox(dialog)
+        default_due_day.setRange(1, 31)
+        default_due_day.setValue(int(self.settings.get('default_due_day')))
+        form_layout.addRow('Default due day', default_due_day)
+
+        layout.addLayout(form_layout)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        self.settings.set_theme(theme_combo.currentText())
+        self.settings.set('default_rent_amount', default_rent.value())
+        self.settings.set('default_deposit_amount', default_deposit.value())
+        self.settings.set('default_due_day', str(default_due_day.value()))
+
+        if hasattr(self.rent_management_tab, 'default_rent'):
+            self.rent_management_tab.default_rent.setValue(default_rent.value())
+        if hasattr(self.rent_management_tab, 'default_deposit'):
+            self.rent_management_tab.default_deposit.setValue(default_deposit.value())
+        if hasattr(self.rent_management_tab, 'default_due_day'):
+            self.rent_management_tab.default_due_day.setText(str(default_due_day.value()))
+
+        self.refresh_theme()
+        QMessageBox.information(self, 'Settings Updated', 'Application settings were saved successfully.')
         
     def on_tab_changed(self, index):
         # Get current tab name

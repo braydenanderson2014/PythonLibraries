@@ -5,6 +5,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import datetime
+import math
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from assets.Logger import Logger
@@ -355,9 +356,64 @@ class TenantDashboard(QWidget):
                     positive_methods.append(method)
                     positive_amounts.append(amount)
             
+            # Build one consistent color map for every method (positive + negative)
+            _palette = ['#0078d4', '#28a745', '#ffc107', '#dc3545', '#6f42c1',
+                        '#e83e8c', '#20c997', '#fd7e14', '#6610f2', '#17a2b8']
+            method_color = {m: _palette[i % len(_palette)] for i, m in enumerate(methods)}
+
             if positive_amounts:
-                colors = ['#0078d4', '#28a745', '#ffc107', '#dc3545', '#6f42c1'][:len(positive_methods)]
-                ax1.pie(positive_amounts, labels=positive_methods, autopct='%1.1f%%', colors=colors)
+                pie_colors = [method_color[m] for m in positive_methods]
+                wedges, *_ = ax1.pie(
+                    positive_amounts,
+                    labels=None,
+                    autopct=None,
+                    colors=pie_colors,
+                    startangle=90,
+                )
+                # Spread labels: split wedges into right/left halves, sort each
+                # top-to-bottom, then assign evenly-spaced y positions so labels
+                # never fight each other regardless of slice count.
+                total_amt = sum(positive_amounts)
+                right_items, left_items = [], []
+                for wedge, method, amount in zip(wedges, positive_methods, positive_amounts):
+                    mid_angle = (wedge.theta1 + wedge.theta2) / 2
+                    angle_rad = math.radians(mid_angle)
+                    cos_a = math.cos(angle_rad)
+                    sin_a = math.sin(angle_rad)
+                    pct = 100.0 * amount / total_amt
+                    entry = (cos_a, sin_a, method, amount, pct)
+                    (right_items if cos_a >= 0 else left_items).append(entry)
+
+                # Sort each side top → bottom
+                right_items.sort(key=lambda e: -e[1])
+                left_items.sort(key=lambda e: -e[1])
+
+                def _draw_side(items, x_col, ha):
+                    n = len(items)
+                    if n == 0:
+                        return
+                    # Evenly space labels between +0.85 and -0.85
+                    y_positions = (
+                        [items[0][1]] if n == 1
+                        else [0.85 - i * 1.7 / (n - 1) for i in range(n)]
+                    )
+                    x_sign = 1 if ha == 'left' else -1
+                    x_elbow = 1.15 * x_sign  # where radial segment ends
+                    for i, (cos_a, sin_a, method, amount, pct) in enumerate(items):
+                        x_start = 0.62 * cos_a
+                        y_start = 0.62 * sin_a
+                        x_bend = x_elbow
+                        y_text = y_positions[i]
+                        # Two-segment leader: radial out → angled to text column
+                        ax1.plot([x_start, x_bend], [y_start, y_text],
+                                 color='gray', lw=0.7, zorder=0)
+                        label = f'{method}: ${amount:,.0f} ({pct:.1f}%)'
+                        ax1.text(x_col, y_text, label,
+                                 ha=ha, va='center', fontsize=8)
+
+                _draw_side(right_items, x_col=1.18, ha='left')
+                _draw_side(left_items,  x_col=-1.18, ha='right')
+                ax1.set_xlim(-2.4, 2.4)  # ensure label text is not clipped
                 ax1.set_title('Payment Methods by Amount')
             else:
                 ax1.text(0.5, 0.5, 'No Positive Payments', ha='center', va='center', fontsize=14)
@@ -367,13 +423,16 @@ class TenantDashboard(QWidget):
             frequencies = [len([p for p in self.current_tenant.payment_history if p.get('type') == method]) 
                           for method in methods]
             
-            bars = ax2.bar(methods, frequencies, color=colors)
+            bar_colors = [method_color[m] for m in methods]
+            # Truncate long method names for bar-chart x-axis readability
+            short_labels = [m if len(m) <= 14 else m[:12] + '…' for m in methods]
+            bars = ax2.bar(range(len(methods)), frequencies, color=bar_colors)
             ax2.set_ylabel('Number of Payments')
             ax2.set_title('Payment Frequency by Method')
             
             # Fix matplotlib warning by setting ticks before labels
             ax2.set_xticks(range(len(methods)))
-            ax2.set_xticklabels(methods, rotation=45)
+            ax2.set_xticklabels(short_labels, rotation=45, ha='right')
             
             # Add value labels on bars
             for bar, freq in zip(bars, frequencies):
