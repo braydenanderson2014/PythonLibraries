@@ -325,7 +325,11 @@ class TaskManager:
         self._persist_workflow_config()
 
     def add_custom_behavior_tree(self, tree_name: str, node_ids: List[Any]) -> None:
-        """Save a user-defined behavior tree made from available node IDs + params."""
+        """Save a user-defined behavior tree made from available node IDs + params.
+
+        Accepts both flat lists (legacy) and flat-with-branches lists produced
+        by the Node-RED canvas (split/merge graph format).
+        """
         clean_name = (tree_name or "").strip()
         if not clean_name:
             raise ValueError("Tree name is required")
@@ -335,13 +339,38 @@ class TaskManager:
         if not normalized:
             raise ValueError("At least one node is required")
 
-        invalid = [n.get("node_id") for n in normalized if n.get("node_id") not in library]
+        invalid = self._collect_invalid_node_ids(normalized, library)
         if invalid:
             raise ValueError(f"Unknown node ids: {', '.join(invalid)}")
 
         with self._lock:
             self._custom_behavior_trees[clean_name] = normalized
         self._persist_workflow_config()
+
+    @staticmethod
+    def _collect_invalid_node_ids(nodes: List[Any], library: dict) -> List[str]:
+        """Recursively collect node_ids that aren't in the library.
+        split and merge are virtual control nodes and are always valid.
+        """
+        invalid: List[str] = []
+        virtual = {"split", "merge"}
+        for n in nodes:
+            if not isinstance(n, dict):
+                continue
+            nid  = n.get("node_id", "")
+            kind = n.get("node_kind", "normal")
+            if kind in ("split", "merge") or nid in virtual:
+                # recurse into branch children
+                branches = n.get("branches", {})
+                if isinstance(branches, dict):
+                    for branch_nodes in branches.values():
+                        invalid.extend(
+                            TaskManager._collect_invalid_node_ids(branch_nodes, library)
+                        )
+                continue
+            if nid not in library:
+                invalid.append(nid)
+        return invalid
 
     def delete_custom_behavior_tree(self, tree_name: str) -> None:
         """Delete a saved custom behavior tree."""

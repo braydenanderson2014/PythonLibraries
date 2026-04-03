@@ -66,6 +66,21 @@ NODE_LIBRARY: Dict[str, Dict[str, Any]] = {
         "name": "Load Balanced Output",
         "description": "Send resulting media file to configured output folders.",
     },
+    # ── branching control nodes ─────────────────────────────────────────────
+    "split": {
+        "name": "Split / Branch",
+        "description": "Evaluate a condition and route to the 'true' or 'false' branch.",
+        "node_kind": "split",
+        "params": {
+            "condition": "size_gt_threshold | always_true | always_false",
+            "threshold_gb": "Size threshold used by size_gt_threshold condition.",
+        },
+    },
+    "merge": {
+        "name": "Merge / Re-join",
+        "description": "Re-join point after a split; execution continues from here after either branch.",
+        "node_kind": "merge",
+    },
 }
 
 
@@ -104,23 +119,38 @@ DEFAULT_BEHAVIOR_TREES: Dict[str, List[NodeDefinition]] = {
 
 
 def normalize_tree_nodes(tree_nodes: List[RawTreeNode]) -> List[NodeDefinition]:
-    """Normalize behavior tree nodes into dict format with node_id + params."""
+    """Normalize behavior tree nodes into dict format with node_id + params.
+
+    Handles both the legacy flat list format and the new flat-with-branches
+    format where a split node carries a ``branches`` sub-dict.
+    """
     normalized: List[NodeDefinition] = []
     for node in tree_nodes or []:
         if isinstance(node, str):
             node_id = node.strip()
             if not node_id:
                 continue
-            normalized.append({"node_id": node_id, "params": {}})
+            normalized.append({"node_id": node_id, "node_kind": "normal", "params": {}})
             continue
         if isinstance(node, dict):
-            node_id = str(node.get("node_id", "")).strip()
+            node_id   = str(node.get("node_id", "")).strip()
+            node_kind = str(node.get("node_kind", "normal"))
             if not node_id:
                 continue
             params = node.get("params", {})
             if not isinstance(params, dict):
                 params = {}
-            normalized.append({"node_id": node_id, "params": dict(params)})
+            entry: NodeDefinition = {"node_id": node_id, "node_kind": node_kind, "params": dict(params)}
+            if node_kind == "split":
+                branches = node.get("branches", {})
+                if isinstance(branches, dict):
+                    entry["branches"] = {
+                        "true":  normalize_tree_nodes(branches.get("true",  [])),
+                        "false": normalize_tree_nodes(branches.get("false", [])),
+                    }
+                else:
+                    entry["branches"] = {"true": [], "false": []}
+            normalized.append(entry)
     return normalized
 
 
@@ -204,19 +234,47 @@ class NodeFlowExecutor:
         return self.execute_behavior_tree(ctx, tree_nodes=DEFAULT_BEHAVIOR_TREES["default_media_flow"])
 
     def execute_behavior_tree(self, ctx: FlowContext, tree_nodes: List[RawTreeNode]) -> Dict[str, Any]:
-        """Execute a behavior tree represented as an ordered list of node IDs."""
+        """Execute a behavior tree.
+
+        Supports:
+        - Flat sequential nodes (legacy and new format).
+        - Split nodes with ``branches`` dict: evaluates a condition and
+          recurses into the matching branch, then continues with the
+          remaining nodes after the split/merge pair.
+        - Merge nodes are transparent pass-throughs; the recursive call
+          already rejoined; seeing a merge in the main loop is a no-op.
+        """
         for node_def in normalize_tree_nodes(tree_nodes):
-            node_id = node_def["node_id"]
-            params = node_def.get("params", {})
-            if node_id not in NODE_LIBRARY:
+            node_id   = node_def["node_id"]
+            node_kind = node_def.get("node_kind", "normal")
+            params    = node_def.get("params", {})
+
+            # Allow split/merge virtual nodes; real action nodes must be in library
+            if node_id not in NODE_LIBRARY and node_kind not in ("split", "merge"):
                 raise ValueError(f"Unknown node id in behavior tree: {node_id}")
 
-            # Short-circuit when small-file route already completed routing.
             if ctx.state.get("early_routed"):
                 break
 
+            # ── merge is a no-op; control arrives here after a branch finishes ──
+            if node_kind == "merge" or node_id == "merge":
+                continue
+
+            # ── split: evaluate condition → recurse into branch ──────────────
+            if node_kind == "split" or node_id == "split":
+                condition = str(params.get("condition", "size_gt_threshold"))
+                branch_taken = self._evaluate_condition(condition, params, ctx)
+                branch_key   = "true" if branch_taken else "false"
+                branch_nodes = node_def.get("branches", {}).get(branch_key, [])
+
+                if branch_nodes:
+                    branch_result = self.execute_behavior_tree(ctx, branch_nodes)
+                    # If a branch triggered early exit (retry), propagate it
+                    if branch_result.get("status") == "retry_triggered":
+                        return branch_result
+                continue
+
             if node_id == "download_input":
-                # Input already present by construction.
                 continue
 
             if node_id == "size_check":
@@ -307,11 +365,63 @@ class NodeFlowExecutor:
             "status": "completed",
             "message": "Workflow completed successfully",
             "file_size_gb": float(ctx.state.get("file_size_gb", self._file_size_gb(ctx.current_file))),
-            "has_subtitles": ctx.state["has_subtitles"],
+            "has_subtitles": ctx.state.get("has_subtitles", False),
             "av_message": ctx.state.get("av_message", "ok"),
             "final_file": str(ctx.current_file),
             "routed": bool(ctx.state.get("early_routed", False) or self._is_under_output_tree(ctx.current_file)),
         }
+
+    # ── condition evaluator ───────────────────────────────────────────────────
+
+    def _evaluate_condition(
+        self,
+        condition: str,
+        params: Dict[str, Any],
+        ctx: FlowContext,
+    ) -> bool:
+        """Evaluate a split condition; returns True to take the 'true' branch.
+
+        Built-in conditions
+        -------------------
+        size_gt_threshold   : file_size_gb > threshold_gb  (default)
+        size_lt_threshold   : file_size_gb < threshold_gb
+        has_subtitles       : subtitle stream present
+        av_ok               : audio/video integrity passed
+        always_true         : unconditional True (useful for testing)
+        always_false        : unconditional False
+        """
+        # Ensure file size is measured
+        if "file_size_gb" not in ctx.state:
+            ctx.state["file_size_gb"] = self._file_size_gb(ctx.current_file)
+
+        threshold_raw = params.get("threshold_gb", ctx.state.get("threshold_gb", 10.0))
+        try:
+            threshold = float(threshold_raw)
+        except Exception:
+            threshold = 10.0
+
+        size_gb = float(ctx.state.get("file_size_gb", 0.0))
+
+        if condition == "size_gt_threshold":
+            return size_gb > threshold
+        if condition == "size_lt_threshold":
+            return size_gb < threshold
+        if condition == "has_subtitles":
+            if "has_subtitles" not in ctx.state:
+                ctx.state["has_subtitles"] = self._has_subtitle_stream(ctx.current_file)
+            return bool(ctx.state["has_subtitles"])
+        if condition == "av_ok":
+            if "av_ok" not in ctx.state:
+                ok, msg = self._check_audio_video_integrity(ctx.current_file)
+                ctx.state["av_ok"]      = ok
+                ctx.state["av_message"] = msg
+            return bool(ctx.state["av_ok"])
+        if condition == "always_true":
+            return True
+        if condition == "always_false":
+            return False
+        # Unknown condition – default safe
+        return False
 
     def execute_named_tree(
         self,
