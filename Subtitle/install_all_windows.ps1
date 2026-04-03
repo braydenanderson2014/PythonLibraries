@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet("auto", "winget", "choco", "scoop")]
     [string]$PythonInstallMethod = "auto",
 
@@ -79,6 +79,8 @@ $script:LastPackageInstallError = ""
 $script:verboseLogPath = ""          # Set after $scriptDir is resolved
 $script:PipBackendForRequirements = ""  # Backend used for requirements.txt
 $script:PipBackendForAI = ""            # Backend used for AI packages
+$script:RequestedUninstall = [bool]$Uninstall
+$script:RequestedUninstallAI = [bool]$UninstallAI
 
 # On PowerShell 7+, do not treat native command stderr text (warnings) as a
 # terminating error. The script already validates native command exit codes.
@@ -269,8 +271,8 @@ function New-ScriptRelaunchArgs {
     if ($NoPause) { $relaunchArgs += "-NoPause" }
     if ($KeepInstallArtifacts) { $relaunchArgs += "-KeepInstallArtifacts" }
     if ($script:QuietOutput) { $relaunchArgs += "-QuietInstallOutput" }
-    if ($Uninstall) { $relaunchArgs += "-Uninstall" }
-    if ($UninstallAI) { $relaunchArgs += "-UninstallAI" }
+    if ($script:RequestedUninstall) { $relaunchArgs += "-Uninstall" }
+    if ($script:RequestedUninstallAI) { $relaunchArgs += "-UninstallAI" }
     if ($UninstallIncludePreexisting) { $relaunchArgs += "-UninstallIncludePreexisting" }
     if ($DisableAutoElevation) { $relaunchArgs += "-DisableAutoElevation" }
 
@@ -647,7 +649,7 @@ function Show-InteractiveInstallerControlPanel {
     $form.Controls.Add($titleLabel)
 
     $shortcutLabel = New-Object System.Windows.Forms.Label
-    $shortcutLabel.Text = "Shortcuts: Ctrl+R Recommended, Ctrl+F Full AI, Ctrl+M Minimal, Enter Continue, Esc Cancel"
+    $shortcutLabel.Text = "Shortcuts: Ctrl+R Recommended, Ctrl+F Full AI, Ctrl+Shift+F Full Features, Ctrl+M Minimal, Enter Continue, Esc Cancel"
     $shortcutLabel.AutoSize = $false
     $shortcutLabel.Size = New-Object System.Drawing.Size(920, 22)
     $shortcutLabel.Location = New-Object System.Drawing.Point(20, 46)
@@ -814,9 +816,26 @@ function Show-InteractiveInstallerControlPanel {
 
     $txtWingetLocation = New-Object System.Windows.Forms.TextBox
     $txtWingetLocation.Location = New-Object System.Drawing.Point(250, 206)
-    $txtWingetLocation.Size = New-Object System.Drawing.Size(640, 24)
+    $txtWingetLocation.Size = New-Object System.Drawing.Size(542, 24)
     $txtWingetLocation.Text = [string]$script:WingetInstallLocation
     $toolsGroup.Controls.Add($txtWingetLocation)
+
+    $btnBrowseWingetLocation = New-Object System.Windows.Forms.Button
+    $btnBrowseWingetLocation.Text = "Browse..."
+    $btnBrowseWingetLocation.Location = New-Object System.Drawing.Point(800, 204)
+    $btnBrowseWingetLocation.Size = New-Object System.Drawing.Size(90, 28)
+    $btnBrowseWingetLocation.Add_Click({
+        $folderPicker = New-Object System.Windows.Forms.FolderBrowserDialog
+        $folderPicker.Description = "Choose winget install location"
+        $folderPicker.ShowNewFolderButton = $true
+        if (-not [string]::IsNullOrWhiteSpace([string]$txtWingetLocation.Text) -and (Test-Path -LiteralPath [string]$txtWingetLocation.Text)) {
+            $folderPicker.SelectedPath = [string]$txtWingetLocation.Text
+        }
+        if ($folderPicker.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $txtWingetLocation.Text = [string]$folderPicker.SelectedPath
+        }
+    })
+    $toolsGroup.Controls.Add($btnBrowseWingetLocation)
 
     $lblChocoCache = New-Object System.Windows.Forms.Label
     $lblChocoCache.Text = "Chocolatey cache location"
@@ -827,9 +846,26 @@ function Show-InteractiveInstallerControlPanel {
 
     $txtChocoCache = New-Object System.Windows.Forms.TextBox
     $txtChocoCache.Location = New-Object System.Drawing.Point(250, 240)
-    $txtChocoCache.Size = New-Object System.Drawing.Size(640, 24)
+    $txtChocoCache.Size = New-Object System.Drawing.Size(542, 24)
     $txtChocoCache.Text = [string]$script:ChocoCacheLocation
     $toolsGroup.Controls.Add($txtChocoCache)
+
+    $btnBrowseChocoCache = New-Object System.Windows.Forms.Button
+    $btnBrowseChocoCache.Text = "Browse..."
+    $btnBrowseChocoCache.Location = New-Object System.Drawing.Point(800, 238)
+    $btnBrowseChocoCache.Size = New-Object System.Drawing.Size(90, 28)
+    $btnBrowseChocoCache.Add_Click({
+        $folderPicker = New-Object System.Windows.Forms.FolderBrowserDialog
+        $folderPicker.Description = "Choose Chocolatey cache location"
+        $folderPicker.ShowNewFolderButton = $true
+        if (-not [string]::IsNullOrWhiteSpace([string]$txtChocoCache.Text) -and (Test-Path -LiteralPath [string]$txtChocoCache.Text)) {
+            $folderPicker.SelectedPath = [string]$txtChocoCache.Text
+        }
+        if ($folderPicker.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $txtChocoCache.Text = [string]$folderPicker.SelectedPath
+        }
+    })
+    $toolsGroup.Controls.Add($btnBrowseChocoCache)
 
     $lblPathWarning = New-Object System.Windows.Forms.Label
     $lblPathWarning.Text = "Warning: custom package locations are best effort only. Some winget/choco packages may ignore these settings."
@@ -857,7 +893,7 @@ function Show-InteractiveInstallerControlPanel {
 
     $chkRunUninstall = New-Object System.Windows.Forms.CheckBox
     $chkRunUninstall.Text = "Run full uninstall instead of install (removes venv + script-installed components)"
-    $chkRunUninstall.Checked = [bool]$Uninstall
+    $chkRunUninstall.Checked = [bool]$script:RequestedUninstall
     $chkRunUninstall.AutoSize = $false
     $chkRunUninstall.Size = New-Object System.Drawing.Size(900, 24)
     $chkRunUninstall.Location = New-Object System.Drawing.Point(20, 540)
@@ -865,21 +901,46 @@ function Show-InteractiveInstallerControlPanel {
 
     $chkRunUninstallAI = New-Object System.Windows.Forms.CheckBox
     $chkRunUninstallAI.Text = "Run AI-only uninstall instead of install (keeps core app dependencies)"
-    $chkRunUninstallAI.Checked = [bool]$UninstallAI
+    $chkRunUninstallAI.Checked = [bool]$script:RequestedUninstallAI
     $chkRunUninstallAI.AutoSize = $false
     $chkRunUninstallAI.Size = New-Object System.Drawing.Size(900, 24)
     $chkRunUninstallAI.Location = New-Object System.Drawing.Point(20, 564)
     $form.Controls.Add($chkRunUninstallAI)
 
+    $lblActionMode = New-Object System.Windows.Forms.Label
+    $lblActionMode.AutoSize = $false
+    $lblActionMode.Size = New-Object System.Drawing.Size(920, 22)
+    $lblActionMode.Location = New-Object System.Drawing.Point(20, 740)
+    $lblActionMode.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblActionMode)
+
+    $updateActionModeLabel = {
+        if ($chkRunUninstall.Checked) {
+            $lblActionMode.Text = "Action when Continue is clicked:  Full Uninstall  —  venv and script-installed components will be removed"
+            $lblActionMode.ForeColor = [System.Drawing.Color]::OrangeRed
+            $btnContinue.Text = "Continue Uninstall"
+        } elseif ($chkRunUninstallAI.Checked) {
+            $lblActionMode.Text = "Action when Continue is clicked:  AI-only Uninstall  —  AI packages removed, core app stays intact"
+            $lblActionMode.ForeColor = [System.Drawing.Color]::DarkOrange
+            $btnContinue.Text = "Continue AI Uninstall"
+        } else {
+            $lblActionMode.Text = "Action when Continue is clicked:  Install  —  all selected components will be installed"
+            $lblActionMode.ForeColor = [System.Drawing.Color]::SeaGreen
+            $btnContinue.Text = "Continue Install"
+        }
+    }
+
     $chkRunUninstall.Add_CheckedChanged({
         if ($chkRunUninstall.Checked) {
             $chkRunUninstallAI.Checked = $false
         }
+        & $updateActionModeLabel
     })
     $chkRunUninstallAI.Add_CheckedChanged({
         if ($chkRunUninstallAI.Checked) {
             $chkRunUninstall.Checked = $false
         }
+        & $updateActionModeLabel
     })
 
     $chkVerboseOutput = New-Object System.Windows.Forms.CheckBox
@@ -959,7 +1020,26 @@ function Show-InteractiveInstallerControlPanel {
         & $setAiCheckedState @("openai-whisper")
     }
 
-    $applyFull = {
+    $applyFullAi = {
+        $comboPython.SelectedItem = "auto"
+        $comboFfmpeg.SelectedItem = "auto"
+        $comboPkgBackend.SelectedItem = "auto"
+        $comboWingetScope.SelectedItem = "default"
+        $txtWingetLocation.Text = ""
+        $txtChocoCache.Text = ""
+        $comboMkvMethod.SelectedItem = "auto"
+        $comboHandBrakeMethod.SelectedItem = "auto"
+        $comboMakeMKVMethod.SelectedItem = "auto"
+        $chkAutoPathBridge.Checked = $true
+        $chkSkipAiPrompt.Checked = $true
+        $chkRunUninstall.Checked = $false
+        $chkRunUninstallAI.Checked = $false
+        $comboOptionalToolMode.SelectedItem = "prompt"
+        & $setToolAutoInstallCheckedState @()
+        & $setAiCheckedState @($Definitions | ForEach-Object { [string]$_.key })
+    }
+
+    $applyFullFeatures = {
         $comboPython.SelectedItem = "auto"
         $comboFfmpeg.SelectedItem = "auto"
         $comboPkgBackend.SelectedItem = "auto"
@@ -1001,21 +1081,28 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnRecommended = New-Object System.Windows.Forms.Button
     $btnRecommended.Text = "Recommended"
-    $btnRecommended.Location = New-Object System.Drawing.Point(20, 784)
+    $btnRecommended.Location = New-Object System.Drawing.Point(20, 774)
     $btnRecommended.Size = New-Object System.Drawing.Size(120, 32)
     $btnRecommended.Add_Click({ & $applyRecommended })
     $form.Controls.Add($btnRecommended)
 
     $btnFull = New-Object System.Windows.Forms.Button
     $btnFull.Text = "Full AI"
-    $btnFull.Location = New-Object System.Drawing.Point(150, 784)
+    $btnFull.Location = New-Object System.Drawing.Point(150, 774)
     $btnFull.Size = New-Object System.Drawing.Size(120, 32)
-    $btnFull.Add_Click({ & $applyFull })
+    $btnFull.Add_Click({ & $applyFullAi })
     $form.Controls.Add($btnFull)
+
+    $btnFullFeatures = New-Object System.Windows.Forms.Button
+    $btnFullFeatures.Text = "Full Features"
+    $btnFullFeatures.Location = New-Object System.Drawing.Point(280, 774)
+    $btnFullFeatures.Size = New-Object System.Drawing.Size(120, 32)
+    $btnFullFeatures.Add_Click({ & $applyFullFeatures })
+    $form.Controls.Add($btnFullFeatures)
 
     $btnMinimal = New-Object System.Windows.Forms.Button
     $btnMinimal.Text = "Minimal"
-    $btnMinimal.Location = New-Object System.Drawing.Point(280, 784)
+    $btnMinimal.Location = New-Object System.Drawing.Point(410, 774)
     $btnMinimal.Size = New-Object System.Drawing.Size(120, 32)
     $btnMinimal.Add_Click({ & $applyMinimal })
     $form.Controls.Add($btnMinimal)
@@ -1024,8 +1111,8 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnContinue = New-Object System.Windows.Forms.Button
     $btnContinue.Text = "Continue Install"
-    $btnContinue.Location = New-Object System.Drawing.Point(710, 784)
-    $btnContinue.Size = New-Object System.Drawing.Size(120, 32)
+    $btnContinue.Location = New-Object System.Drawing.Point(710, 774)
+    $btnContinue.Size = New-Object System.Drawing.Size(130, 32)
     $btnContinue.Add_Click({
         $script:PythonInstallMethod = ConvertTo-InstallMethod -Value $comboPython.SelectedItem
         $script:FfmpegInstallMethod = ConvertTo-InstallMethod -Value $comboFfmpeg.SelectedItem
@@ -1045,14 +1132,14 @@ function Show-InteractiveInstallerControlPanel {
 
         # Installer action mode (mutually exclusive).
         if ([bool]$chkRunUninstall.Checked) {
-            Set-Variable -Name Uninstall -Scope Script -Value $true
-            Set-Variable -Name UninstallAI -Scope Script -Value $false
+            $script:RequestedUninstall = $true
+            $script:RequestedUninstallAI = $false
         } elseif ([bool]$chkRunUninstallAI.Checked) {
-            Set-Variable -Name Uninstall -Scope Script -Value $false
-            Set-Variable -Name UninstallAI -Scope Script -Value $true
+            $script:RequestedUninstall = $false
+            $script:RequestedUninstallAI = $true
         } else {
-            Set-Variable -Name Uninstall -Scope Script -Value $false
-            Set-Variable -Name UninstallAI -Scope Script -Value $false
+            $script:RequestedUninstall = $false
+            $script:RequestedUninstallAI = $false
         }
 
         $methodSet = @(
@@ -1095,8 +1182,8 @@ function Show-InteractiveInstallerControlPanel {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(840, 784)
-    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.Location = New-Object System.Drawing.Point(850, 774)
+    $btnCancel.Size = New-Object System.Drawing.Size(90, 32)
     $btnCancel.Add_Click({
         $script:__InstallerControlPanelSubmitted = $false
         $form.Close()
@@ -1111,13 +1198,20 @@ function Show-InteractiveInstallerControlPanel {
             & $applyRecommended
             $e.SuppressKeyPress = $true
         } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F) {
-            & $applyFull
+            if ($e.Shift) {
+                & $applyFullFeatures
+            } else {
+                & $applyFullAi
+            }
             $e.SuppressKeyPress = $true
         } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::M) {
             & $applyMinimal
             $e.SuppressKeyPress = $true
         }
     })
+
+    # Set initial mode label state now that $btnContinue exists
+    & $updateActionModeLabel
 
     [void]$form.ShowDialog()
 
@@ -1243,7 +1337,7 @@ function ConvertTo-InstallMethod {
 }
 
 function Show-InteractiveInstallerMenu {
-    if ($NoMenu -or $Uninstall -or $UninstallAI) {
+    if ($NoMenu -or $script:RequestedUninstall -or $script:RequestedUninstallAI) {
         return
     }
 
@@ -1382,13 +1476,13 @@ function Show-InteractiveInstallerMenu {
             "11" { $script:ChocoCacheLocation = Read-OptionalPathValue -Title "Chocolatey cache location" -CurrentValue $script:ChocoCacheLocation }
             "12" { return }
             "13" {
-                Set-Variable -Name Uninstall -Scope Script -Value $true
-                Set-Variable -Name UninstallAI -Scope Script -Value $false
+                $script:RequestedUninstall = $true
+                $script:RequestedUninstallAI = $false
                 return
             }
             "14" {
-                Set-Variable -Name Uninstall -Scope Script -Value $false
-                Set-Variable -Name UninstallAI -Scope Script -Value $true
+                $script:RequestedUninstall = $false
+                $script:RequestedUninstallAI = $true
                 return
             }
             "15" { exit 0 }
@@ -3711,7 +3805,7 @@ Show-InteractiveInstallerMenu
 # Removes AI / IMDB-lookup packages from the venv and deletes Whisper models.
 # Leaves the core venv (PyQt6, fastapi, etc.) intact.
 # ===========================================================================
-if ($UninstallAI) {
+if ($script:RequestedUninstallAI) {
     Write-Host ""
     Write-Host "=== Uninstall AI Libraries ===" -ForegroundColor Cyan
     Write-Host ""
@@ -3834,7 +3928,7 @@ if ($UninstallAI) {
 # Reads .install_manifest.json to know which system components were installed
 # by this script, then removes only those along with the venv and caches.
 # ===========================================================================
-if ($Uninstall) {
+if ($script:RequestedUninstall) {
     Write-Host ""
     Write-Host "=== Full Uninstall ===" -ForegroundColor Cyan
     Write-Host ""
@@ -5171,6 +5265,16 @@ $newManifest = @{
         ai_pip_backend      = if ($script:PipBackendForAI) { $script:PipBackendForAI } else { "" }
         installed_packages  = if ($script:InstalledPackageList) { @($script:InstalledPackageList) } else { @() }
     }
+    installer_preferences = @{
+        python_install_method   = [string]$script:PythonInstallMethod
+        ffmpeg_install_method   = [string]$script:FfmpegInstallMethod
+        tool_install_method     = [string]$script:ToolInstallMethod
+        winget_scope            = [string]$script:WingetInstallScope
+        winget_install_location = if ($script:WingetInstallLocation) { [string]$script:WingetInstallLocation } else { "" }
+        choco_cache_location    = if ($script:ChocoCacheLocation) { [string]$script:ChocoCacheLocation } else { "" }
+        optional_tool_mode      = [string]$script:OptionalToolInstallMode
+        optional_tool_keys      = @($script:OptionalToolAutoInstallKeys)
+    }
     ai = @{
         installed       = ($aiSettingOverride -eq $true)
         installed_backends = @($script:InstalledAiBackends)
@@ -5249,4 +5353,5 @@ if (-not $NoPause) {
 }
 
 exit 0
+
 
