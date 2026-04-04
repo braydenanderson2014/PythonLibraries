@@ -342,8 +342,7 @@ function Find-GitError {
             }
         }
         if ($mergeState.ConflictMarkerFiles.Count -gt 0) {
-            $errors += "conflict_markers_present"
-            Write-Warning "Detected: Conflict markers remain in tracked files"
+            Write-Warning "Detected: Conflict marker patterns in tracked files (warning-only unless merge workflow is active)"
             foreach ($path in $mergeState.ConflictMarkerFiles) {
                 Write-Warning "  - $path"
             }

@@ -77,7 +77,15 @@ function Show-MergeIssueSummary {
 }
 
 $mergeState = Get-MergeIssueState
-$hasMergeIssues = $mergeState.MergeInProgress -or $mergeState.RebaseInProgress -or $mergeState.CherryPickInProgress -or $mergeState.RevertInProgress -or $mergeState.UnmergedFiles.Count -gt 0 -or $mergeState.ConflictMarkerFiles.Count -gt 0
+$hasMergeIssues = $mergeState.MergeInProgress -or $mergeState.RebaseInProgress -or $mergeState.CherryPickInProgress -or $mergeState.RevertInProgress -or $mergeState.UnmergedFiles.Count -gt 0
+
+if (-not $hasMergeIssues -and $mergeState.ConflictMarkerFiles.Count -gt 0) {
+    Write-Host "Conflict-marker patterns were found in tracked files, but Git reports no active merge/rebase/cherry-pick/revert and no unmerged index entries." -ForegroundColor Yellow
+    Write-Host "Proceeding with repair steps. Review these files manually if needed:" -ForegroundColor Yellow
+    foreach ($path in $mergeState.ConflictMarkerFiles) {
+        Write-Host " - $path" -ForegroundColor Gray
+    }
+}
 
 if ($hasMergeIssues) {
     Show-MergeIssueSummary -State $mergeState
