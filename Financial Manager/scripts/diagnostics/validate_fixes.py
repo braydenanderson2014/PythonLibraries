@@ -3,7 +3,8 @@
 Quick validation script to check that our fixes work.
 """
 import sys, os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(PROJECT_ROOT, 'src'))
 
 def validate_fixes():
     print("=== Validating Bug Fixes ===")
@@ -12,7 +13,7 @@ def validate_fixes():
     print("\n1. Checking RentDashboardTab current_user_id fix:")
     
     # Read the file and check for the fix
-    with open('ui/rent_dashboard_tab.py', 'r') as f:
+    with open(os.path.join(PROJECT_ROOT, 'ui', 'rent_dashboard_tab.py'), 'r') as f:
         content = f.read()
     
     if 'self.current_user_id = current_user_id' in content:

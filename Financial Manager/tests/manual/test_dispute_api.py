@@ -7,7 +7,9 @@ Tests only the display and admin methods without full RentTracker initialization
 import sys
 import os
 from datetime import datetime
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
 
 from assets.Logger import Logger
 from src.rent_api import RentStatusAPI

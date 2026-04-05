@@ -3,11 +3,15 @@
 Validation script to check that chart duplication fix is in place.
 """
 
+import os
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 def validate_chart_fix():
     print("=== Validating Chart Duplication Fix ===")
     
     # Read the file and check for the fix
-    with open('ui/rent_dashboard_tab.py', 'r') as f:
+    with open(os.path.join(PROJECT_ROOT, 'ui', 'rent_dashboard_tab.py'), 'r') as f:
         content = f.read()
     
     print("\n1. Checking delinquency chart fix:")

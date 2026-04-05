@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Account Setup</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .setup-wrap {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(140deg, #0f766e 0%, #155e75 55%, #164e63 100%);
+            padding: 24px;
+        }
+        .setup-card {
+            width: 100%;
+            max-width: 520px;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+        }
+        .setup-card h1 {
+            margin-bottom: 8px;
+            color: #0f172a;
+        }
+        .setup-card p {
+            color: #334155;
+            margin-bottom: 18px;
+        }
+        .meta {
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #475569;
+        }
+        .meta strong {
+            color: #0f172a;
+        }
+        .qr-wrap {
+            margin-top: 14px;
+            display: flex;
+            justify-content: center;
+        }
+        .qr-wrap img {
+            width: 220px;
+            height: 220px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fff;
+            padding: 8px;
+        }
+        .manual-code {
+            margin-top: 10px;
+            font-family: Consolas, 'Courier New', monospace;
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="setup-wrap">
+        <div class="setup-card">
+            <h1>Finish Account Setup</h1>
+            <p>Create your password and optionally enable 2FA.</p>
+
+            <div id="setupInfo" class="meta"></div>
+            <div id="setupError" class="error-message hidden"></div>
+            <div id="setupSuccess" class="success-message hidden"></div>
+
+            <form id="setupForm" class="login-form">
+                <div class="form-group">
+                    <label for="password">New Password</label>
+                    <input id="password" type="password" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input id="confirmPassword" type="password" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input id="enable2fa" type="checkbox">
+                        Enable 2FA (Authenticator App)
+                    </label>
+                </div>
+                <button id="setupBtn" type="submit" class="btn btn-primary btn-login">Complete Setup</button>
+            </form>
+
+            <div id="twoFactorProvisioning" class="meta hidden">
+                <h3>2FA Setup</h3>
+                <p>Scan this QR code with your authenticator app, or use the manual code.</p>
+                <div class="qr-wrap"><img id="twoFactorQr" alt="2FA QR Code"></div>
+                <div id="twoFactorSecret" class="manual-code"></div>
+                <div id="twoFactorUri" class="manual-code"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token') || '';
+        const apiBase = params.get('api') || 'http://localhost:5000';
+
+        const setupForm = document.getElementById('setupForm');
+        const setupError = document.getElementById('setupError');
+        const setupSuccess = document.getElementById('setupSuccess');
+        const setupInfo = document.getElementById('setupInfo');
+        const twoFactorProvisioning = document.getElementById('twoFactorProvisioning');
+        const twoFactorQr = document.getElementById('twoFactorQr');
+        const twoFactorSecret = document.getElementById('twoFactorSecret');
+        const twoFactorUri = document.getElementById('twoFactorUri');
+
+        function showError(message) {
+            setupError.textContent = message;
+            setupError.classList.remove('hidden');
+        }
+
+        function hideMessages() {
+            setupError.classList.add('hidden');
+            setupSuccess.classList.add('hidden');
+        }
+
+        async function loadSetupInfo() {
+            if (!token) {
+                showError('Missing setup token in URL.');
+                setupForm.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBase}/api/auth/setup-info?token=${encodeURIComponent(token)}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || 'Unable to load setup details');
+                }
+
+                const details = data.data || {};
+                setupInfo.innerHTML = `
+                    <div><strong>Username:</strong> ${details.username || 'N/A'}</div>
+                    <div><strong>Email:</strong> ${details.email || 'N/A'}</div>
+                    <div><strong>Phone:</strong> ${details.phone || 'N/A'}</div>
+                    <div><strong>Tenant Account:</strong> ${details.tenant_account ? 'Yes' : 'No'}</div>
+                `;
+            } catch (error) {
+                showError(error.message);
+                setupForm.classList.add('hidden');
+            }
+        }
+
+        setupForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            hideMessages();
+
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const enable2fa = document.getElementById('enable2fa').checked;
+
+            if (password !== confirmPassword) {
+                showError('Passwords do not match.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBase}/api/auth/complete-setup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        token: token,
+                        password: password,
+                        confirm_password: confirmPassword,
+                        enable_two_factor: enable2fa
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to complete setup');
+                }
+
+                setupSuccess.textContent = 'Setup complete. You can now sign in.';
+                setupSuccess.classList.remove('hidden');
+                setupForm.classList.add('hidden');
+
+                if (data.two_factor_secret) {
+                    twoFactorSecret.textContent = `Manual setup code: ${data.two_factor_secret}`;
+                    if (data.two_factor_uri) {
+                        twoFactorUri.textContent = `Authenticator URI: ${data.two_factor_uri}`;
+                    } else {
+                        twoFactorUri.textContent = '';
+                    }
+                    if (data.two_factor_qr_url) {
+                        twoFactorQr.src = data.two_factor_qr_url;
+                    }
+                    twoFactorProvisioning.classList.remove('hidden');
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+
+        loadSetupInfo();
+    </script>
+</body>
+</html>

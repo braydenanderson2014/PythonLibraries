@@ -525,6 +525,40 @@ class AccountDatabaseManager:
             return False
         finally:
             conn.close()
+
+    def set_user_details(self, username: str, details: Dict[str, Any]) -> bool:
+        """
+        Replace the entire JSON details payload for a user.
+
+        This is used when sensitive keys (e.g. setup tokens) must be removed,
+        because partial merge updates do not delete existing keys.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            if not cursor.fetchone():
+                raise ValueError(f"User '{username}' not found")
+
+            import json
+            cursor.execute(
+                """
+                UPDATE users
+                SET details = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE username = ?
+                """,
+                (json.dumps(details or {}), username)
+            )
+            conn.commit()
+            logger.info("Account DB", f"User details replaced: {username}")
+            return True
+        except Exception as e:
+            conn.rollback()
+            logger.error("Account DB", f"Error replacing user details: {e}")
+            raise
+        finally:
+            conn.close()
     
     def delete_user(self, username: str) -> bool:
         """

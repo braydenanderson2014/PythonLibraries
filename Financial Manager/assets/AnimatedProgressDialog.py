@@ -2,12 +2,17 @@
 # AnimatedProgressDialog.py - PyQt version of animated progress dialog
 
 import math
+import sys
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
 )
 from PyQt6.QtCore import Qt, QTimer, QPointF, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath
+
+from assets.Logger import Logger
+
+logger = Logger()
 
 class SpinnerThread(QThread):
     """Emits `tick()` every `interval_ms` milliseconds, in its own thread."""
@@ -241,8 +246,12 @@ class AnimatedProgressDialog(QDialog):
                 AnimatedProgressDialog._active_instance = None
         
         except Exception as e:
-            # Print any cleanup errors but don't crash
-            print(f"[WARNING] Error during AnimatedProgressDialog cleanup: {e}")
+            # Log cleanup errors but do not block dialog shutdown.
+            try:
+                logger.warning("AnimatedProgressDialog", f"Error during cleanup: {e}")
+            except Exception:
+                if sys.stderr:
+                    sys.stderr.write(f"[WARNING] Error during AnimatedProgressDialog cleanup: {e}\n")
         
         finally:
             # Always call super().closeEvent to properly close the dialog

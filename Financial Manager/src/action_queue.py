@@ -366,7 +366,7 @@ class ActionQueue:
             return count
             
         except Exception as e:
-            print(f"Error getting cancelled count: {e}")
+            logger.error("ActionQueue", f"Error getting cancelled count: {e}")
             return 0
     
     def cleanup_all_cancelled(self):

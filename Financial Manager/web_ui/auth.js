@@ -9,6 +9,8 @@ class AuthManager {
         this.apiUrl = localStorage.getItem('apiUrl') || 'http://localhost:5000';
         this.username = localStorage.getItem('username');
         this.expiresAt = parseInt(localStorage.getItem('tokenExpiresAt') || '0');
+        this.isAdmin = localStorage.getItem('isAdmin') === 'true';
+        this.isTenant = localStorage.getItem('isTenant') === 'true';
     }
     
     /**
@@ -21,6 +23,16 @@ class AuthManager {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Check if the token expiration timestamp has passed
+     */
+    isTokenExpired() {
+        if (!this.expiresAt) {
+            return true;
+        }
+        return Date.now() >= this.expiresAt;
     }
     
     /**
@@ -58,6 +70,35 @@ class AuthManager {
             if (!response.ok) {
                 throw new Error(data.message || 'Login failed');
             }
+
+            if (data.two_factor_required) {
+                const code = window.prompt('Enter your 2FA code from your authenticator app:');
+                if (!code) {
+                    return {
+                        success: false,
+                        error: '2FA code entry was cancelled.'
+                    };
+                }
+
+                const verifyResponse = await fetch(`${apiUrl}/api/auth/verify-2fa`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        challenge_id: data.challenge_id,
+                        code: code.trim()
+                    })
+                });
+
+                const verifyData = await verifyResponse.json();
+                if (!verifyResponse.ok) {
+                    throw new Error(verifyData.message || '2FA verification failed');
+                }
+
+                // Continue with verified payload as normal login data.
+                Object.assign(data, verifyData);
+            }
             
             if (!data.token) {
                 throw new Error('No token received from server');
@@ -67,6 +108,8 @@ class AuthManager {
             this.token = data.token;
             this.username = username;
             this.apiUrl = apiUrl;
+            this.isAdmin = !!data.is_admin;
+            this.isTenant = !!data.is_tenant;
             
             // Calculate expiration time
             const expiresInSeconds = data.session_expires_in_seconds || 3600;
@@ -77,6 +120,8 @@ class AuthManager {
             localStorage.setItem('username', this.username);
             localStorage.setItem('apiUrl', this.apiUrl);
             localStorage.setItem('tokenExpiresAt', this.expiresAt.toString());
+            localStorage.setItem('isAdmin', this.isAdmin ? 'true' : 'false');
+            localStorage.setItem('isTenant', this.isTenant ? 'true' : 'false');
             
             return {
                 success: true,
@@ -118,10 +163,14 @@ class AuthManager {
             localStorage.removeItem('username');
             localStorage.removeItem('apiUrl');
             localStorage.removeItem('tokenExpiresAt');
+            localStorage.removeItem('isAdmin');
+            localStorage.removeItem('isTenant');
             
             this.token = null;
             this.username = null;
             this.expiresAt = 0;
+            this.isAdmin = false;
+            this.isTenant = false;
         }
     }
     
@@ -173,6 +222,14 @@ class AuthManager {
                 }
                 throw new Error('Token verification failed');
             }
+
+            const data = await response.json();
+            this.username = data.username || this.username;
+            this.isAdmin = !!data.is_admin;
+            this.isTenant = !!data.is_tenant;
+            localStorage.setItem('username', this.username || '');
+            localStorage.setItem('isAdmin', this.isAdmin ? 'true' : 'false');
+            localStorage.setItem('isTenant', this.isTenant ? 'true' : 'false');
             
             return true;
         } catch (error) {
@@ -212,6 +269,20 @@ class AuthManager {
         } else {
             return `${minutes}m`;
         }
+    }
+
+    /**
+     * Whether the logged-in account is a tenant account
+     */
+    isTenantAccount() {
+        return !!this.isTenant;
+    }
+
+    /**
+     * Whether the logged-in account is admin/landlord
+     */
+    isAdminAccount() {
+        return !!this.isAdmin;
     }
 }
 

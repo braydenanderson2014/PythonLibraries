@@ -1753,9 +1753,9 @@ class RentManagementTab(QWidget):
             # Ensure the scroll area exists
             if hasattr(self, 'scroll_area') and self.scroll_area:
                 # Don't auto-scroll - let user scroll manually to see all content
-                print("[DEBUG] Balance summary added - user can scroll to view")
+                self.logger.debug("Rent Management Tab", "[DEBUG] Balance summary added - user can scroll to view")
         except Exception as e:
-            print(f"[DEBUG] Error with scroll area: {e}")
+            self.logger.debug("Rent Management Tab", f"[DEBUG] Error with scroll area: {e}")
     
     def add_month_row(self, layout, month_key, summary, tenant, is_delinquent=False):
         """Add a single month row to the layout"""

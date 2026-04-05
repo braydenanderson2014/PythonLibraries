@@ -4,6 +4,12 @@ Migration script to assign existing tenants to admin user.
 This ensures existing tenants don't disappear when user filtering is enabled.
 """
 
+import os
+import sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
+
 from src.tenant import TenantManager
 from src.account import AccountManager
 from assets.Logger import Logger

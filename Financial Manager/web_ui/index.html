@@ -76,6 +76,7 @@
                 <span id="userInfo" class="user-info"></span>
             </div>
             <div class="navbar-actions">
+                <button id="forceReauthBtn" class="btn btn-warning">Force Re-Auth</button>
                 <button id="logoutBtn" class="btn btn-secondary">Logout</button>
             </div>
         </nav>
@@ -96,8 +97,15 @@
                 <!-- Tenants Section -->
                 <section id="tenantsSection" class="content-section active">
                     <div class="section-header">
-                        <h2>Tenants</h2>
+                        <h2 id="tenantsSectionTitle">Tenants</h2>
                         <button id="refreshTenantsBtn" class="btn btn-secondary btn-small">Refresh</button>
+                    </div>
+
+                    <div id="tenantModeBadge" class="tenant-mode-badge hidden"></div>
+
+                    <div id="tenantTabs" class="tenant-tabs">
+                        <button class="tenant-tab active" data-tenant-tab="overview">Overview</button>
+                        <button class="tenant-tab" data-tenant-tab="details">Details</button>
                     </div>
                     
                     <div id="tenantsLoading" class="loading hidden">
@@ -106,9 +114,16 @@
                     </div>
                     
                     <div id="tenantsError" class="error-message hidden"></div>
-                    
-                    <div id="tenantsList" class="tenants-grid">
-                        <!-- Populated by JavaScript -->
+
+                    <div id="tenantOverviewPanel" class="tenant-tab-panel active">
+                        <div id="tenantsList" class="tenants-grid">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <div id="tenantDetailsPanel" class="tenant-tab-panel">
+                        <div id="tenantDetailsPlaceholder" class="empty-state">Select a tenant from Overview to load full details.</div>
+                        <div id="tenantDetailsContent" class="hidden"></div>
                     </div>
                 </section>
                 
@@ -125,6 +140,11 @@
                     </div>
                     
                     <div id="disputesError" class="error-message hidden"></div>
+
+                    <div id="pendingPaymentsPanel" class="details-section hidden">
+                        <h3>Pending Payment Submissions</h3>
+                        <div id="pendingPaymentsList" class="pending-payments-list"></div>
+                    </div>
                     
                     <div id="disputesList" class="disputes-list">
                         <!-- Populated by JavaScript -->
@@ -201,26 +221,5 @@
     <script src="auth.js"></script>
     <script src="api.js"></script>
     <script src="ui.js"></script>
-    <script>
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            const auth = new AuthManager();
-            
-            // Check if already logged in
-            if (auth.isLoggedIn()) {
-                // Show dashboard
-                console.log('Already logged in as:', auth.getUsername());
-                const ui = new UIController(auth);
-                ui.showDashboard();
-                ui.loadTenants();
-                ui.loadDisputes();
-            } else {
-                // Show login (already default)
-                console.log('Not logged in - showing login page');
-                document.getElementById('loginPage').classList.add('active');
-                document.getElementById('dashboardPage').classList.remove('active');
-            }
-        });
-    </script>
 </body>
 </html>

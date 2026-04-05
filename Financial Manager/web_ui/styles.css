@@ -52,11 +52,14 @@ body {
 /* ========== LOGIN PAGE ========== */
 
 #loginPage {
-    display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+}
+
+#loginPage.active {
+    display: flex;
 }
 
 .login-container {
@@ -152,6 +155,15 @@ body {
 
 .btn-secondary:hover:not(:disabled) {
     background-color: #475569;
+}
+
+.btn-warning {
+    background-color: #d97706;
+    color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+    background-color: #b45309;
 }
 
 .btn-small {
@@ -328,6 +340,56 @@ body {
 
 /* ========== TENANTS ========== */
 
+.tenant-mode-badge {
+    display: inline-block;
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.tenant-mode-badge.tenant-mode {
+    background: #e0f2fe;
+    color: #075985;
+}
+
+.tenant-mode-badge.admin-mode {
+    background: #ede9fe;
+    color: #5b21b6;
+}
+
+.tenant-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.tenant-tab {
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.tenant-tab.active {
+    color: white;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.tenant-tab-panel {
+    display: none;
+}
+
+.tenant-tab-panel.active {
+    display: block;
+}
+
 .tenants-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -346,6 +408,11 @@ body {
 .tenant-card:hover {
     box-shadow: var(--shadow-lg);
     transform: translateY(-2px);
+}
+
+.tenant-card.selected {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 .card-header {
@@ -426,6 +493,14 @@ body {
     gap: 8px;
 }
 
+#tenantDetailsContent {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 18px;
+    box-shadow: var(--shadow);
+}
+
 /* ========== DISPUTES ========== */
 
 .disputes-list {
@@ -478,6 +553,32 @@ body {
 .status-rejected {
     background-color: #f3f4f6;
     color: #374151;
+}
+
+/* ========== COLOR TONES ========== */
+
+.tone-danger {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.tone-success {
+    color: #166534;
+    font-weight: 600;
+}
+
+.tone-warning {
+    color: #b45309;
+    font-weight: 600;
+}
+
+.tone-info {
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+.tone-muted {
+    color: #64748b;
 }
 
 /* ========== FORMS ========== */
@@ -650,6 +751,155 @@ textarea.form-control {
     color: var(--text-primary);
 }
 
+.inline-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.pending-payments-list {
+    display: grid;
+    gap: 10px;
+}
+
+.pending-payment-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+    padding: 12px;
+    box-shadow: var(--shadow);
+}
+
+.pending-payment-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.pending-payment-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.pending-payment-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.payment-chart-rows {
+    display: grid;
+    gap: 10px;
+}
+
+.payment-chart-row {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--card-bg);
+}
+
+.payment-chart-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.payment-chart-bars {
+    display: grid;
+    gap: 6px;
+}
+
+.payment-chart-bar {
+    min-height: 24px;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+.payment-chart-bar.expected {
+    background: #64748b;
+}
+
+.payment-chart-bar.paid {
+    background: #15803d;
+}
+
+.data-grid {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--card-bg);
+}
+
+.data-grid-header,
+.data-grid-row {
+    display: grid;
+    align-items: center;
+}
+
+.data-grid-payment-history .data-grid-header,
+.data-grid-payment-history .data-grid-row {
+    grid-template-columns: 1.1fr 1fr 1fr 1fr 1fr;
+}
+
+.data-grid-monthly-breakdown .data-grid-header,
+.data-grid-monthly-breakdown .data-grid-row {
+    grid-template-columns: 1.1fr 1fr 1fr 1fr 1fr;
+}
+
+.data-grid-header {
+    background: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border-color);
+}
+
+body.dark-mode .data-grid-header {
+    background: #334155;
+    color: #e2e8f0;
+}
+
+.data-grid-header > div,
+.data-grid-row > div {
+    padding: 9px 10px;
+    border-right: 1px solid var(--border-color);
+}
+
+.data-grid-header > div:last-child,
+.data-grid-row > div:last-child {
+    border-right: none;
+}
+
+.data-grid-row {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.data-grid-row:last-child {
+    border-bottom: none;
+}
+
+.data-grid-row:nth-child(even) {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.data-grid-empty {
+    padding: 16px;
+    color: var(--text-secondary);
+}
+
 /* ========== SETTINGS ========== */
 
 .settings-form {
@@ -720,10 +970,33 @@ textarea.form-control {
     .tenants-grid {
         grid-template-columns: 1fr;
     }
+
+    .tenant-tabs {
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
     
     .dispute-row {
         grid-template-columns: 1fr;
         gap: 8px;
+    }
+
+    .data-grid-payment-history .data-grid-header,
+    .data-grid-payment-history .data-grid-row,
+    .data-grid-monthly-breakdown .data-grid-header,
+    .data-grid-monthly-breakdown .data-grid-row {
+        grid-template-columns: 1fr;
+    }
+
+    .data-grid-header > div,
+    .data-grid-row > div {
+        border-right: none;
+        border-bottom: 1px dashed var(--border-color);
+    }
+
+    .data-grid-header > div:last-child,
+    .data-grid-row > div:last-child {
+        border-bottom: none;
     }
     
     .info-grid {

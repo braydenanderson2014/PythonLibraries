@@ -33,6 +33,11 @@ class APIClient {
             if (!response.ok) {
                 if (response.status === 401) {
                     this.auth.logout();
+                    window.dispatchEvent(new CustomEvent('auth:required', {
+                        detail: {
+                            reason: 'Session expired or invalid. Please sign in again.'
+                        }
+                    }));
                     throw new Error('Session expired. Please login again.');
                 }
                 throw new Error(data.message || `API error: ${response.status}`);
@@ -95,6 +100,42 @@ class APIClient {
      */
     async exportTenantData(tenantId) {
         return this.request(`/api/tenants/${tenantId}/export`);
+    }
+
+    /**
+     * Submit a payment for a tenant
+     */
+    async submitTenantPayment(tenantId, paymentData) {
+        return this.request(
+            `/api/tenants/${tenantId}/payments`,
+            'POST',
+            paymentData
+        );
+    }
+
+    /**
+     * Get all pending payment submissions
+     */
+    async getPendingPayments() {
+        return this.request('/api/payments/pending');
+    }
+
+    /**
+     * Approve pending payment submission
+     */
+    async approvePendingPayment(actionId) {
+        return this.request(`/api/payments/pending/${actionId}/approve`, 'POST', {});
+    }
+
+    /**
+     * Deny pending payment submission
+     */
+    async denyPendingPayment(actionId, reason = '') {
+        return this.request(
+            `/api/payments/pending/${actionId}/deny`,
+            'POST',
+            { reason }
+        );
     }
     
     // ========== DISPUTE ENDPOINTS ==========

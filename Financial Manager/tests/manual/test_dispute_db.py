@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 """Test dispute database persistence"""
 
+import os
+import sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
+
 from src.database import DatabaseManager
 from src.disputes import DisputeManager
 

@@ -164,5 +164,5 @@ if __name__ == '__main__':
                 app = QApplication(sys.argv)
             QMessageBox.critical(None, "Critical Error", f"Application failed to start: {str(e)}")
         except:
-            print("[CRITICAL] Could not show error dialog")
+            logger.error("MainWindow", "[CRITICAL] Could not show error dialog")
         sys.exit(1)

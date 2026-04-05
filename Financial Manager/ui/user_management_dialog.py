@@ -1,7 +1,11 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QListWidget, QHBoxLayout, QMessageBox, QListWidgetItem, QCheckBox, QFormLayout, QLineEdit, QWidget, QScrollArea, QListWidgetItem as ListItem
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QListWidget, QHBoxLayout, QMessageBox, QListWidgetItem, QCheckBox, QFormLayout, QLineEdit, QWidget, QScrollArea, QListWidgetItem as ListItem, QApplication
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+import urllib.request
 from src.account import AccountManager
 from src.account_db import AccountDatabaseManager
+from src.rent_web_server_runner import UnifiedApiAccountManager
+from src.rent_api_auth import generate_totp_secret, build_totp_uri, build_totp_qr_url
 from src.tenant import TenantManager
 from assets.Logger import Logger
 
@@ -53,7 +57,7 @@ class UserManagementDialog(QDialog):
     def refresh_users(self):
         """Refresh user list from both database and JSON backends"""
         self.user_list.clear()
-        users_dict = {}  # Map username -> (source, is_admin)
+        users_dict = {}  # Map username -> (source, is_admin, is_tenant)
         
         # Get users from database
         try:
@@ -61,7 +65,11 @@ class UserManagementDialog(QDialog):
             for user in db_users:
                 username = user.get('username')
                 is_admin = user.get('is_admin') == 1
-                users_dict[username] = ('database', is_admin)
+                details = user.get('details') or {}
+                if not isinstance(details, dict):
+                    details = {}
+                is_tenant = bool(details.get('tenant_account', details.get('role') == 'tenant'))
+                users_dict[username] = ('database', is_admin, is_tenant)
         except Exception as e:
             logger.warning("UserManagementDialog", f"Could not load database users: {e}")
         
@@ -70,16 +78,19 @@ class UserManagementDialog(QDialog):
             self.account_manager.load()
             for username in self.account_manager.accounts.keys():
                 if username not in users_dict:  # Only add if not in database
-                    is_admin = self.account_manager.accounts[username].get('details', {}).get('role') == 'admin'
-                    users_dict[username] = ('json', is_admin)
+                    details = self.account_manager.accounts[username].get('details', {})
+                    is_admin = details.get('role') == 'admin'
+                    is_tenant = bool(details.get('tenant_account', details.get('role') == 'tenant'))
+                    users_dict[username] = ('json', is_admin, is_tenant)
         except Exception as e:
             logger.warning("UserManagementDialog", f"Could not load JSON users: {e}")
         
         # Display users with admin status and backend source
         for username in sorted(users_dict.keys()):
-            source, is_admin = users_dict[username]
+            source, is_admin, is_tenant = users_dict[username]
             admin_label = " (Admin)" if is_admin else ""
-            display_text = f"{username}{admin_label} [{source}]"
+            tenant_label = " (Tenant)" if is_tenant else ""
+            display_text = f"{username}{admin_label}{tenant_label} [{source}]"
             item = QListWidgetItem(display_text)
             item.setData(Qt.ItemDataRole.UserRole, username)  # Store username
             self.user_list.addItem(item)
@@ -164,6 +175,7 @@ class CreateOrEditUserDialog(QDialog):
         self.mode = mode
         self.username = username
         self.user_backend = None  # Track which backend user is from
+        self.current_two_factor_secret = None
         
         if mode == 'create':
             self.setWindowTitle('Create New User')
@@ -223,6 +235,35 @@ class CreateOrEditUserDialog(QDialog):
         # Admin checkbox
         self.admin_checkbox = QCheckBox('Grant Admin Privileges')
         form.addRow('', self.admin_checkbox)
+
+        # Tenant-only account checkbox
+        self.tenant_account_checkbox = QCheckBox('Tenant Account (not admin/landlord)')
+        self.tenant_account_checkbox.setChecked(False)
+        self.tenant_account_checkbox.toggled.connect(self.on_tenant_flag_changed)
+        form.addRow('', self.tenant_account_checkbox)
+
+        # Optional two-factor authentication
+        self.two_factor_checkbox = QCheckBox('Require 2FA for this account (optional)')
+        self.two_factor_checkbox.setChecked(False)
+        form.addRow('', self.two_factor_checkbox)
+
+        # Create now, complete later via setup link
+        self.setup_later_checkbox = QCheckBox('Create now and let user finish setup via secure link')
+        self.setup_later_checkbox.setChecked(self.mode == 'create')
+        self.setup_later_checkbox.toggled.connect(self.on_setup_later_changed)
+        if self.mode != 'create':
+            self.setup_later_checkbox.setChecked(False)
+            self.setup_later_checkbox.setEnabled(False)
+        form.addRow('', self.setup_later_checkbox)
+
+        # Access privilege checkboxes
+        self.desktop_access_checkbox = QCheckBox('Allow Desktop Access')
+        self.desktop_access_checkbox.setChecked(True)
+        form.addRow('', self.desktop_access_checkbox)
+
+        self.online_access_checkbox = QCheckBox('Allow Online/API Access')
+        self.online_access_checkbox.setChecked(False)
+        form.addRow('', self.online_access_checkbox)
         
         layout.addLayout(form)
         
@@ -239,6 +280,7 @@ class CreateOrEditUserDialog(QDialog):
         layout.addLayout(btn_layout)
         
         self.setLayout(layout)
+        self.on_setup_later_changed(self.setup_later_checkbox.isChecked())
 
     def load_user_data(self, username):
         """Load existing user data when editing - checks database first, then JSON"""
@@ -252,6 +294,25 @@ class CreateOrEditUserDialog(QDialog):
                     is_admin = db_user.get('is_admin') == 1
                     self.user_backend = 'database'
                     self.admin_checkbox.setChecked(is_admin)
+
+                    details = db_user.get('details') or {}
+                    if not isinstance(details, dict):
+                        details = {}
+
+                    # Backward compatible defaults:
+                    # - Old API-only accounts used details.api_only=True
+                    # - Older desktop users may have no explicit flags
+                    api_only = bool(details.get('api_only', False))
+                    desktop_access = bool(details.get('desktop_access', not api_only))
+                    online_access = bool(details.get('online_access', api_only))
+                    tenant_account = bool(details.get('tenant_account', details.get('role') == 'tenant'))
+                    two_factor_enabled = bool(details.get('two_factor_enabled', False))
+                    self.current_two_factor_secret = details.get('two_factor_secret')
+
+                    self.desktop_access_checkbox.setChecked(desktop_access)
+                    self.online_access_checkbox.setChecked(online_access)
+                    self.tenant_account_checkbox.setChecked(tenant_account)
+                    self.two_factor_checkbox.setChecked(two_factor_enabled)
                     
                     # Load additional fields
                     self.email_input.setText(db_user.get('email', '') or '')
@@ -269,6 +330,18 @@ class CreateOrEditUserDialog(QDialog):
                 is_admin = details.get('role') == 'admin'
                 self.user_backend = 'json'
                 self.admin_checkbox.setChecked(is_admin)
+
+                api_only = bool(details.get('api_only', False))
+                desktop_access = bool(details.get('desktop_access', not api_only))
+                online_access = bool(details.get('online_access', api_only))
+                tenant_account = bool(details.get('tenant_account', details.get('role') == 'tenant'))
+                two_factor_enabled = bool(details.get('two_factor_enabled', False))
+                self.current_two_factor_secret = details.get('two_factor_secret')
+
+                self.desktop_access_checkbox.setChecked(desktop_access)
+                self.online_access_checkbox.setChecked(online_access)
+                self.tenant_account_checkbox.setChecked(tenant_account)
+                self.two_factor_checkbox.setChecked(two_factor_enabled)
                 
                 # Load additional fields from details
                 self.email_input.setText(details.get('email', '') or '')
@@ -282,6 +355,11 @@ class CreateOrEditUserDialog(QDialog):
         password = self.password_input.text()
         confirm = self.confirm_input.text()
         is_admin = self.admin_checkbox.isChecked()
+        tenant_account = self.tenant_account_checkbox.isChecked()
+        two_factor_enabled = self.two_factor_checkbox.isChecked()
+        setup_later = self.setup_later_checkbox.isChecked() and self.mode == 'create'
+        desktop_access = self.desktop_access_checkbox.isChecked()
+        online_access = self.online_access_checkbox.isChecked()
         email = self.email_input.text().strip()
         fullname = self.fullname_input.text().strip()
         phone = self.phone_input.text().strip()
@@ -290,14 +368,29 @@ class CreateOrEditUserDialog(QDialog):
         if not username:
             QMessageBox.warning(self, 'Error', 'Username is required.')
             return
+
+        if not desktop_access and not online_access:
+            QMessageBox.warning(self, 'Error', 'At least one access type (Desktop or Online/API) must be enabled.')
+            return
+
+        if is_admin and tenant_account:
+            QMessageBox.warning(self, 'Error', 'A tenant account cannot also be an admin/landlord account.')
+            return
+
+        role = 'tenant' if tenant_account else ('admin' if is_admin else 'user')
+        two_factor_secret = self.current_two_factor_secret
+        if two_factor_enabled and not two_factor_secret:
+            two_factor_secret = generate_totp_secret()
+        if not two_factor_enabled:
+            two_factor_secret = None
         
         if self.mode == 'create':
             # Creating new user - password is required
-            if not password:
+            if not setup_later and not password:
                 QMessageBox.warning(self, 'Error', 'Password is required for new users.')
                 return
             
-            if password != confirm:
+            if not setup_later and password != confirm:
                 QMessageBox.warning(self, 'Error', 'Passwords do not match.')
                 return
             
@@ -321,6 +414,35 @@ class CreateOrEditUserDialog(QDialog):
                 return
             
             try:
+                if setup_later:
+                    unified_manager = UnifiedApiAccountManager()
+                    result = unified_manager.create_pending_account(
+                        username=username,
+                        email=email or None,
+                        full_name=fullname or None,
+                        phone=phone or None,
+                        is_admin=1 if is_admin else 0,
+                        role=role,
+                        tenant_account=tenant_account,
+                        two_factor_enabled=False,
+                        desktop_access=desktop_access,
+                        online_access=online_access,
+                        api_only=online_access and not desktop_access
+                    )
+
+                    setup_token = result.get('setup_token')
+                    setup_link = f"http://localhost:5001/setup_account.html?api=http://localhost:5000&token={setup_token}"
+                    QApplication.clipboard().setText(setup_link)
+                    QMessageBox.information(
+                        self,
+                        'Setup Link Created',
+                        f'User "{username}" created in pending setup mode.\n\n'
+                        f'Setup link copied to clipboard:\n{setup_link}\n\n'
+                        'Share this link with the user to complete their password and optional 2FA setup.'
+                    )
+                    self.accept()
+                    return
+
                 # Create in database if available
                 if self.db_manager:
                     from src.account_id_generator import generate_account_id
@@ -332,19 +454,35 @@ class CreateOrEditUserDialog(QDialog):
                         email=email or None,
                         full_name=fullname or None,
                         phone=phone or None,
-                        is_admin=1 if is_admin else 0
+                        is_admin=1 if is_admin else 0,
+                        role=role,
+                        tenant_account=tenant_account,
+                        two_factor_enabled=two_factor_enabled,
+                        two_factor_secret=two_factor_secret,
+                        desktop_access=desktop_access,
+                        online_access=online_access,
+                        # Keep legacy compatibility for existing API auth logic.
+                        api_only=online_access and not desktop_access
                     )
                 else:
                     # Fall back to JSON creation
                     details = {
-                        'role': 'admin' if is_admin else 'user',
+                        'role': role,
+                        'tenant_account': tenant_account,
+                        'two_factor_enabled': two_factor_enabled,
+                        'two_factor_secret': two_factor_secret,
                         'email': email,
                         'full_name': fullname,
-                        'phone': phone
+                        'phone': phone,
+                        'desktop_access': desktop_access,
+                        'online_access': online_access,
+                        'api_only': online_access and not desktop_access
                     }
                     self.account_manager.create_account(username, password, **details)
                 
                 QMessageBox.information(self, 'Success', f'User "{username}" created successfully.')
+                if two_factor_enabled and two_factor_secret:
+                    self.show_two_factor_setup_dialog(username, two_factor_secret)
                 self.accept()
             except Exception as e:
                 QMessageBox.critical(self, 'Error', f'Failed to create user: {e}')
@@ -369,22 +507,102 @@ class CreateOrEditUserDialog(QDialog):
                         email=email or None,
                         full_name=fullname or None,
                         phone=phone or None,
-                        is_admin=1 if is_admin else 0
+                        is_admin=1 if is_admin else 0,
+                        role=role,
+                        tenant_account=tenant_account,
+                        two_factor_enabled=two_factor_enabled,
+                        two_factor_secret=two_factor_secret,
+                        desktop_access=desktop_access,
+                        online_access=online_access,
+                        # Keep legacy compatibility for existing API auth logic.
+                        api_only=online_access and not desktop_access
                     )
                 else:
                     # Update JSON backend
                     account = self.account_manager.get_account(username)
                     if account:
-                        account['details']['role'] = 'admin' if is_admin else 'user'
+                        account['details']['role'] = role
+                        account['details']['tenant_account'] = tenant_account
+                        account['details']['two_factor_enabled'] = two_factor_enabled
+                        account['details']['two_factor_secret'] = two_factor_secret
                         account['details']['email'] = email
                         account['details']['full_name'] = fullname
                         account['details']['phone'] = phone
+                        account['details']['desktop_access'] = desktop_access
+                        account['details']['online_access'] = online_access
+                        account['details']['api_only'] = online_access and not desktop_access
                         self.account_manager.save()
                 
                 QMessageBox.information(self, 'Success', f'User "{username}" updated successfully.')
+                if two_factor_enabled and two_factor_secret:
+                    self.show_two_factor_setup_dialog(username, two_factor_secret)
                 self.accept()
             except Exception as e:
                 QMessageBox.critical(self, 'Error', f'Failed to update user: {e}')
+
+    def on_tenant_flag_changed(self, checked):
+        """Tenant accounts cannot be admin accounts."""
+        if checked:
+            self.admin_checkbox.setChecked(False)
+            self.admin_checkbox.setEnabled(False)
+        else:
+            self.admin_checkbox.setEnabled(True)
+
+    def on_setup_later_changed(self, checked):
+        """When setup is deferred, password entry is not required in this dialog."""
+        self.password_input.setEnabled(not checked)
+        self.confirm_input.setEnabled(not checked)
+        self.two_factor_checkbox.setEnabled(not checked)
+        if checked:
+            self.password_input.clear()
+            self.confirm_input.clear()
+            self.two_factor_checkbox.setChecked(False)
+
+    def show_two_factor_setup_dialog(self, username, secret):
+        """Show QR and manual provisioning details for authenticator app setup."""
+        try:
+            otpauth_uri = build_totp_uri(secret, username)
+            qr_url = build_totp_qr_url(otpauth_uri)
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle('2FA Provisioning')
+            dlg.setMinimumSize(500, 520)
+
+            layout = QVBoxLayout()
+            layout.addWidget(QLabel(f'2FA is enabled for user: {username}'))
+            layout.addWidget(QLabel('Scan this QR code with your authenticator app or use the manual setup code below.'))
+
+            qr_label = QLabel()
+            qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            try:
+                data = urllib.request.urlopen(qr_url, timeout=8).read()
+                pixmap = QPixmap()
+                if pixmap.loadFromData(data):
+                    qr_label.setPixmap(pixmap)
+                else:
+                    qr_label.setText('Unable to load QR image. Use manual code below.')
+            except Exception:
+                qr_label.setText('Unable to load QR image. Use manual code below.')
+            layout.addWidget(qr_label)
+
+            secret_input = QLineEdit(secret)
+            secret_input.setReadOnly(True)
+            layout.addWidget(QLabel('Manual setup code:'))
+            layout.addWidget(secret_input)
+
+            uri_input = QLineEdit(otpauth_uri)
+            uri_input.setReadOnly(True)
+            layout.addWidget(QLabel('Authenticator URI:'))
+            layout.addWidget(uri_input)
+
+            close_btn = QPushButton('Close')
+            close_btn.clicked.connect(dlg.accept)
+            layout.addWidget(close_btn)
+
+            dlg.setLayout(layout)
+            dlg.exec()
+        except Exception as e:
+            logger.warning('UserManagementDialog', f'Failed to render 2FA provisioning dialog: {e}')
 
 class TenantAssignmentDialog(QDialog):
     """Dialog for assigning tenants to a user"""

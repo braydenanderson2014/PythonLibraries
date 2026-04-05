@@ -947,7 +947,7 @@ class Bank:
                 if user_id is None or recurring_tx.user_id == user_id:
                     recurring_objects.append(recurring_tx)
             except Exception as e:
-                print(f"Error loading recurring transaction: {e}")
+                logger.error("Bank", f"Error loading recurring transaction: {e}")
                 continue
                 
         return recurring_objects

@@ -54,8 +54,8 @@ class ActionQueueDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Created
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Action
         
-        # Set a fixed width for the Action column to ensure button fits
-        self.actions_table.setColumnWidth(5, 80)
+        # Set a fixed width for the Action column to ensure buttons fit
+        self.actions_table.setColumnWidth(5, 170)
         
         self.actions_table.setAlternatingRowColors(True)
         self.actions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -184,6 +184,8 @@ class ActionQueueDialog(QDialog):
                 type_item.setBackground(QColor(144, 238, 144))  # Light green
             elif action['action_type'] == 'notification':
                 type_item.setBackground(QColor(173, 216, 230))  # Light blue
+            elif action['action_type'] == 'payment_submission':
+                type_item.setBackground(QColor(255, 239, 204))  # Light amber
             self.actions_table.setItem(row, 0, type_item)
             
             # Description
@@ -220,11 +222,29 @@ class ActionQueueDialog(QDialog):
             created_item = QTableWidgetItem(created_str)
             self.actions_table.setItem(row, 4, created_item)
             
-            # Action button
-            remove_btn = QPushButton('Remove')
-            remove_btn.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold; border-radius: 4px; padding: 4px 10px;")
-            remove_btn.clicked.connect(lambda checked, a_id=action['action_id']: self.remove_action(a_id))
-            self.actions_table.setCellWidget(row, 5, remove_btn)
+            # Action button(s)
+            if action['action_type'] == 'payment_submission' and action['status'] == 'pending' and self.rent_tracker:
+                action_container = QFrame()
+                action_layout = QHBoxLayout(action_container)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.setSpacing(4)
+
+                approve_btn = QPushButton('Approve')
+                approve_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; border-radius: 4px; padding: 4px 8px;")
+                approve_btn.clicked.connect(lambda checked, a_id=action['action_id']: self.approve_payment_submission(a_id))
+
+                deny_btn = QPushButton('Deny')
+                deny_btn.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold; border-radius: 4px; padding: 4px 8px;")
+                deny_btn.clicked.connect(lambda checked, a_id=action['action_id']: self.remove_action(a_id))
+
+                action_layout.addWidget(approve_btn)
+                action_layout.addWidget(deny_btn)
+                self.actions_table.setCellWidget(row, 5, action_container)
+            else:
+                remove_btn = QPushButton('Remove')
+                remove_btn.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold; border-radius: 4px; padding: 4px 10px;")
+                remove_btn.clicked.connect(lambda checked, a_id=action['action_id']: self.remove_action(a_id))
+                self.actions_table.setCellWidget(row, 5, remove_btn)
             
             # Store action data in the type item (already added to table)
             type_item.setData(Qt.ItemDataRole.UserRole, action)
@@ -247,6 +267,59 @@ class ActionQueueDialog(QDialog):
             logger.info("ActionQueueDialog", f"Action removed: {action_id}")
             self.load_actions()
             QMessageBox.information(self, 'Action Removed', 'Action has been removed from the queue.')
+
+    def approve_payment_submission(self, action_id):
+        """Approve pending payment_submission action from desktop admin UI."""
+        if not self.rent_tracker:
+            QMessageBox.warning(self, 'Approve Payment', 'Rent tracker is not available.')
+            return
+
+        action = self.action_queue.get_action(action_id)
+        if not action:
+            QMessageBox.warning(self, 'Approve Payment', 'Payment submission action not found.')
+            return
+
+        if action.get('action_type') != 'payment_submission' or action.get('status') != 'pending':
+            QMessageBox.warning(self, 'Approve Payment', 'Only pending payment submissions can be approved.')
+            return
+
+        tenant = self.rent_tracker.tenant_manager.get_tenant(action.get('tenant_id'))
+        if not tenant:
+            QMessageBox.warning(self, 'Approve Payment', 'Tenant for this payment submission was not found.')
+            return
+
+        action_data = action.get('action_data', {})
+        amount = float(action_data.get('amount', 0) or 0)
+        if amount <= 0:
+            QMessageBox.warning(self, 'Approve Payment', 'Invalid payment amount in submission.')
+            return
+
+        notes = action_data.get('notes') or None
+
+        success = self.rent_tracker.add_payment(
+            tenant.name,
+            amount,
+            payment_type=action_data.get('payment_type', 'Cash'),
+            payment_date=action_data.get('payment_date'),
+            payment_month=action_data.get('payment_month') or None,
+            notes=notes
+        )
+
+        if not success:
+            QMessageBox.warning(self, 'Approve Payment', 'Failed to record approved payment.')
+            return
+
+        self.action_queue.execute_action(action_id, {
+            'approved': True,
+            'approved_by': 'desktop_admin',
+            'approved_at': datetime.now().isoformat(),
+            'tenant_id': action.get('tenant_id'),
+            'amount': amount
+        })
+
+        logger.info("ActionQueueDialog", f"Approved pending payment submission {action_id}")
+        self.load_actions()
+        QMessageBox.information(self, 'Approve Payment', 'Payment submission approved and recorded.')
     
     def on_selection_changed(self):
         """Handle selection change to show action details"""
@@ -303,6 +376,16 @@ class ActionQueueDialog(QDialog):
             details += f"\\nNotification Details:\\n"
             details += f"Message: {action_data['message']}\\n"
             details += f"Type: {action_data.get('notification_type', 'general')}\\n"
+        elif action['action_type'] == 'payment_submission':
+            action_data = action['action_data']
+            details += f"\nPayment Submission Details:\n"
+            details += f"Amount: ${float(action_data.get('amount', 0) or 0):.2f}\n"
+            details += f"Payment Type: {action_data.get('payment_type', 'Online')}\n"
+            details += f"Payment Date: {action_data.get('payment_date', 'N/A')}\n"
+            details += f"Payment Month: {action_data.get('payment_month', 'N/A') or 'N/A'}\n"
+            details += f"Submitted By: {action_data.get('submitted_by', 'Unknown')}\n"
+            if action_data.get('notes'):
+                details += f"Notes: {action_data.get('notes')}\n"
         
         # Show execution result if available
         if action.get('execution_result'):

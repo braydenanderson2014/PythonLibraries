@@ -182,15 +182,70 @@ class TenantManager:
         """Check if current user is admin"""
         if not self.current_user_id:
             return False
+
+        current = str(self.current_user_id)
+
+        # Check database backend first (supports both username and account_id lookups).
+        try:
+            from src.account_db import AccountDatabaseManager
+            db = AccountDatabaseManager()
+            user = db.get_user_by_username(current) or db.get_user_by_account_id(current)
+            if user and user.get('is_admin') == 1:
+                return True
+            if user:
+                details = user.get('details') or {}
+                if isinstance(details, dict) and details.get('role') == 'admin':
+                    return True
+        except Exception:
+            pass
+
+        # Fall back to JSON account backend.
         try:
             from src.account import AccountManager
             am = AccountManager()
-            account = am.get_account(self.current_user_id)
+            account = am.get_account(current) or am.get_account_by_id(current)
             if account and account.get('details', {}).get('role') == 'admin':
                 return True
         except Exception:
             pass
         return False
+
+    def _get_user_aliases(self):
+        """Return possible identity keys for tenant-assignment matching."""
+        aliases = set()
+        if not self.current_user_id:
+            return aliases
+
+        current = str(self.current_user_id)
+        aliases.add(current)
+
+        # Add username/account_id aliases from database backend.
+        try:
+            from src.account_db import AccountDatabaseManager
+            db = AccountDatabaseManager()
+            user = db.get_user_by_username(current) or db.get_user_by_account_id(current)
+            if user:
+                if user.get('username'):
+                    aliases.add(str(user.get('username')))
+                if user.get('account_id'):
+                    aliases.add(str(user.get('account_id')))
+        except Exception:
+            pass
+
+        # Add username/account_id aliases from JSON backend.
+        try:
+            from src.account import AccountManager
+            am = AccountManager()
+            account = am.get_account(current) or am.get_account_by_id(current)
+            if account:
+                if account.get('username'):
+                    aliases.add(str(account.get('username')))
+                if account.get('account_id'):
+                    aliases.add(str(account.get('account_id')))
+        except Exception:
+            pass
+
+        return aliases
 
     def add_tenant(self, name, rental_period, rent_amount, deposit_amount=0.0, contact_info=None, notes=None, rent_due_date=None, user_id=None):
         logger.debug("TenantManager", f"Adding tenant: {name}")
@@ -243,7 +298,8 @@ class TenantManager:
         if self.is_admin():
             return list(self.tenants.values())
         elif self.current_user_id:
-            return [t for t in self.tenants.values() if self.current_user_id in t.user_ids]
+            aliases = self._get_user_aliases()
+            return [t for t in self.tenants.values() if any(alias in t.user_ids for alias in aliases)]
         else:
             return []  # No user set, return empty list
 

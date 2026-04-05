@@ -11,9 +11,9 @@ from pathlib import Path
 def normalize_tenant_status():
     """Normalize all tenant account_status values to lowercase in tenants.json"""
     
-    # Find the tenants.json file
-    script_dir = Path(__file__).parent
-    tenant_file = script_dir / 'tenants.json'
+    # Find the tenants.json file in project resources
+    project_root = Path(__file__).resolve().parents[2]
+    tenant_file = project_root / 'resources' / 'tenants.json'
     
     if not tenant_file.exists():
         print(f"❌ tenants.json not found at: {tenant_file}")
@@ -22,7 +22,7 @@ def normalize_tenant_status():
     print(f"📂 Found tenants.json at: {tenant_file}")
     
     # Backup the original file
-    backup_file = script_dir / 'tenants.json.backup'
+    backup_file = tenant_file.with_suffix('.json.backup')
     try:
         with open(tenant_file, 'r') as f:
             data = json.load(f)

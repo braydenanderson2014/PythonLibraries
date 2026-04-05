@@ -44,7 +44,8 @@ splash_manager.finish()
 # =============================================
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(PROJECT_ROOT)
 
 from assets.Logger import Logger
 from assets.SplashScreenManager import get_splash_manager

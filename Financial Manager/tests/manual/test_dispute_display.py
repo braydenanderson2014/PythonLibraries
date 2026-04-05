@@ -6,8 +6,9 @@ Tests the new methods for showing disputed items in RentTracker UI
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ui'))
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
 
 from assets.Logger import Logger
 from src.rent_tracker import RentTracker

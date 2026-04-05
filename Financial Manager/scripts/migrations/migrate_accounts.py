@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 # Add parent directory to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 try:
     from src.account_db import AccountDatabaseManager

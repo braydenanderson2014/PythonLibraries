@@ -4,9 +4,35 @@
     "username": "api_test",
     "password_hash": "ad9507ff0f807b4593db43891c82aad76732e0a0de291b586e6e7b1cb0abde87",
     "details": {
-      "role": "api_user",
+      "role": "user",
       "api_only": true,
-      "description": "API-only account for remote access"
+      "description": "API-only account for remote access",
+      "email": "",
+      "full_name": "",
+      "phone": "",
+      "desktop_access": false,
+      "online_access": true
+    }
+  },
+  "Eduardo": {
+    "account_id": "DQHDiyTwBV",
+    "username": "Eduardo",
+    "password_hash": "bac4babe799c522c2723702a95449faa1bdfbc85b333329eba8818a1cd16b09e",
+    "details": {
+      "is_admin": 0,
+      "role": "tenant",
+      "tenant_account": true,
+      "two_factor_enabled": false,
+      "desktop_access": false,
+      "online_access": true,
+      "api_only": true,
+      "email": "supercooldoctorwho@gmail.com",
+      "full_name": "Eduardo",
+      "phone": "8019105070",
+      "setup_pending": true,
+      "setup_token": "fRA0kv2r2XmLx6CMVLmHybH35bXAkwL2IV3ymvS8zTM",
+      "setup_expires_at": 1775957885,
+      "setup_created_at": 1775353085
     }
   }
 }

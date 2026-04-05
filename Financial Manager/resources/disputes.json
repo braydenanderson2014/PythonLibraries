@@ -145,5 +145,24 @@
       "admin_notes": null,
       "evidence_notes": null
     }
+  ],
+  "iBZA8nOmUm": [
+    {
+      "dispute_id": "DSPEB6AA18C",
+      "tenant_id": "iBZA8nOmUm",
+      "type": "incorrect_balance",
+      "description": "Wrong, you are Wrong",
+      "amount": 1350,
+      "reference_month": [
+        2026,
+        4
+      ],
+      "created_by": "web_ui",
+      "created_at": "2026-04-04T20:41:19.555495",
+      "updated_at": "2026-04-04T20:41:19.555522",
+      "status": "open",
+      "admin_notes": null,
+      "evidence_notes": null
+    }
   ]
 }

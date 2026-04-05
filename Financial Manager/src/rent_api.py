@@ -213,7 +213,7 @@ class RentStatusAPI:
                 'overpayment_credit': tenant.overpayment_credit,
                 'service_credit': tenant.service_credit,
                 'payment_count': len(tenant.payment_history or []),
-                'last_payment_date': last_payment.get('payment_date') if last_payment else None,
+                'last_payment_date': (last_payment.get('payment_date') or last_payment.get('date')) if last_payment else None,
                 'last_payment_amount': last_payment.get('amount') if last_payment else None,
                 'delinquent_months': self._format_delinquent_months(tenant.delinquent_months)
             }
@@ -282,7 +282,13 @@ class RentStatusAPI:
                             if not payment.get('is_credit_usage', False):
                                 paid_amount += payment.get('amount', 0)
                                 if not payment_date:
-                                    payment_date = payment.get('payment_date')
+                                    payment_date = payment.get('payment_date') or payment.get('date')
+
+                raw_status = tenant.monthly_status.get(month_key, 'Pending')
+                if isinstance(raw_status, dict):
+                    raw_status = raw_status.get('status', 'Pending')
+
+                status = 'completed' if paid_amount > 0 else (raw_status or 'Pending')
                 
                 breakdown.append({
                     'year': year,
@@ -291,13 +297,203 @@ class RentStatusAPI:
                     'expected_rent': expected_rent,
                     'paid_amount': paid_amount,
                     'balance': expected_rent - paid_amount,
-                    'status': tenant.monthly_status.get(month_key, 'Pending'),
+                    'status': status,
                     'payment_date': payment_date
                 })
             
             return breakdown
         except Exception as e:
             return [{'error': str(e)}]
+
+    def submit_payment(
+        self,
+        tenant_id: str,
+        amount: float,
+        payment_type: str = 'Cash',
+        payment_date: Optional[str] = None,
+        payment_month: Optional[str] = None,
+        notes: Optional[str] = None,
+        submitted_by: Optional[str] = None,
+        submitter_role: str = 'tenant'
+    ) -> Dict[str, Any]:
+        """Submit a payment from web context with role-aware completion behavior."""
+        tenant = self.rent_tracker.tenant_manager.get_tenant(tenant_id)
+        if not tenant:
+            return {'error': 'Tenant not found'}
+
+        try:
+            amount = float(amount)
+        except Exception:
+            return {'error': 'Invalid amount'}
+
+        if amount <= 0:
+            return {'error': 'Amount must be greater than zero'}
+
+        payment_date_value = payment_date or date.today().isoformat()
+        payment_month_value = payment_month.strip() if isinstance(payment_month, str) and payment_month.strip() else None
+        submitter = submitted_by or submitter_role or 'unknown'
+
+        if submitter_role == 'tenant':
+            action_data = {
+                'amount': amount,
+                'payment_type': payment_type or 'Cash',
+                'payment_date': payment_date_value,
+                'payment_month': payment_month_value,
+                'notes': notes or '',
+                'submitted_by': submitter,
+                'submitted_role': 'tenant',
+                'submitted_at': datetime.now().isoformat()
+            }
+
+            description = f"Pending tenant payment ${amount:.2f} ({payment_type or 'Cash'})"
+            action_id = self.rent_tracker.action_queue.add_action(
+                'payment_submission',
+                payment_date_value,
+                tenant_id,
+                action_data,
+                description
+            )
+
+            return {
+                'success': True,
+                'payment_status': 'pending',
+                'tenant_id': tenant_id,
+                'pending_action_id': action_id,
+                'message': 'Payment submitted for admin approval'
+            }
+
+        success = self.rent_tracker.add_payment(
+            tenant.name,
+            amount,
+            payment_type=payment_type or 'Cash',
+            payment_date=payment_date_value,
+            payment_month=payment_month_value,
+            notes=notes
+        )
+
+        if not success:
+            return {'error': 'Failed to apply payment'}
+
+        return {
+            'success': True,
+            'payment_status': 'completed',
+            'tenant_id': tenant_id,
+            'message': 'Payment recorded immediately'
+        }
+
+    def get_pending_payment_submissions(self, tenant_ids: Optional[set] = None) -> List[Dict[str, Any]]:
+        """Return pending payment submissions from the shared action queue."""
+        pending_actions = self.rent_tracker.action_queue.get_pending_actions()
+        submissions: List[Dict[str, Any]] = []
+
+        for action in pending_actions:
+            if action.get('action_type') != 'payment_submission':
+                continue
+
+            tenant_id = action.get('tenant_id')
+            if tenant_ids and tenant_id not in tenant_ids:
+                continue
+
+            action_data = action.get('action_data') or {}
+            tenant = self.rent_tracker.tenant_manager.get_tenant(tenant_id)
+
+            submissions.append({
+                'action_id': action.get('action_id'),
+                'tenant_id': tenant_id,
+                'tenant_name': getattr(tenant, 'name', tenant_id),
+                'amount': float(action_data.get('amount', 0) or 0),
+                'payment_type': action_data.get('payment_type') or 'Cash',
+                'payment_date': action_data.get('payment_date') or action.get('scheduled_date'),
+                'payment_month': action_data.get('payment_month') or '',
+                'notes': action_data.get('notes') or '',
+                'submitted_by': action_data.get('submitted_by') or 'unknown',
+                'submitted_role': action_data.get('submitted_role') or 'tenant',
+                'submitted_at': action_data.get('submitted_at') or action.get('created_date'),
+                'status': 'pending'
+            })
+
+        submissions.sort(key=lambda item: item.get('submitted_at') or '', reverse=True)
+        return submissions
+
+    def approve_pending_payment(self, action_id: str, approved_by: Optional[str] = None) -> Dict[str, Any]:
+        """Approve a pending payment submission and convert it into a completed payment."""
+        action = self.rent_tracker.action_queue.get_action(action_id)
+        if not action:
+            return {'error': 'Pending payment request not found'}
+
+        if action.get('action_type') != 'payment_submission':
+            return {'error': 'Action is not a payment submission'}
+
+        if action.get('status') != 'pending':
+            return {'error': f"Payment request is already {action.get('status')}"}
+
+        tenant_id = action.get('tenant_id')
+        tenant = self.rent_tracker.tenant_manager.get_tenant(tenant_id)
+        if not tenant:
+            return {'error': 'Tenant for payment request not found'}
+
+        action_data = action.get('action_data') or {}
+        amount = float(action_data.get('amount') or 0)
+        if amount <= 0:
+            return {'error': 'Invalid pending payment amount'}
+
+        approver = approved_by or 'admin'
+        notes = action_data.get('notes') or None
+
+        success = self.rent_tracker.add_payment(
+            tenant.name,
+            amount,
+            payment_type=action_data.get('payment_type') or 'Cash',
+            payment_date=action_data.get('payment_date') or date.today().isoformat(),
+            payment_month=action_data.get('payment_month') or None,
+            notes=notes
+        )
+
+        if not success:
+            return {'error': 'Failed to apply approved payment'}
+
+        self.rent_tracker.action_queue.execute_action(action_id, {
+            'approved': True,
+            'approved_by': approver,
+            'approved_at': datetime.now().isoformat(),
+            'tenant_id': tenant_id,
+            'amount': amount
+        })
+
+        return {
+            'success': True,
+            'status': 'completed',
+            'action_id': action_id,
+            'tenant_id': tenant_id,
+            'tenant_name': tenant.name,
+            'amount': amount,
+            'message': 'Pending payment approved and recorded'
+        }
+
+    def deny_pending_payment(self, action_id: str, denied_by: Optional[str] = None, reason: str = '') -> Dict[str, Any]:
+        """Deny a pending payment submission without recording a payment."""
+        action = self.rent_tracker.action_queue.get_action(action_id)
+        if not action:
+            return {'error': 'Pending payment request not found'}
+
+        if action.get('action_type') != 'payment_submission':
+            return {'error': 'Action is not a payment submission'}
+
+        if action.get('status') != 'pending':
+            return {'error': f"Payment request is already {action.get('status')}"}
+
+        reviewer = denied_by or 'admin'
+        cancel_reason = f"Denied by {reviewer}" + (f": {reason}" if reason else '')
+        cancelled = self.rent_tracker.action_queue.cancel_action(action_id, reason=cancel_reason)
+        if not cancelled:
+            return {'error': 'Failed to deny pending payment'}
+
+        return {
+            'success': True,
+            'status': 'denied',
+            'action_id': action_id,
+            'message': 'Pending payment denied'
+        }
     
     # ========== DISPUTE ENDPOINTS ==========
     
@@ -419,11 +615,37 @@ class RentStatusAPI:
         
         try:
             if isinstance(rental_period, dict):
-                return {
-                    'start_date': str(rental_period.get('start_date', '')),
-                    'end_date': str(rental_period.get('end_date', ''))
+                start_date = (
+                    rental_period.get('start_date')
+                    or rental_period.get('start')
+                    or rental_period.get('from')
+                )
+                end_date = (
+                    rental_period.get('end_date')
+                    or rental_period.get('end')
+                    or rental_period.get('to')
+                )
+
+                if not start_date and not end_date:
+                    values = [
+                        value for value in rental_period.values()
+                        if value is not None and str(value).strip() != ''
+                    ]
+                    if len(values) >= 2:
+                        start_date, end_date = values[0], values[1]
+
+                formatted = {
+                    'start_date': str(start_date) if start_date is not None else '',
+                    'end_date': str(end_date) if end_date is not None else ''
                 }
-            elif isinstance(rental_period, tuple) and len(rental_period) == 2:
+
+                lease_type = rental_period.get('lease_type')
+                if lease_type:
+                    formatted['lease_type'] = str(lease_type)
+
+                return formatted
+
+            if isinstance(rental_period, (list, tuple)) and len(rental_period) >= 2:
                 return {
                     'start_date': str(rental_period[0]),
                     'end_date': str(rental_period[1])

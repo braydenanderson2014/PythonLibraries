@@ -2,6 +2,12 @@
 Manual migration tool to migrate all remaining JSON accounts to database
 Run this to ensure all accounts are migrated
 """
+import os
+import sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
+
 from src.account_migration import AccountMigration
 from src.account import AccountManager
 
