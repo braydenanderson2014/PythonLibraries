@@ -17,7 +17,7 @@ class Tenant:
     def __init__(self, name, rental_period, rent_amount, deposit_amount=0.0, contact_info=None, notes=None, tenant_id=None,
                  monthly_exceptions=None, months_to_charge=None, total_rent_paid=0.0, delinquency_balance=0.0,
                  delinquent_months=None, account_status='active', monthly_status=None, overpayment_credit=0.0, rent_due_date=None, payment_history=None,
-                 service_credit=0.0, service_credit_history=None, user_id=None, user_ids=None, last_modified=None):
+                 service_credit=0.0, service_credit_history=None, late_fee_config=None, user_id=None, user_ids=None, last_modified=None):
         self.name = name
         self.tenant_id = tenant_id if tenant_id is not None else generate_tenant_id()
         self.rental_period = rental_period  # (start_date, end_date)
@@ -56,6 +56,15 @@ class Tenant:
         self.payment_history = payment_history or []  # Add payment_history initialization
         self.service_credit = service_credit  # Available service credit balance
         self.service_credit_history = service_credit_history or []  # Track service credit transactions
+        self.late_fee_config = late_fee_config or {
+            'enabled': False,
+            'amount': 0.0,
+            'fee_basis': 'flat_amount',
+            'mode': 'fixed',
+            'grace_period_days': 0,
+            'start_date': None,
+            'end_date': None
+        }
         # Support both user_id (legacy) and user_ids (new multi-user)
         if user_ids is not None:
             self.user_ids = user_ids if isinstance(user_ids, list) else [user_ids]
@@ -132,6 +141,7 @@ class Tenant:
             'payment_history': self.payment_history,  # Add payment_history to save data
             'service_credit': self.service_credit,
             'service_credit_history': self.service_credit_history,
+            'late_fee_config': self.late_fee_config,
             'user_ids': self.user_ids,
             'user_id': self.user_ids[0] if self.user_ids else None,  # Backward compatibility
             'last_modified': self.last_modified
@@ -382,6 +392,18 @@ class TenantManager:
                         t['service_credit'] = 0.0
                     if 'service_credit_history' not in t:
                         t['service_credit_history'] = []
+
+                    # Migration: add late fee config for tenants created before late fee controls existed
+                    if 'late_fee_config' not in t:
+                        t['late_fee_config'] = {
+                            'enabled': bool(t.get('late_fee_enabled', False)),
+                            'amount': float(t.get('late_fee_amount', 0.0) or 0.0),
+                            'fee_basis': 'flat_amount',
+                            'mode': 'fixed',
+                            'grace_period_days': 0,
+                            'start_date': None,
+                            'end_date': None
+                        }
                     
                     # Migration: Convert user_id to user_ids (new multi-user system)
                     if 'user_ids' not in t:

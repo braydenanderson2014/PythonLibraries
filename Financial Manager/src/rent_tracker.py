@@ -1,4 +1,5 @@
 from datetime import date, timedelta, datetime
+import calendar
 import os, sys
 from typing import Dict, List, Any, Optional, Callable, Tuple
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
@@ -1176,30 +1177,432 @@ class RentTracker:
         tenant = self.tenant_manager.get_tenant(tenant_id)
         return tenant.deposit_amount if tenant else None
 
+    def _normalize_late_fee_config(self, tenant):
+        default_config = {
+            'enabled': False,
+            'amount': 0.0,
+            'fee_basis': 'flat_amount',
+            'mode': 'fixed',
+            'grace_period_days': 0,
+            'start_date': None,
+            'end_date': None
+        }
+        current = getattr(tenant, 'late_fee_config', None)
+        if not isinstance(current, dict):
+            current = {
+                'enabled': bool(getattr(tenant, 'late_fee_enabled', False)),
+                'amount': float(getattr(tenant, 'late_fee_amount', 0.0) or 0.0)
+            }
+        config = {**default_config, **current}
+        config['enabled'] = bool(config.get('enabled', False))
+        config['amount'] = float(config.get('amount', 0.0) or 0.0)
+        fee_basis = str(config.get('fee_basis', 'flat_amount') or 'flat_amount').lower()
+        config['fee_basis'] = fee_basis if fee_basis in ('flat_amount', 'percent_of_rent') else 'flat_amount'
+        mode = str(config.get('mode', 'fixed') or 'fixed').lower()
+        config['mode'] = mode if mode in ('fixed', 'daily') else 'fixed'
+        config['grace_period_days'] = max(0, int(config.get('grace_period_days', 0) or 0))
+        config['start_date'] = config.get('start_date') or None
+        config['end_date'] = config.get('end_date') or None
+        tenant.late_fee_config = config
+
+        # Keep legacy attrs in sync for backward compatibility.
+        tenant.late_fee_enabled = config['enabled']
+        tenant.late_fee_amount = config['amount'] if config['enabled'] else 0.0
+        return config
+
+    def _month_within_late_fee_range(self, config, year, month):
+        month_date = date(year, month, 1)
+        start_str = config.get('start_date')
+        end_str = config.get('end_date')
+
+        try:
+            if start_str:
+                start_date = date.fromisoformat(start_str)
+                if month_date < start_date.replace(day=1):
+                    return False
+            if end_str:
+                end_date = date.fromisoformat(end_str)
+                if month_date > end_date.replace(day=1):
+                    return False
+        except Exception:
+            # If a date is malformed, fail open rather than block all late fees.
+            return True
+        return True
+
+    def _sum_late_fee_charges_for_month(self, tenant, year, month, mode='all'):
+        mode_normalized = (mode or 'all').lower()
+        total = 0.0
+        for payment in getattr(tenant, 'payment_history', []):
+            try:
+                if int(payment.get('year')) == int(year) and int(payment.get('month')) == int(month):
+                    payment_type = str(payment.get('type', '')).lower()
+                    amount = float(payment.get('amount', 0.0) or 0.0)
+                    is_fixed_fee = payment_type == 'late fee'
+                    is_fixed_reversal = payment_type == 'late fee reversal'
+                    is_daily_fee = payment_type == 'daily late fee'
+                    is_daily_reversal = payment_type == 'daily late fee reversal'
+
+                    include = (
+                        mode_normalized == 'all'
+                        or (mode_normalized == 'fixed' and (is_fixed_fee or is_fixed_reversal))
+                        or (mode_normalized == 'daily' and (is_daily_fee or is_daily_reversal))
+                    )
+                    if not include:
+                        continue
+
+                    if (is_fixed_fee or is_daily_fee) and amount < 0:
+                        total += -amount
+                    elif (is_fixed_reversal or is_daily_reversal) and amount > 0:
+                        total -= amount
+            except Exception:
+                continue
+        return max(0.0, total)
+
+    def _is_late_fee_payment_type(self, payment_type):
+        normalized = str(payment_type or '').strip().lower()
+        return normalized in (
+            'late fee',
+            'late fee reversal',
+            'daily late fee',
+            'daily late fee reversal',
+        )
+
+    def _recompute_total_paid_from_history(self, tenant):
+        total = 0.0
+        for payment in getattr(tenant, 'payment_history', []):
+            try:
+                total += float(payment.get('amount', 0.0) or 0.0)
+            except Exception:
+                continue
+        tenant.total_rent_paid = float(round(total, 2))
+
+    def reconcile_late_fees(self, tenant_name, through_date=None, remove_all=False):
+        """Rebuild late-fee entries from current config while preserving non-late-fee payment history."""
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return {'success': False, 'removed_count': 0, 'added_count': 0, 'applied_months': []}
+
+        if isinstance(through_date, str):
+            through_date = date.fromisoformat(through_date)
+        elif through_date is None:
+            through_date = date.today()
+
+        config = self._normalize_late_fee_config(tenant)
+        history = list(getattr(tenant, 'payment_history', []) or [])
+        non_late_payments = [p for p in history if not self._is_late_fee_payment_type(p.get('type'))]
+        removed_count = len(history) - len(non_late_payments)
+
+        if remove_all or not config.get('enabled', False):
+            tenant.payment_history = non_late_payments
+            self._recompute_total_paid_from_history(tenant)
+            self.tenant_manager.save()
+            return {'success': True, 'removed_count': removed_count, 'added_count': 0, 'applied_months': []}
+
+        due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
+        grace_days = int(config.get('grace_period_days', 0) or 0)
+        mode = config.get('mode', 'fixed')
+
+        month_keys = set()
+        for year, month in getattr(tenant, 'months_to_charge', []):
+            try:
+                month_keys.add((int(year), int(month)))
+            except Exception:
+                continue
+
+        for payment in non_late_payments:
+            try:
+                month_keys.add((int(payment.get('year')), int(payment.get('month'))))
+            except Exception:
+                continue
+
+        rebuilt_late_entries = []
+        applied_months = []
+
+        for year, month in sorted(month_keys):
+            if month < 1 or month > 12:
+                continue
+            if not self._month_within_late_fee_range(config, year, month):
+                continue
+
+            month_last_day = calendar.monthrange(year, month)[1]
+            due_day = min(max(1, due_day_raw), month_last_day)
+            due_date = date(year, month, due_day)
+            eligible_date = due_date + timedelta(days=grace_days)
+            if through_date < eligible_date:
+                continue
+
+            expected = float(self.get_effective_rent(tenant, year, month) or 0.0)
+            if expected <= 0.01:
+                continue
+
+            total_non_late_paid = 0.0
+            for payment in non_late_payments:
+                try:
+                    if int(payment.get('year')) == year and int(payment.get('month')) == month:
+                        total_non_late_paid += float(payment.get('amount', 0.0) or 0.0)
+                except Exception:
+                    continue
+
+            if (expected - total_non_late_paid) <= 0.01:
+                continue
+
+            base_fee = self._resolve_late_fee_amount_for_month(tenant, config, year, month)
+            if base_fee <= 0.01:
+                continue
+
+            if mode == 'daily':
+                days_late = self._calculate_month_bounded_late_days(through_date, eligible_date, year, month)
+                if days_late <= 0:
+                    continue
+                fee_total = round(days_late * base_fee, 2)
+                payment_type = 'Daily Late Fee'
+                note = (
+                    f"Reconciled daily late fee ({year:04d}-{month:02d}), grace {grace_days} day(s), "
+                    f"{days_late} day(s) late in-month through {through_date.isoformat()}."
+                )
+            else:
+                fee_total = round(base_fee, 2)
+                payment_type = 'Late Fee'
+                note = f"Reconciled late fee ({year:04d}-{month:02d}), grace {grace_days} day(s)."
+
+            if fee_total <= 0.01:
+                continue
+
+            rebuilt_late_entries.append({
+                'amount': -fee_total,
+                'type': payment_type,
+                'date': through_date.isoformat(),
+                'payment_month': f"{year:04d}-{month:02d}",
+                'year': year,
+                'month': month,
+                'is_credit_usage': False,
+                'notes': note,
+            })
+            applied_months.append(f"{year:04d}-{month:02d}")
+
+        tenant.payment_history = non_late_payments + rebuilt_late_entries
+        self._recompute_total_paid_from_history(tenant)
+        self.tenant_manager.save()
+
+        return {
+            'success': True,
+            'removed_count': removed_count,
+            'added_count': len(rebuilt_late_entries),
+            'applied_months': applied_months,
+        }
+
+    def _resolve_late_fee_amount_for_month(self, tenant, config, year, month):
+        raw_amount = float(config.get('amount', 0.0) or 0.0)
+        if raw_amount <= 0:
+            return 0.0
+
+        if config.get('fee_basis') == 'percent_of_rent':
+            rent_for_month = float(self.get_effective_rent(tenant, int(year), int(month)) or 0.0)
+            return max(0.0, round(rent_for_month * (raw_amount / 100.0), 2))
+
+        return max(0.0, round(raw_amount, 2))
+
+    def _calculate_month_bounded_late_days(self, through_date, eligible_date, year, month):
+        """Return late days for a month without carrying accrual past that month."""
+        last_day = calendar.monthrange(int(year), int(month))[1]
+        month_end = date(int(year), int(month), last_day)
+        cutoff_date = min(through_date, month_end)
+        return max(0, (cutoff_date - eligible_date).days)
+
     def set_late_fee(self, tenant_id, enabled, amount=0.0):
         tenant = self.tenant_manager.get_tenant(tenant_id)
         if tenant:
-            tenant.late_fee_enabled = enabled
-            tenant.late_fee_amount = amount if enabled else 0.0
+            config = self._normalize_late_fee_config(tenant)
+            config['enabled'] = bool(enabled)
+            config['amount'] = float(amount if enabled else 0.0)
+            tenant.late_fee_config = config
             self.tenant_manager.save()
             return True
         return False
 
     def get_late_fee(self, tenant_id):
         tenant = self.tenant_manager.get_tenant(tenant_id)
-        if tenant and getattr(tenant, 'late_fee_enabled', False):
-            return getattr(tenant, 'late_fee_amount', 0.0)
+        if tenant:
+            config = self._normalize_late_fee_config(tenant)
+            if config.get('enabled', False):
+                return float(config.get('amount', 0.0) or 0.0)
         return 0.0
+
+    def get_late_fee_config(self, tenant_name):
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return None
+        return self._normalize_late_fee_config(tenant).copy()
+
+    def set_late_fee_config(self, tenant_name, enabled, amount=0.0, fee_basis='flat_amount', mode='fixed', grace_period_days=0, start_date=None, end_date=None):
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return False
+
+        config = self._normalize_late_fee_config(tenant)
+        config['enabled'] = bool(enabled)
+        config['amount'] = float(amount if enabled else 0.0)
+        basis_normalized = str(fee_basis or 'flat_amount').lower()
+        config['fee_basis'] = basis_normalized if basis_normalized in ('flat_amount', 'percent_of_rent') else 'flat_amount'
+        mode_normalized = str(mode or 'fixed').lower()
+        config['mode'] = mode_normalized if mode_normalized in ('fixed', 'daily') else 'fixed'
+        config['grace_period_days'] = max(0, int(grace_period_days or 0))
+        config['start_date'] = start_date or None
+        config['end_date'] = end_date or None
+
+        tenant.late_fee_config = config
+        self.tenant_manager.save()
+        return True
+
+    def apply_late_fee_override(self, tenant_name, year, month, amount=None, notes=''):
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return False
+
+        config = self._normalize_late_fee_config(tenant)
+        fee_amount = float(amount if amount is not None else self._resolve_late_fee_amount_for_month(tenant, config, year, month))
+        if fee_amount <= 0:
+            return False
+        fee_type = 'Daily Late Fee' if config.get('mode') == 'daily' else 'Late Fee'
+
+        month_key = f"{int(year):04d}-{int(month):02d}"
+        note = f"Manual late fee applied ({month_key}). {notes}".strip()
+        return self.add_payment(
+            tenant.name,
+            -fee_amount,
+            payment_type=fee_type,
+            payment_month=month_key,
+            notes=note
+        )
+
+    def remove_late_fee_override(self, tenant_name, year, month, amount=None, notes=''):
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return False
+
+        config = self._normalize_late_fee_config(tenant)
+        mode = config.get('mode', 'fixed')
+        outstanding = self._sum_late_fee_charges_for_month(tenant, year, month, mode=mode)
+        if outstanding <= 0.0 and (amount is None or float(amount or 0.0) <= 0.0):
+            return False
+
+        reversal_amount = float(amount if amount is not None else outstanding)
+        if reversal_amount <= 0:
+            return False
+        reversal_type = 'Daily Late Fee Reversal' if mode == 'daily' else 'Late Fee Reversal'
+
+        month_key = f"{int(year):04d}-{int(month):02d}"
+        note = f"Late fee removed ({month_key}). {notes}".strip()
+        return self.add_payment(
+            tenant.name,
+            reversal_amount,
+            payment_type=reversal_type,
+            payment_month=month_key,
+            notes=note
+        )
+
+    def apply_late_fees_through_date(self, tenant_name, through_date=None):
+        tenant = self.get_tenant_by_name(tenant_name)
+        if not tenant:
+            return {'applied_count': 0, 'applied_months': []}
+
+        config = self._normalize_late_fee_config(tenant)
+        if not config.get('enabled', False) or float(config.get('amount', 0.0) or 0.0) <= 0.0:
+            return {'applied_count': 0, 'applied_months': []}
+
+        if isinstance(through_date, str):
+            through_date = date.fromisoformat(through_date)
+        elif through_date is None:
+            through_date = date.today()
+
+        applied_months = []
+        due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
+        grace_days = int(config.get('grace_period_days', 0) or 0)
+        mode = config.get('mode', 'fixed')
+
+        for year, month in getattr(tenant, 'months_to_charge', []):
+            year = int(year)
+            month = int(month)
+            if not self._month_within_late_fee_range(config, year, month):
+                continue
+
+            month_last_day = calendar.monthrange(year, month)[1]
+            due_day = min(max(1, due_day_raw), month_last_day)
+            due_date = date(year, month, due_day)
+            eligible_date = due_date + timedelta(days=grace_days)
+            if through_date < eligible_date:
+                continue
+
+            expected = float(self.get_effective_rent(tenant, year, month) or 0.0)
+            total_paid = 0.0
+            for payment in getattr(tenant, 'payment_history', []):
+                try:
+                    if int(payment.get('year')) == year and int(payment.get('month')) == month:
+                        total_paid += float(payment.get('amount', 0.0) or 0.0)
+                except Exception:
+                    continue
+
+            if (expected - total_paid) <= 0.01:
+                continue
+
+            month_key = f"{year:04d}-{month:02d}"
+            if mode == 'daily':
+                days_late = self._calculate_month_bounded_late_days(through_date, eligible_date, year, month)
+                if days_late <= 0:
+                    continue
+
+                per_day_fee = self._resolve_late_fee_amount_for_month(tenant, config, year, month)
+                if per_day_fee <= 0.0:
+                    continue
+
+                target_daily_fee_total = float(days_late) * per_day_fee
+                already_applied = self._sum_late_fee_charges_for_month(tenant, year, month, mode='daily')
+                incremental_fee = round(target_daily_fee_total - already_applied, 2)
+                if incremental_fee <= 0.01:
+                    continue
+
+                note = (
+                    f"Auto-applied daily late fee ({month_key}), grace {grace_days} day(s), "
+                    f"{days_late} day(s) late in-month through {through_date.isoformat()}."
+                )
+                success = self.add_payment(
+                    tenant.name,
+                    -incremental_fee,
+                    payment_type='Daily Late Fee',
+                    payment_month=month_key,
+                    payment_date=through_date,
+                    notes=note
+                )
+                if success:
+                    applied_months.append(month_key)
+            else:
+                fee_amount = self._resolve_late_fee_amount_for_month(tenant, config, year, month)
+                if fee_amount <= 0.0:
+                    continue
+
+                outstanding_late_fee = self._sum_late_fee_charges_for_month(tenant, year, month, mode='fixed')
+                if outstanding_late_fee > 0.0:
+                    continue
+
+                note = f"Auto-applied late fee ({month_key}), grace {grace_days} day(s)."
+                success = self.add_payment(
+                    tenant.name,
+                    -fee_amount,
+                    payment_type='Late Fee',
+                    payment_month=month_key,
+                    payment_date=through_date,
+                    notes=note
+                )
+                if success:
+                    applied_months.append(month_key)
+
+        return {'applied_count': len(applied_months), 'applied_months': applied_months}
 
     def apply_late_fee(self, tenant_id, year, month):
         tenant = self.tenant_manager.get_tenant(tenant_id)
-        if tenant and getattr(tenant, 'late_fee_enabled', False):
-            fee = getattr(tenant, 'late_fee_amount', 0.0)
-            tenant.delinquency_balance += fee
-            if (year, month) not in tenant.delinquent_months:
-                tenant.delinquent_months.append((year, month))
-            self.tenant_manager.save()
-            return True
+        if not tenant:
+            return False
+        return self.apply_late_fee_override(tenant.name, year, month)
         return False
     
     # Query System for Rent Analysis

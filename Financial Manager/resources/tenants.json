@@ -123,6 +123,13 @@
     ],
     "service_credit": 0.0,
     "service_credit_history": [],
+    "late_fee_config": {
+      "enabled": false,
+      "amount": 0.0,
+      "grace_period_days": 0,
+      "start_date": null,
+      "end_date": null
+    },
     "user_ids": [
       "admin"
     ],
@@ -674,11 +681,376 @@
     ],
     "service_credit": 0.0,
     "service_credit_history": [],
+    "late_fee_config": {
+      "enabled": false,
+      "amount": 0.0,
+      "grace_period_days": 0,
+      "start_date": null,
+      "end_date": null
+    },
     "user_ids": [
       "admin",
       "api_test"
     ],
     "user_id": "admin",
     "last_modified": "2026-04-04T18:41:57.762273"
+  },
+  "7mutZhNFBc": {
+    "name": "John Cena",
+    "tenant_id": "7mutZhNFBc",
+    "rental_period": [
+      "2026-01-01",
+      "2030-04-05"
+    ],
+    "deposit_amount": 0.0,
+    "contact_info": {},
+    "notes": [],
+    "rent_amount": 1350.0,
+    "monthly_exceptions": {},
+    "months_to_charge": [
+      [
+        2026,
+        1
+      ],
+      [
+        2026,
+        2
+      ],
+      [
+        2026,
+        3
+      ],
+      [
+        2026,
+        4
+      ],
+      [
+        2026,
+        5
+      ],
+      [
+        2026,
+        6
+      ],
+      [
+        2026,
+        7
+      ],
+      [
+        2026,
+        8
+      ],
+      [
+        2026,
+        9
+      ],
+      [
+        2026,
+        10
+      ],
+      [
+        2026,
+        11
+      ],
+      [
+        2026,
+        12
+      ],
+      [
+        2027,
+        1
+      ],
+      [
+        2027,
+        2
+      ],
+      [
+        2027,
+        3
+      ],
+      [
+        2027,
+        4
+      ],
+      [
+        2027,
+        5
+      ],
+      [
+        2027,
+        6
+      ],
+      [
+        2027,
+        7
+      ],
+      [
+        2027,
+        8
+      ],
+      [
+        2027,
+        9
+      ],
+      [
+        2027,
+        10
+      ],
+      [
+        2027,
+        11
+      ],
+      [
+        2027,
+        12
+      ],
+      [
+        2028,
+        1
+      ],
+      [
+        2028,
+        2
+      ],
+      [
+        2028,
+        3
+      ],
+      [
+        2028,
+        4
+      ],
+      [
+        2028,
+        5
+      ],
+      [
+        2028,
+        6
+      ],
+      [
+        2028,
+        7
+      ],
+      [
+        2028,
+        8
+      ],
+      [
+        2028,
+        9
+      ],
+      [
+        2028,
+        10
+      ],
+      [
+        2028,
+        11
+      ],
+      [
+        2028,
+        12
+      ],
+      [
+        2029,
+        1
+      ],
+      [
+        2029,
+        2
+      ],
+      [
+        2029,
+        3
+      ],
+      [
+        2029,
+        4
+      ],
+      [
+        2029,
+        5
+      ],
+      [
+        2029,
+        6
+      ],
+      [
+        2029,
+        7
+      ],
+      [
+        2029,
+        8
+      ],
+      [
+        2029,
+        9
+      ],
+      [
+        2029,
+        10
+      ],
+      [
+        2029,
+        11
+      ],
+      [
+        2029,
+        12
+      ],
+      [
+        2030,
+        1
+      ],
+      [
+        2030,
+        2
+      ],
+      [
+        2030,
+        3
+      ],
+      [
+        2030,
+        4
+      ]
+    ],
+    "total_rent_paid": -395.0,
+    "delinquency_balance": 5795.0,
+    "delinquent_months": [
+      [
+        2026,
+        1
+      ],
+      [
+        2026,
+        2
+      ],
+      [
+        2026,
+        3
+      ],
+      [
+        2026,
+        4
+      ]
+    ],
+    "account_status": "active",
+    "monthly_status": {
+      "2026-01": "Delinquent",
+      "2026-02": "Delinquent",
+      "2026-03": "Delinquent",
+      "2026-04": "Delinquent",
+      "2026-05": "Pending",
+      "2026-06": "Pending",
+      "2026-07": "Pending",
+      "2026-08": "Pending",
+      "2026-09": "Pending",
+      "2026-10": "Pending",
+      "2026-11": "Pending",
+      "2026-12": "Pending",
+      "2027-01": "Pending",
+      "2027-02": "Pending",
+      "2027-03": "Pending",
+      "2027-04": "Pending",
+      "2027-05": "Pending",
+      "2027-06": "Pending",
+      "2027-07": "Pending",
+      "2027-08": "Pending",
+      "2027-09": "Pending",
+      "2027-10": "Pending",
+      "2027-11": "Pending",
+      "2027-12": "Pending",
+      "2028-01": "Pending",
+      "2028-02": "Pending",
+      "2028-03": "Pending",
+      "2028-04": "Pending",
+      "2028-05": "Pending",
+      "2028-06": "Pending",
+      "2028-07": "Pending",
+      "2028-08": "Pending",
+      "2028-09": "Pending",
+      "2028-10": "Pending",
+      "2028-11": "Pending",
+      "2028-12": "Pending",
+      "2029-01": "Pending",
+      "2029-02": "Pending",
+      "2029-03": "Pending",
+      "2029-04": "Pending",
+      "2029-05": "Pending",
+      "2029-06": "Pending",
+      "2029-07": "Pending",
+      "2029-08": "Pending",
+      "2029-09": "Pending",
+      "2029-10": "Pending",
+      "2029-11": "Pending",
+      "2029-12": "Pending",
+      "2030-01": "Pending",
+      "2030-02": "Pending",
+      "2030-03": "Pending",
+      "2030-04": "Pending"
+    },
+    "overpayment_credit": 0.0,
+    "rent_due_date": "1",
+    "payment_history": [
+      {
+        "amount": -135.0,
+        "type": "Daily Late Fee",
+        "date": "2026-04-05",
+        "payment_month": "2026-01",
+        "year": 2026,
+        "month": 1,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-01), grace 3 day(s), 27 day(s) late in-month through 2026-04-05."
+      },
+      {
+        "amount": -120.0,
+        "type": "Daily Late Fee",
+        "date": "2026-04-05",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-02), grace 3 day(s), 24 day(s) late in-month through 2026-04-05."
+      },
+      {
+        "amount": -135.0,
+        "type": "Daily Late Fee",
+        "date": "2026-04-05",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-03), grace 3 day(s), 27 day(s) late in-month through 2026-04-05."
+      },
+      {
+        "amount": -5.0,
+        "type": "Daily Late Fee",
+        "date": "2026-04-05",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-04), grace 3 day(s), 1 day(s) late in-month through 2026-04-05."
+      }
+    ],
+    "service_credit": 0.0,
+    "service_credit_history": [],
+    "late_fee_config": {
+      "enabled": true,
+      "amount": 0.37,
+      "fee_basis": "percent_of_rent",
+      "mode": "daily",
+      "grace_period_days": 3,
+      "start_date": "2026-01-01",
+      "end_date": null
+    },
+    "user_ids": [
+      "admin"
+    ],
+    "user_id": "admin",
+    "last_modified": "2026-04-05T00:18:04.917515"
   }
 }

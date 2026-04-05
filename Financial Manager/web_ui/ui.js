@@ -342,11 +342,23 @@ class UIController {
         if (normalized.includes('delinquent') || normalized.includes('rejected') || normalized.includes('failed') || normalized.includes('overdue')) {
             return 'tone-danger';
         }
+        if (normalized.includes('unpaid')) {
+            return 'tone-danger';
+        }
         if (normalized.includes('pending') || normalized.includes('review') || normalized.includes('acknowledged')) {
             return 'tone-warning';
         }
+        if (normalized.includes('partial')) {
+            return 'tone-warning';
+        }
+        if (normalized.includes('not due')) {
+            return 'tone-muted';
+        }
         if (normalized.includes('paid') || normalized.includes('current') || normalized.includes('resolved') || normalized.includes('healthy')) {
             return 'tone-success';
+        }
+        if (normalized.includes('overpayment') || normalized.includes('credit')) {
+            return 'tone-info';
         }
         return 'tone-info';
     }
@@ -439,6 +451,68 @@ class UIController {
         }
         const normalized = (status || '').toString().trim().toLowerCase();
         return normalized || 'pending';
+    }
+
+    deriveMonthlyPaymentStatus(item, delinquentMonthSet = new Set()) {
+        const expected = Number(item?.expected_rent || 0);
+        const paid = Number(item?.paid_amount || 0);
+        const fallbackBalance = expected - paid;
+        const balance = Number(item?.balance ?? fallbackBalance);
+        const status = String(item?.status || '').trim().toLowerCase();
+        const year = Number(item?.year || 0);
+        const month = Number(item?.month || 0);
+        const monthKey = item?.month_key || `${year}-${String(month).padStart(2, '0')}`;
+        const isDelinquentMonth = delinquentMonthSet.has(monthKey);
+        const epsilon = 0.01;
+
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        const isFutureMonth = year > currentYear || (year === currentYear && month > currentMonth);
+
+        // Prefer explicit backend status values when they are specific and actionable.
+        if (status.includes('rejected') || status.includes('failed')) {
+            return 'failed';
+        }
+        if (status.includes('pending') || status.includes('review') || status.includes('approval')) {
+            return 'pending';
+        }
+
+        if (paid > expected + epsilon && expected > 0) {
+            return 'overpayment';
+        }
+        if (Math.abs(paid - expected) <= epsilon && expected > 0) {
+            return 'paid';
+        }
+
+        if (paid <= epsilon) {
+            if (isFutureMonth || expected <= epsilon) {
+                return 'not due';
+            }
+            return (isDelinquentMonth || balance > epsilon) ? 'delinquent' : 'unpaid';
+        }
+
+        if (paid < expected - epsilon) {
+            if (isFutureMonth && !isDelinquentMonth) {
+                return 'partial (not due)';
+            }
+            return (isDelinquentMonth || balance > epsilon) ? 'delinquent' : 'partial';
+        }
+
+        if (status.includes('delinquent') || status.includes('overdue')) {
+            return 'delinquent';
+        }
+        if (status.includes('not due')) {
+            return 'not due';
+        }
+        if (status.includes('overpayment') || status.includes('credit')) {
+            return 'overpayment';
+        }
+        if (status.includes('paid') || status.includes('completed')) {
+            return 'paid';
+        }
+
+        return balance > epsilon ? 'delinquent' : 'paid';
     }
 
     renderPaymentChart(monthlyItems = []) {
@@ -734,14 +808,15 @@ class UIController {
                     const paidAmount = Number(item.paid_amount || 0);
                     const isDelinquentMonth = delinquentMonthSet.has(monthLabel);
                     const paidClass = this.getPaidComparisonClass(expected, paidAmount, isDelinquentMonth);
-                    const statusClass = this.getStatusToneClass(item.status || 'N/A');
+                    const statusLabel = this.deriveMonthlyPaymentStatus(item, delinquentMonthSet);
+                    const statusClass = this.getStatusToneClass(statusLabel);
                     return `
                         <div class="data-grid-row">
                             <div>${monthLabel}</div>
                             <div>$${expected.toFixed(2)}</div>
                             <div><span class="${paidClass}">$${paidAmount.toFixed(2)}</span></div>
                             <div>${item.payment_date || 'N/A'}</div>
-                            <div><span class="${statusClass}">${item.status || 'N/A'}</span></div>
+                            <div><span class="${statusClass}">${statusLabel}</span></div>
                         </div>
                     `;
                 }).join('')
@@ -755,12 +830,13 @@ class UIController {
                     const balance = Number(item.balance ?? (expected - paid));
                     const isDelinquentMonth = delinquentMonthSet.has(monthLabel);
                     const paidClass = this.getPaidComparisonClass(expected, paid, isDelinquentMonth);
-                    const statusClass = this.getStatusToneClass(item.status || 'N/A');
+                    const statusLabel = this.deriveMonthlyPaymentStatus(item, delinquentMonthSet);
+                    const statusClass = this.getStatusToneClass(statusLabel);
                     const balanceClass = this.getSignedAmountClass(balance, true);
                     return `
                         <div class="data-grid-row">
                             <div>${monthLabel}</div>
-                            <div><span class="${statusClass}">${item.status || 'N/A'}</span></div>
+                            <div><span class="${statusClass}">${statusLabel}</span></div>
                             <div>$${expected.toFixed(2)}</div>
                             <div><span class="${paidClass}">$${paid.toFixed(2)}</span></div>
                             <div><span class="${balanceClass}">$${balance.toFixed(2)}</span></div>

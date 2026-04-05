@@ -18,6 +18,7 @@ from ui.payment_dialog import PaymentDialog
 from ui.rent_modification_dialog import RentModificationDialog
 from ui.monthly_override_dialog import MonthlyOverrideDialog
 from ui.yearly_override_dialog import YearlyOverrideDialog
+from ui.late_fee_dialog import LateFeeDialog
 from ui.rent_query_dialog import RentQueryDialog
 from ui.renew_lease_dialog import RenewLeaseDialog
 from ui.action_queue_dialog import ActionQueueDialog
@@ -32,6 +33,7 @@ class RentManagementTab(QWidget):
     def __init__(self, rent_tracker):
         super().__init__()
         logger.debug("RentManagementTab", "Initializing RentManagementTab")
+        self.logger = logger
         self.rent_tracker = rent_tracker
         self.action_queue = ActionQueue()  # Initialize action queue
         self.rental_summaries = RentalSummaries(rent_tracker=rent_tracker)  # Initialize rental summaries system
@@ -800,6 +802,14 @@ class RentManagementTab(QWidget):
             pressed_color='#1e7e34'
         ).replace('QPushButton {', 'QPushButton { background-color: #28a745;'))
         self.service_credit_btn_original_style = self.service_credit_btn.styleSheet()
+
+        self.late_fee_btn = QPushButton('Late Fee Options')
+        self.late_fee_btn.clicked.connect(self.show_late_fee_dialog)
+        self.late_fee_btn.setStyleSheet(button_style.format(
+            hover_color='#b35a00',
+            pressed_color='#8f4700'
+        ).replace('QPushButton {', 'QPushButton { background-color: #cc7000;'))
+        self.late_fee_btn_original_style = self.late_fee_btn.styleSheet()
         
         # Add Query System button
         self.query_system_btn = QPushButton('Query System')
@@ -903,8 +913,9 @@ class RentManagementTab(QWidget):
             self.monthly_override_btn,
             self.yearly_override_btn,
             self.service_credit_btn,
-            self.yearly_summary_btn,
+            self.late_fee_btn,
             # Row 2: Lease management & tools
+            self.yearly_summary_btn,
             self.renew_lease_btn,
             self.scheduled_actions_btn,
             self.schedule_notification_btn,
@@ -1241,6 +1252,20 @@ class RentManagementTab(QWidget):
         effective_color = "#28a745" if effective_rent == tenant.rent_amount else "#fd7e14"
         self.add_status_row(status_grid, row, "💵 Effective Rent:", f"${effective_rent:.2f}", effective_color)
         row += 1
+
+        late_fee_cfg = self.rent_tracker.get_late_fee_config(tenant.name) or {}
+        if late_fee_cfg.get('enabled'):
+            mode = str(late_fee_cfg.get('mode', 'fixed') or 'fixed').lower()
+            basis = str(late_fee_cfg.get('fee_basis', 'flat_amount') or 'flat_amount').lower()
+            value = float(late_fee_cfg.get('amount', 0.0) or 0.0)
+
+            mode_label = "Daily" if mode == 'daily' else "Fixed"
+            if basis == 'percent_of_rent':
+                value_label = f"{value:.2f}% of rent"
+            else:
+                value_label = f"${value:.2f}"
+            self.add_status_row(status_grid, row, "⏱️ Late Fee:", f"{mode_label} | {value_label}", "#cc7000")
+            row += 1
         
         # Balance information
         if delinquency_balance > 0:
@@ -4584,6 +4609,143 @@ class RentManagementTab(QWidget):
         
         dialog = RentQueryDialog(self, self.rent_tracker, default_tenant_name)
         dialog.exec()
+
+    def show_late_fee_dialog(self):
+        """Show late fee configuration and action dialog."""
+        if not self.selected_tenant:
+            QMessageBox.warning(self, "No Tenant Selected", "Please select a tenant first.")
+            return
+
+        config = self.rent_tracker.get_late_fee_config(self.selected_tenant.name) or {
+            'enabled': False,
+            'amount': 0.0,
+            'fee_basis': 'flat_amount',
+            'mode': 'fixed',
+            'grace_period_days': 0,
+            'start_date': None,
+            'end_date': None,
+        }
+
+        dialog = LateFeeDialog(self, tenant_name=self.selected_tenant.name, config=config)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        payload = dialog.get_data()
+        self.process_late_fee_action(payload)
+
+    def process_late_fee_action(self, payload):
+        """Persist late fee settings and optionally apply/remove fees."""
+        try:
+            enabled = bool(payload.get('enabled', False))
+            amount = float(payload.get('amount', 0.0) or 0.0)
+            fee_basis = str(payload.get('fee_basis', 'flat_amount') or 'flat_amount').lower()
+            mode = str(payload.get('mode', 'fixed') or 'fixed').lower()
+            grace_period_days = int(payload.get('grace_period_days', 0) or 0)
+            start_date = payload.get('start_date') or None
+            end_date = payload.get('end_date') or None
+            action = (payload.get('action') or 'save_config').strip().lower()
+            target_month = (payload.get('target_month') or '').strip()
+            override_amount = payload.get('override_amount')
+            notes = payload.get('notes', '')
+
+            if start_date and end_date and start_date > end_date:
+                QMessageBox.warning(self, "Invalid Date Range", "Late fee start date cannot be after end date.")
+                return
+
+            config_saved = self.rent_tracker.set_late_fee_config(
+                self.selected_tenant.name,
+                enabled=enabled,
+                amount=amount,
+                fee_basis=fee_basis,
+                mode=mode,
+                grace_period_days=grace_period_days,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            if not config_saved:
+                QMessageBox.critical(self, "Error", "Failed to save late fee configuration.")
+                return
+
+            message = "Late fee configuration saved."
+
+            if action == 'auto_apply_through_date':
+                result = self.rent_tracker.reconcile_late_fees(
+                    self.selected_tenant.name,
+                    through_date=payload.get('through_date')
+                )
+                applied_months = result.get('applied_months', [])
+                message = (
+                    f"Late fee configuration saved. Reconciled history with {result.get('added_count', 0)} late fee row(s).\n"
+                    f"Removed old late fee rows: {result.get('removed_count', 0)}\n"
+                    f"Months: {', '.join(applied_months) if applied_months else 'None'}"
+                )
+            elif action == 'save_config':
+                result = self.rent_tracker.reconcile_late_fees(
+                    self.selected_tenant.name,
+                    through_date=date.today().isoformat()
+                )
+                message = (
+                    f"Late fee configuration saved and payment history reconciled.\n"
+                    f"Removed old late fee rows: {result.get('removed_count', 0)}\n"
+                    f"Added recalculated late fee rows: {result.get('added_count', 0)}"
+                )
+            elif action in ('manual_apply_month', 'manual_remove_month'):
+                if len(target_month) != 7 or '-' not in target_month:
+                    QMessageBox.warning(self, "Invalid Month", "Please enter target month in YYYY-MM format.")
+                    return
+                year_part, month_part = target_month.split('-', 1)
+                year = int(year_part)
+                month = int(month_part)
+                if month < 1 or month > 12:
+                    QMessageBox.warning(self, "Invalid Month", "Month must be between 01 and 12.")
+                    return
+
+                if action == 'manual_apply_month':
+                    success = self.rent_tracker.apply_late_fee_override(
+                        self.selected_tenant.name,
+                        year,
+                        month,
+                        amount=override_amount,
+                        notes=notes,
+                    )
+                    if not success:
+                        QMessageBox.warning(self, "No Late Fee Applied", "Could not apply late fee for that month.")
+                        return
+                    message = f"Late fee applied for {target_month}."
+                else:
+                    success = self.rent_tracker.remove_late_fee_override(
+                        self.selected_tenant.name,
+                        year,
+                        month,
+                        amount=override_amount,
+                        notes=notes,
+                    )
+                    if not success:
+                        QMessageBox.warning(self, "No Late Fee Removed", "No outstanding late fee was found for that month.")
+                        return
+                    message = f"Late fee removed for {target_month}."
+            elif action == 'remove_all_late_fees':
+                result = self.rent_tracker.reconcile_late_fees(
+                    self.selected_tenant.name,
+                    through_date=date.today().isoformat(),
+                    remove_all=True
+                )
+                message = (
+                    f"All late fee entries removed.\n"
+                    f"Removed late fee rows: {result.get('removed_count', 0)}"
+                )
+
+            self.rent_tracker.check_and_update_delinquency(target_tenant_id=self.selected_tenant.tenant_id)
+            updated_tenant = self.rent_tracker.get_tenant_by_name(self.selected_tenant.name)
+            if updated_tenant:
+                self.load_tenant(updated_tenant)
+
+            QMessageBox.information(self, "Late Fee Updated", message)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please verify dates, month format, and numeric values.")
+        except Exception as e:
+            QMessageBox.critical(self, "Late Fee Error", f"Failed to process late fee action: {str(e)}")
 
     def refresh_tenant_dropdown(self):
         """Refresh the tenant dropdown list"""
