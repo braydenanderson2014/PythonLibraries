@@ -8,6 +8,8 @@ torch>=2.5,<2.8
 
 openai-whisper>=20231117
 pysubs2>=1.6.0
+deep-translator>=1.11.4
+edge-tts>=6.1.12
 
 # Additional optional AI backends supported by the app:
 # Install only the ones you plan to use.
@@ -18,6 +20,8 @@ pysubs2>=1.6.0
 # speechbrain>=1.0.2
 # vosk>=0.3.45
 # aeneas>=1.7.3.0
+# deep-translator and edge-tts are installed above because voice translation
+# with dubbed output depends on them.
 #
 # "Text to Timestamps" is supported as a built-in heuristic backend,
 # so no extra package is required for that mode.

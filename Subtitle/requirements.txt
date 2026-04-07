@@ -7,5 +7,7 @@ uvicorn[standard]>=0.30.0
 cinemagoer>=2023.1.1
 
 # AI libraries are optional - install separately with requirements_ai.txt
+# Voice translation + dubbed audio dependencies (deep-translator, edge-tts)
+# are included in requirements_ai.txt.
 # openai-whisper>=20231117
 # pysubs2>=1.6.0

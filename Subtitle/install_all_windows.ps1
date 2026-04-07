@@ -916,15 +916,15 @@ function Show-InteractiveInstallerControlPanel {
 
     $updateActionModeLabel = {
         if ($chkRunUninstall.Checked) {
-            $lblActionMode.Text = "Action when Continue is clicked:  Full Uninstall  —  venv and script-installed components will be removed"
+            $lblActionMode.Text = "Action when Continue is clicked:  Full Uninstall  -  venv and script-installed components will be removed"
             $lblActionMode.ForeColor = [System.Drawing.Color]::OrangeRed
             $btnContinue.Text = "Continue Uninstall"
         } elseif ($chkRunUninstallAI.Checked) {
-            $lblActionMode.Text = "Action when Continue is clicked:  AI-only Uninstall  —  AI packages removed, core app stays intact"
+            $lblActionMode.Text = "Action when Continue is clicked:  AI-only Uninstall  -  AI packages removed, core app stays intact"
             $lblActionMode.ForeColor = [System.Drawing.Color]::DarkOrange
             $btnContinue.Text = "Continue AI Uninstall"
         } else {
-            $lblActionMode.Text = "Action when Continue is clicked:  Install  —  all selected components will be installed"
+            $lblActionMode.Text = "Action when Continue is clicked:  Install  -  all selected components will be installed"
             $lblActionMode.ForeColor = [System.Drawing.Color]::SeaGreen
             $btnContinue.Text = "Continue Install"
         }
@@ -1539,7 +1539,7 @@ function Get-ToolInstallDirFromRegistry {
                 if ([string]$props.DisplayName -match $DisplayNamePattern) {
                     $loc = [string]$props.InstallLocation
                     if ($loc -and (Test-Path -LiteralPath $loc)) { return $loc }
-                    # InstallLocation absent — derive directory from DisplayIcon or UninstallString
+                    # InstallLocation absent - derive directory from DisplayIcon or UninstallString
                     foreach ($rawVal in @([string]$props.DisplayIcon, [string]$props.UninstallString)) {
                         if (-not $rawVal) { continue }
                         # Strip leading/trailing quotes and any trailing arguments
@@ -1727,15 +1727,16 @@ function Install-OptionalSystemTool {
 }
 
 function Get-AiBackendDefinitions {
+    $voiceTranslationPackages = @("deep-translator", "edge-tts")
     return @(
-        @{ key = "openai-whisper"; display = "OpenAI Whisper (original)"; import = "whisper"; packages = @("torch", "openai-whisper", "pysubs2"); needs_vcredist = $true }
-        @{ key = "faster-whisper"; display = "faster-whisper"; import = "faster_whisper"; packages = @("faster-whisper", "pysubs2"); needs_vcredist = $true }
-        @{ key = "whisperx"; display = "WhisperX"; import = "whisperx"; packages = @("whisperx", "pysubs2"); needs_vcredist = $true }
-        @{ key = "stable-ts"; display = "stable-ts"; import = "stable_whisper"; packages = @("stable-ts", "pysubs2"); needs_vcredist = $true }
-        @{ key = "whisper-timestamped"; display = "whisper-timestamped"; import = "whisper_timestamped"; packages = @("whisper-timestamped", "pysubs2"); needs_vcredist = $true }
-        @{ key = "speechbrain"; display = "SpeechBrain"; import = "speechbrain"; packages = @("speechbrain", "soundfile", "pysubs2"); needs_vcredist = $true }
-        @{ key = "vosk"; display = "Vosk"; import = "vosk"; packages = @("vosk", "pysubs2"); needs_vcredist = $false }
-        @{ key = "aeneas"; display = "Aeneas"; import = "aeneas"; packages = @("aeneas", "pysubs2"); needs_vcredist = $false }
+        @{ key = "openai-whisper"; display = "OpenAI Whisper (original)"; import = "whisper"; packages = @("torch", "openai-whisper", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "faster-whisper"; display = "faster-whisper"; import = "faster_whisper"; packages = @("faster-whisper", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "whisperx"; display = "WhisperX"; import = "whisperx"; packages = @("whisperx", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "stable-ts"; display = "stable-ts"; import = "stable_whisper"; packages = @("stable-ts", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "whisper-timestamped"; display = "whisper-timestamped"; import = "whisper_timestamped"; packages = @("whisper-timestamped", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "speechbrain"; display = "SpeechBrain"; import = "speechbrain"; packages = @("speechbrain", "soundfile", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "vosk"; display = "Vosk"; import = "vosk"; packages = @("vosk", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
+        @{ key = "aeneas"; display = "Aeneas"; import = "aeneas"; packages = @("aeneas", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
     )
 }
 
@@ -2231,7 +2232,7 @@ function Test-VCRedist {
                 }
             } catch { }
         }
-        # Registry fallback — .NET 5+ writes version keys here
+        # Registry fallback - .NET 5+ writes version keys here
         $regBase = "HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App"
         if (Test-Path $regBase) {
             $versions = Get-ChildItem $regBase -ErrorAction SilentlyContinue
@@ -2602,7 +2603,7 @@ function Stop-StaleVisualStudioInstallerProcesses {
         "vs_bootstrapper"
     )
 
-    # "setup" is ambiguous – only target it when it lives inside the VS Installer
+    # "setup" is ambiguous - only target it when it lives inside the VS Installer
     # directory to avoid killing unrelated setup.exe processes.
     $vsInstallerDir = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer"
 
@@ -3719,7 +3720,7 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# Verbose detail log — collects all raw subprocess output and timestamped
+# Verbose detail log - collects all raw subprocess output and timestamped
 # phase banners that would otherwise be absent from the transcript.
 # ---------------------------------------------------------------------------
 $verboseLogPath = Join-Path $scriptDir "install_verbose.log"
@@ -3727,7 +3728,7 @@ $script:verboseLogPath = $verboseLogPath
 try {
     $vLogHeader = @(
         "=================================================================",
-        "  Subtitle Tool Installer — Verbose Log",
+        "  Subtitle Tool Installer - Verbose Log",
         "  Date    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "  Script  : $($MyInvocation.MyCommand.Path)",
         "  User    : $([System.Environment]::UserName)  Machine: $([System.Environment]::MachineName)",
@@ -3820,6 +3821,7 @@ if ($script:RequestedUninstallAI) {
             "openai-whisper", "whisper", "pysubs2",
             "faster-whisper", "whisperx", "stable-ts", "whisper-timestamped",
             "speechbrain", "vosk", "aeneas",
+            "deep-translator", "edge-tts",
             "cinemagoer", "imdbpy"
         )
 

@@ -15,6 +15,7 @@ This tool scans video folders, removes embedded subtitle streams, and can add su
 - **External Backend Support**: Use FFmpeg, MKVToolNix (`mkvmerge`), HandBrakeCLI, and MakeMKV (`makemkvcon`) where applicable.
 - **Command Diagnostics**: Adjustable command feedback and ffmpeg/ffprobe log levels for easier troubleshooting of corrupt/truncated files.
 - **AI Subtitle Generation** (Optional): Generate subtitles from video audio using multiple backends (Whisper, faster-whisper, WhisperX, stable-ts, whisper-timestamped, SpeechBrain, Vosk, Text-to-Timestamps heuristic).
+- **AI Translate + Dub (Experimental)**: Translate to a target language (default `en`) and add a dubbed audio stream. If English sidecar subtitles exist, you can translate those first before dubbing.
 - **AI Audio Language Tagging** (Optional): Detect audio-stream language with Whisper and write stream language metadata tags.
 - FastAPI service mode with background job execution.
 
@@ -160,6 +161,9 @@ pip install -r "Python Projects/Subtitle/requirements_ai.txt"
 
 # Optional: Install extra AI backends supported by the app
 pip install faster-whisper whisperx stable-ts whisper-timestamped speechbrain vosk aeneas
+
+# Optional: Install translation + dubbing dependencies
+pip install deep-translator edge-tts
 ```
 
 Install ffmpeg on Windows manually via installer script:

@@ -16,6 +16,7 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections import Counter
 import importlib
 import json
@@ -276,6 +277,7 @@ LANGUAGE_CODE_MAP = {
     "id": "ind",
     "ms": "msa",
 }
+LANGUAGE_CODE_REVERSE_MAP = {v: k for k, v in LANGUAGE_CODE_MAP.items()}
 HELP_DOC_NAME = "SUBTITLE_TOOL_HELP.md"
 SETTINGS_FILE = ".subtitle_tool_settings.json"
 COMMAND_FEEDBACK_LEVELS = {"quiet", "normal", "verbose"}
@@ -2678,6 +2680,323 @@ class SubtitleProcessor:
         
         return summary
 
+    def _normalize_translation_language(self, value: Optional[str]) -> str:
+        raw = (value or "en").strip().lower()
+        if not raw:
+            return "en"
+        if raw in LANGUAGE_CODE_REVERSE_MAP:
+            return LANGUAGE_CODE_REVERSE_MAP[raw]
+        if raw in LANGUAGE_CODE_MAP:
+            return raw
+        if len(raw) >= 2:
+            return raw[:2]
+        return "en"
+
+    def _find_english_sidecar_subtitle(self, video: Path) -> Optional[Path]:
+        sidecars = self._find_sidecar_subtitles(video)
+        for sub in sidecars:
+            stem = sub.stem.lower()
+            tokens = re.split(r"[._\-\s]+", stem)
+            if any(tok in {"en", "eng", "english"} for tok in tokens):
+                return sub
+        return None
+
+    def _segments_from_subtitle(self, subtitle_path: Path) -> List[Dict[str, object]]:
+        if pysubs2 is None:
+            raise RuntimeError("pysubs2 is required to read subtitle events")
+        subs = pysubs2.load(str(subtitle_path))
+        rows: List[Dict[str, object]] = []
+        for ev in subs.events:
+            txt = self._strip_subtitle_tags(str(getattr(ev, "text", "") or "")).strip()
+            if not txt:
+                continue
+            rows.append(
+                {
+                    "start": max(0.0, float(ev.start) / 1000.0),
+                    "end": max(float(ev.start) / 1000.0 + 0.2, float(ev.end) / 1000.0),
+                    "text": txt,
+                }
+            )
+        return rows
+
+    def _save_segments_to_srt(self, output_path: Path, segments: List[Dict[str, object]]) -> None:
+        if pysubs2 is None:
+            raise RuntimeError("pysubs2 is required to save subtitles")
+        subs = pysubs2.SSAFile()
+        for segment in segments:
+            text = str(segment.get("text") or "").strip()
+            if not text:
+                continue
+            start = int(max(0.0, self._safe_float(segment.get("start"), 0.0)) * 1000)
+            end = int(
+                max(
+                    self._safe_float(segment.get("end"), 0.0),
+                    self._safe_float(segment.get("start"), 0.0) + 0.2,
+                )
+                * 1000
+            )
+            subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
+        subs.save(str(output_path))
+
+    def _translate_text(self, text: str, target_language: str, source_language: Optional[str] = None) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return ""
+        target = self._normalize_translation_language(target_language)
+        source = self._normalize_translation_language(source_language) if source_language else "auto"
+        if source == target:
+            return cleaned
+
+        module = importlib.import_module("deep_translator")
+        translator = module.GoogleTranslator(source=source, target=target)
+        translated = str(translator.translate(cleaned) or "").strip()
+        return translated or cleaned
+
+    def _translate_segments(
+        self,
+        segments: List[Dict[str, object]],
+        target_language: str,
+        source_language: Optional[str],
+    ) -> List[Dict[str, object]]:
+        translated_rows: List[Dict[str, object]] = []
+        for seg in segments:
+            text = str(seg.get("text") or "").strip()
+            if not text:
+                continue
+            translated_text = self._translate_text(text, target_language, source_language)
+            translated_rows.append(
+                {
+                    "start": self._safe_float(seg.get("start"), 0.0),
+                    "end": self._safe_float(seg.get("end"), 0.0),
+                    "text": translated_text,
+                }
+            )
+        return translated_rows
+
+    def _pick_edge_tts_voice(self, target_language: str) -> str:
+        lang = self._normalize_translation_language(target_language)
+        voices = {
+            "en": "en-US-JennyNeural",
+            "es": "es-ES-ElviraNeural",
+            "fr": "fr-FR-DeniseNeural",
+            "de": "de-DE-KatjaNeural",
+            "it": "it-IT-ElsaNeural",
+            "pt": "pt-BR-FranciscaNeural",
+            "ru": "ru-RU-SvetlanaNeural",
+            "ja": "ja-JP-NanamiNeural",
+            "ko": "ko-KR-SunHiNeural",
+            "zh": "zh-CN-XiaoxiaoNeural",
+            "ar": "ar-SA-ZariyahNeural",
+            "hi": "hi-IN-SwaraNeural",
+        }
+        return voices.get(lang, "en-US-JennyNeural")
+
+    def _estimate_edge_tts_rate(self, segments: List[Dict[str, object]]) -> str:
+        total_seconds = 0.0
+        total_words = 0
+        for seg in segments:
+            start = self._safe_float(seg.get("start"), 0.0)
+            end = self._safe_float(seg.get("end"), start + 0.2)
+            total_seconds += max(0.2, end - start)
+            total_words += len(str(seg.get("text") or "").split())
+        if total_seconds <= 0 or total_words <= 0:
+            return "+0%"
+
+        target_wps = total_words / total_seconds
+        baseline_wps = 2.6
+        pct = int(round(((target_wps / baseline_wps) - 1.0) * 100))
+        pct = max(-35, min(35, pct))
+        return f"{pct:+d}%"
+
+    def _synthesize_edge_tts_audio(self, text: str, voice: str, rate: str, output_path: Path) -> None:
+        module = importlib.import_module("edge_tts")
+
+        async def _run() -> None:
+            communicator = module.Communicate(text=text, voice=voice, rate=rate)
+            await communicator.save(str(output_path))
+
+        asyncio.run(_run())
+
+    def _mux_translated_audio(
+        self,
+        source_video: Path,
+        translated_audio_path: Path,
+        output_path: Path,
+        target_language: str,
+    ) -> subprocess.CompletedProcess:
+        source_audio_count = len(self._probe_audio_streams(source_video))
+        lang_tag = self._normalize_language_code(self._normalize_translation_language(target_language))
+        new_audio_index = max(0, source_audio_count)
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-i",
+            str(source_video),
+            "-i",
+            str(translated_audio_path),
+            "-map",
+            "0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            f"-c:a:{new_audio_index}",
+            "aac",
+            f"-metadata:s:a:{new_audio_index}",
+            f"language={lang_tag}",
+            f"-metadata:s:a:{new_audio_index}",
+            f"title=Translated Dub ({lang_tag})",
+            str(output_path),
+        ]
+        return self._run_command(cmd, description="mux translated audio")
+
+    def translate_audio_with_voice_match(
+        self,
+        folders: List[str],
+        recursive: bool,
+        target_files: List[str],
+        model_size: str = "base",
+        source_language: Optional[str] = None,
+        target_language: str = "en",
+        backend: str = "auto",
+        prefer_english_subtitles: bool = True,
+        overwrite: bool = False,
+        output_suffix: str = "_translated_dub",
+        output_root: Optional[str] = None,
+    ) -> OperationSummary:
+        """Translate content and create a dubbed audio track with best-effort voice/tone matching."""
+        summary = OperationSummary(action="translate_audio")
+
+        selected_backend, backend_reason = self._resolve_transcription_backend(backend)
+        if not selected_backend:
+            summary.failed = 1
+            summary.details.append({"file": "N/A", "status": "failed", "reason": backend_reason})
+            self._log(f"ERROR: {backend_reason}")
+            return summary
+
+        target_lang = self._normalize_translation_language(target_language)
+        self._log(
+            f"Audio translation backend: {selected_backend} ({backend_reason}); target language: {target_lang}"
+        )
+
+        videos = [Path(f) for f in target_files if Path(f).exists()]
+        for video in self._iter_video_files(folders, recursive):
+            videos.append(video)
+        videos = list({str(v): v for v in videos}.values())
+        summary.scanned = len(videos)
+
+        if not videos:
+            self._log("No video files found to translate audio")
+            return summary
+
+        model_cache: Dict[str, object] = {}
+
+        for video in videos:
+            try:
+                self._log(f"Translating audio for {video.name}...")
+                base_segments: List[Dict[str, object]] = []
+                segment_source = "audio-transcription"
+                detected_lang = self._normalize_translation_language(source_language)
+
+                english_subtitle_path: Optional[Path] = None
+                if prefer_english_subtitles:
+                    english_subtitle_path = self._find_english_sidecar_subtitle(video)
+
+                if english_subtitle_path is not None:
+                    self._log(f"  Using English subtitle source: {english_subtitle_path.name}")
+                    base_segments = self._segments_from_subtitle(english_subtitle_path)
+                    segment_source = "english-sidecar-subtitle"
+                    detected_lang = "en"
+                else:
+                    self._log("  No English subtitle source selected/found, transcribing audio...")
+                    base_segments, backend_detected = self._transcribe_with_backend(
+                        video=video,
+                        backend=selected_backend,
+                        model_size=model_size,
+                        language=source_language,
+                        model_cache=model_cache,
+                    )
+                    if backend_detected:
+                        detected_lang = self._normalize_translation_language(backend_detected)
+
+                if not base_segments:
+                    raise RuntimeError("No source segments available for translation")
+
+                translated_segments = self._translate_segments(
+                    segments=base_segments,
+                    target_language=target_lang,
+                    source_language=detected_lang,
+                )
+                if not translated_segments:
+                    raise RuntimeError("Translation produced no segments")
+
+                translated_subtitle_path = video.with_name(f"{video.stem}.{target_lang}.translated.srt")
+                if not translated_subtitle_path.exists() or overwrite:
+                    self._save_segments_to_srt(translated_subtitle_path, translated_segments)
+                    self._log(f"  Saved translated subtitles: {translated_subtitle_path.name}")
+
+                merged_text = "\n".join(
+                    str(seg.get("text") or "").strip()
+                    for seg in translated_segments
+                    if str(seg.get("text") or "").strip()
+                ).strip()
+                if not merged_text:
+                    raise RuntimeError("No translated text available for TTS")
+
+                output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
+                with tempfile.TemporaryDirectory(prefix="tts_dub_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+                    dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
+                    voice = self._pick_edge_tts_voice(target_lang)
+                    rate = self._estimate_edge_tts_rate(translated_segments)
+                    self._log(f"  Synthesizing translated speech (voice={voice}, rate={rate})...")
+                    self._synthesize_edge_tts_audio(merged_text, voice, rate, dubbed_audio_path)
+
+                    mux_result = self._mux_translated_audio(
+                        source_video=video,
+                        translated_audio_path=dubbed_audio_path,
+                        output_path=output_path,
+                        target_language=target_lang,
+                    )
+                    if mux_result.returncode != 0:
+                        raise RuntimeError(mux_result.stderr.strip() or "ffmpeg mux failed")
+
+                is_valid, invalid_reason = self._validate_muxed_output(video, output_path)
+                if not is_valid:
+                    raise RuntimeError(f"translated output validation failed: {invalid_reason}")
+
+                if replace_target:
+                    output_path.replace(replace_target)
+
+                summary.processed += 1
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "processed",
+                        "reason": (
+                            f"translated to {target_lang} using {segment_source}; "
+                            f"dubbed track added"
+                        ),
+                        "output_path": str(replace_target or output_path),
+                        "subtitle_path": str(translated_subtitle_path),
+                        "target_language": target_lang,
+                    }
+                )
+            except Exception as exc:
+                self._log(f"  ERROR: {exc}")
+                summary.failed += 1
+                summary.details.append(
+                    {
+                        "file": str(video),
+                        "status": "failed",
+                        "reason": str(exc),
+                    }
+                )
+
+        return summary
+
     def detect_and_tag_audio_languages(
         self,
         folders: List[str],
@@ -4658,6 +4977,21 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         backend=str(self.options.get("ai_backend", "auto")),
                     )
                     payload = summary.to_dict()
+                elif self.action == "translate_audio":
+                    summary = processor.translate_audio_with_voice_match(
+                        folders=folders,
+                        recursive=recursive,
+                        target_files=target_files,
+                        model_size=str(self.options.get("model_size", "base")),
+                        source_language=self.options.get("language"),
+                        target_language=str(self.options.get("target_language", "en")),
+                        backend=str(self.options.get("ai_backend", "auto")),
+                        prefer_english_subtitles=bool(self.options.get("prefer_english_subtitles", True)),
+                        overwrite=overwrite,
+                        output_suffix=str(self.options.get("output_suffix", "_translated_dub")),
+                        output_root=str(self.options.get("output_root", "")).strip() or None,
+                    )
+                    payload = summary.to_dict()
                 elif self.action == "tag_audio_language":
                     summary = processor.detect_and_tag_audio_languages(
                         folders=folders,
@@ -5252,6 +5586,30 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 tools_layout.addLayout(whisper_options)
                 self.generate_button.clicked.connect(self._start_generate)
 
+                translation_options = QHBoxLayout()
+                translation_options.addWidget(QLabel("Translate target:"))
+                self.translate_target_language_input = QLineEdit("en")
+                self.translate_target_language_input.setMaximumWidth(70)
+                self.translate_target_language_input.setToolTip(
+                    "Target language code for translation/dubbing (default: en)."
+                )
+                translation_options.addWidget(self.translate_target_language_input)
+
+                self.translate_use_english_subs_checkbox = QCheckBox(
+                    "Use English subtitles first when available"
+                )
+                self.translate_use_english_subs_checkbox.setChecked(True)
+                translation_options.addWidget(self.translate_use_english_subs_checkbox)
+
+                self.translate_audio_button = QPushButton("Translate + Dub Audio")
+                self.translate_audio_button.setToolTip(
+                    "Translate using English subtitles when available, then create a dubbed audio track."
+                )
+                translation_options.addWidget(self.translate_audio_button)
+                translation_options.addStretch()
+                tools_layout.addLayout(translation_options)
+                self.translate_audio_button.clicked.connect(self._start_translate_audio)
+
                 language_tag_options = QHBoxLayout()
                 language_tag_options.addWidget(QLabel("Lang Analysis:"))
                 self.audio_lang_strategy_combo = QComboBox()
@@ -5325,6 +5683,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.whisper_model_combo = None
                 self.whisper_language_input = None
                 self.generate_button = None
+                self.translate_target_language_input = None
+                self.translate_use_english_subs_checkbox = None
+                self.translate_audio_button = None
                 self.audio_lang_strategy_combo = None
                 self.audio_lang_snippets_input = None
                 self.audio_lang_seconds_input = None
@@ -5606,6 +5967,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.tool_status_refresh_button.setEnabled(not running)
             if self.generate_button is not None:
                 self.generate_button.setEnabled(not running)
+            if self.translate_audio_button is not None:
+                self.translate_audio_button.setEnabled(not running)
             if self.tag_audio_language_button is not None:
                 self.tag_audio_language_button.setEnabled(not running)
             if self.sync_button is not None:
@@ -5846,6 +6209,65 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     "ERR012_VALIDATION_FAILED",
                     "Failed to validate subtitle generation options",
                     str(exc)
+                )
+                QMessageBox.warning(self, "Validation", str(exc))
+
+        def _start_translate_audio(self) -> None:
+            """Translate content and create a dubbed audio track."""
+            try:
+                options = self._collect_common_options()
+                options["ai_backend"] = (
+                    str(self.ai_backend_combo.currentData() or "auto") if self.ai_backend_combo else "auto"
+                )
+                options["model_size"] = self.whisper_model_combo.currentText() if self.whisper_model_combo else "base"
+                options["language"] = self.whisper_language_input.text().strip() or None if self.whisper_language_input else None
+                target_lang = (
+                    (self.translate_target_language_input.text().strip() if self.translate_target_language_input else "")
+                    or "en"
+                )
+                options["target_language"] = target_lang
+                options["output_suffix"] = "_translated_dub"
+
+                use_subs_pref = bool(
+                    self.translate_use_english_subs_checkbox.isChecked()
+                ) if self.translate_use_english_subs_checkbox is not None else True
+                if use_subs_pref:
+                    reply = QMessageBox.question(
+                        self,
+                        "English Subtitle Source",
+                        "If English subtitles are available, translate subtitles first before dubbing audio?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes,
+                    )
+                    use_subs_pref = reply == QMessageBox.StandardButton.Yes
+                options["prefer_english_subtitles"] = use_subs_pref
+
+                if pysubs2 is None:
+                    QMessageBox.warning(
+                        self,
+                        "pysubs2/pysub2 Not Installed",
+                        "pysubs2 is required for subtitle-based translation.\n\n"
+                        "pip install pysubs2",
+                    )
+                    return
+
+                reply = QMessageBox.question(
+                    self,
+                    "Translate + Dub Audio",
+                    "This will translate text and add a new dubbed audio stream to each selected video.\n\n"
+                    f"Target language: {target_lang}\n"
+                    f"Subtitle-first mode: {'enabled' if use_subs_pref else 'disabled'}\n\n"
+                    "Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._start_worker("translate_audio", options)
+            except ValueError as exc:
+                self._log_error(
+                    "ERR015_VALIDATION_FAILED",
+                    "Failed to validate translate+dub options",
+                    str(exc),
                 )
                 QMessageBox.warning(self, "Validation", str(exc))
 
@@ -6672,6 +7094,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "ai_backend": self.ai_backend_combo.currentData() if self.ai_backend_combo else "auto",
                 "whisper_model": self.whisper_model_combo.currentText() if self.whisper_model_combo else "base",
                 "whisper_language": self.whisper_language_input.text() if self.whisper_language_input else "",
+                "translate_target_language": self.translate_target_language_input.text() if self.translate_target_language_input else "en",
+                "translate_use_english_subs": self.translate_use_english_subs_checkbox.isChecked() if self.translate_use_english_subs_checkbox else True,
                 "audio_lang_strategy": self.audio_lang_strategy_combo.currentData() if self.audio_lang_strategy_combo else "snippets",
                 "audio_lang_snippets": self.audio_lang_snippets_input.text() if self.audio_lang_snippets_input else "3",
                 "audio_lang_seconds": self.audio_lang_seconds_input.text() if self.audio_lang_seconds_input else "25",
@@ -6810,6 +7234,12 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 if index >= 0:
                     self.whisper_model_combo.setCurrentIndex(index)
                 self.whisper_language_input.setText(ui_state.get("whisper_language", ""))
+                if self.translate_target_language_input is not None:
+                    self.translate_target_language_input.setText(str(ui_state.get("translate_target_language", "en")))
+                if self.translate_use_english_subs_checkbox is not None:
+                    self.translate_use_english_subs_checkbox.setChecked(
+                        bool(ui_state.get("translate_use_english_subs", True))
+                    )
 
             if self.use_ai and self.audio_lang_strategy_combo and self.audio_lang_snippets_input and self.audio_lang_seconds_input:
                 strategy = ui_state.get("audio_lang_strategy", "snippets")

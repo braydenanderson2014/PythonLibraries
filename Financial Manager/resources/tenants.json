@@ -126,6 +126,8 @@
     "late_fee_config": {
       "enabled": false,
       "amount": 0.0,
+      "fee_basis": "flat_amount",
+      "mode": "fixed",
       "grace_period_days": 0,
       "start_date": null,
       "end_date": null
@@ -684,6 +686,8 @@
     "late_fee_config": {
       "enabled": false,
       "amount": 0.0,
+      "fee_basis": "flat_amount",
+      "mode": "fixed",
       "grace_period_days": 0,
       "start_date": null,
       "end_date": null
