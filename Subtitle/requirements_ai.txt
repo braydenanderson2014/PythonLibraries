@@ -10,6 +10,8 @@ openai-whisper>=20231117
 pysubs2>=1.6.0
 deep-translator>=1.11.4
 edge-tts>=6.1.12
+# Optional for cloned-voice dubbing with line-by-line emotion matching:
+# TTS>=0.22.0
 
 # Additional optional AI backends supported by the app:
 # Install only the ones you plan to use.
@@ -21,7 +23,8 @@ edge-tts>=6.1.12
 # vosk>=0.3.45
 # aeneas>=1.7.3.0
 # deep-translator and edge-tts are installed above because voice translation
-# with dubbed output depends on them.
+# with dubbed output depends on them. Install TTS as well if you want XTTS-v2
+# cloned-voice dubbing instead of generic Edge voices.
 #
 # "Text to Timestamps" is supported as a built-in heuristic backend,
 # so no extra package is required for that mode.

@@ -122,12 +122,18 @@ except ImportError:
     pytesseract = None  # type: ignore[assignment]
 
 try:
+    from TTS.api import TTS as _CoquiTTS  # type: ignore[import]
+    _COQUI_TTS_AVAILABLE = True
+except (ImportError, Exception):
+    _CoquiTTS = None  # type: ignore[assignment]
+    _COQUI_TTS_AVAILABLE = False
+
+try:
     from imdb import Cinemagoer as _Cinemagoer
     _CINEMAGOER_AVAILABLE = True
 except ImportError:
     _Cinemagoer = None  # type: ignore[assignment]
     _CINEMAGOER_AVAILABLE = False
-
 
 def probe_ai_runtime() -> Tuple[bool, List[str], Dict[str, str]]:
     """Probe AI dependencies in the *current* interpreter at runtime."""
@@ -3069,6 +3075,244 @@ class SubtitleProcessor:
 
         asyncio.run(_run())
 
+    def _extract_audio_reference_clip(
+        self,
+        source_media: Path,
+        output_path: Path,
+        start_seconds: float,
+        duration_seconds: float,
+    ) -> bool:
+        clip_start = max(0.0, float(start_seconds))
+        clip_duration = max(0.35, float(duration_seconds))
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-ss",
+            f"{clip_start:.3f}",
+            "-t",
+            f"{clip_duration:.3f}",
+            "-i",
+            str(source_media),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="extract voice reference clip")
+        return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 2048
+
+    def _build_atempo_filter_chain(self, tempo: float) -> str:
+        remaining = max(0.25, min(8.0, float(tempo)))
+        filters: List[str] = []
+        while remaining > 2.0:
+            filters.append("atempo=2.0")
+            remaining /= 2.0
+        while remaining < 0.5:
+            filters.append("atempo=0.5")
+            remaining /= 0.5
+        filters.append(f"atempo={remaining:.4f}")
+        return ",".join(filters)
+
+    def _fit_audio_to_target_duration(
+        self,
+        input_path: Path,
+        output_path: Path,
+        target_seconds: float,
+    ) -> None:
+        source_seconds = self._probe_media_duration_seconds(input_path) or 0.0
+        target = max(0.2, float(target_seconds))
+        if source_seconds <= 0:
+            raise RuntimeError(f"Unable to measure synthesized segment duration: {input_path.name}")
+
+        tempo = max(0.25, min(8.0, source_seconds / target))
+        filter_chain = self._build_atempo_filter_chain(tempo)
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            filter_chain,
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="fit synthesized segment duration")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "ffmpeg duration fitting failed")
+
+    def _write_silence_clip(self, output_path: Path, duration_seconds: float) -> None:
+        duration = max(0.02, float(duration_seconds))
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=r=22050:cl=mono",
+            "-t",
+            f"{duration:.3f}",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="generate silence clip")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "ffmpeg silence generation failed")
+
+    def _synthesize_xtts_audio(
+        self,
+        source_video: Path,
+        segments: List[Dict[str, object]],
+        language: str,
+        output_path: Path,
+        temp_dir: str,
+    ) -> None:
+        if _CoquiTTS is None:
+            raise RuntimeError(
+                "Coqui TTS is not installed. Run: pip install TTS "
+                "(XTTS-v2 downloads a large model on first use)."
+            )
+
+        lang = self._normalize_translation_language(language) or "en"
+        xtts_lang_map: Dict[str, str] = {
+            "ar": "ar",
+            "cs": "cs",
+            "de": "de",
+            "en": "en",
+            "es": "es",
+            "fr": "fr",
+            "hi": "hi",
+            "hu": "hu",
+            "it": "it",
+            "ja": "ja",
+            "ko": "ko",
+            "nl": "nl",
+            "pl": "pl",
+            "pt": "pt",
+            "ru": "ru",
+            "sv": "sv",
+            "tr": "tr",
+            "zh": "zh-cn",
+        }
+        xtts_lang = xtts_lang_map.get(lang, "en")
+        total_duration = self._probe_media_duration_seconds(source_video)
+        refs_dir = Path(temp_dir) / "xtts_refs"
+        raw_dir = Path(temp_dir) / "xtts_raw"
+        fitted_dir = Path(temp_dir) / "xtts_fitted"
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        fitted_dir.mkdir(parents=True, exist_ok=True)
+
+        fallback_ref = refs_dir / "fallback.wav"
+        fallback_start = 0.0
+        if total_duration and total_duration > 60:
+            fallback_start = max(0.0, min(total_duration - 6.0, total_duration * 0.2))
+        self._extract_audio_reference_clip(source_video, fallback_ref, fallback_start, 6.0)
+
+        self._log("  Loading XTTS-v2 model for line-by-line voice/emotion matching...")
+        tts = _CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2")
+
+        concat_entries: List[Path] = []
+        cursor = 0.0
+        voiced_segments = 0
+
+        for idx, seg in enumerate(segments):
+            text = str(seg.get("text") or "").strip()
+            if not text:
+                continue
+
+            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
+            end = max(start + 0.2, self._safe_float(seg.get("end"), start + 0.2))
+            target_duration = max(0.2, end - start)
+
+            if start > cursor + 0.03:
+                silence_path = fitted_dir / f"gap_{idx:05d}.wav"
+                self._write_silence_clip(silence_path, start - cursor)
+                concat_entries.append(silence_path)
+
+            ref_start = max(0.0, start - 0.12)
+            ref_end = end + 0.18
+            if total_duration is not None:
+                ref_end = min(total_duration, ref_end)
+            ref_duration = max(0.6, min(8.0, ref_end - ref_start))
+            ref_path = refs_dir / f"ref_{idx:05d}.wav"
+            has_ref = self._extract_audio_reference_clip(source_video, ref_path, ref_start, ref_duration)
+            speaker_ref = ref_path if has_ref else fallback_ref
+            if not speaker_ref.exists():
+                raise RuntimeError("Unable to extract any source audio to use as a voice reference")
+
+            raw_segment_path = raw_dir / f"segment_{idx:05d}.wav"
+            fitted_segment_path = fitted_dir / f"segment_{idx:05d}.wav"
+
+            self._log(
+                f"  XTTS line {idx + 1}: cloning voice/emotion from {start:0.2f}s-{end:0.2f}s"
+            )
+            tts.tts_to_file(
+                text=text,
+                speaker_wav=str(speaker_ref),
+                language=xtts_lang,
+                file_path=str(raw_segment_path),
+            )
+            self._fit_audio_to_target_duration(raw_segment_path, fitted_segment_path, target_duration)
+            concat_entries.append(fitted_segment_path)
+            cursor = max(cursor, end)
+            voiced_segments += 1
+
+        if voiced_segments == 0:
+            raise RuntimeError("XTTS had no subtitle lines to synthesize")
+
+        if total_duration is not None and total_duration > cursor + 0.03:
+            tail_silence = fitted_dir / "tail_gap.wav"
+            self._write_silence_clip(tail_silence, total_duration - cursor)
+            concat_entries.append(tail_silence)
+
+        concat_manifest = Path(temp_dir) / "xtts_concat.txt"
+        concat_manifest.write_text(
+            "\n".join(f"file '{path.as_posix()}'" for path in concat_entries),
+            encoding="utf-8",
+        )
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_manifest),
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="concat XTTS emotion-matched segments")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "ffmpeg concat failed for XTTS segments")
+
     def _mux_translated_audio(
         self,
         source_video: Path,
@@ -3211,11 +3455,24 @@ class SubtitleProcessor:
 
                 output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
                 with tempfile.TemporaryDirectory(prefix="tts_dub_", dir=str(self._get_temp_workspace_root())) as temp_dir:
-                    dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
-                    voice = self._pick_edge_tts_voice(target_lang, reproducer_model=reproducer_model)
-                    rate = self._estimate_edge_tts_rate(translated_segments)
-                    self._log(f"  Synthesizing translated speech (voice={voice}, rate={rate})...")
-                    self._synthesize_edge_tts_audio(merged_text, voice, rate, dubbed_audio_path)
+                    use_xtts = (reproducer_model or "auto").lower() == "xtts"
+                    if use_xtts:
+                        dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.wav"
+                        self._log("  Synthesizing translated speech with line-by-line voice intent matching...")
+                        self._synthesize_xtts_audio(
+                            source_video=video,
+                            segments=translated_segments,
+                            language=target_lang,
+                            output_path=dubbed_audio_path,
+                            temp_dir=temp_dir,
+                        )
+                    else:
+                        dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
+                        edge_voice_name = (reproducer_model or "auto").removeprefix("edge:")
+                        voice = self._pick_edge_tts_voice(target_lang, reproducer_model=edge_voice_name)
+                        rate = self._estimate_edge_tts_rate(translated_segments)
+                        self._log(f"  Synthesizing translated speech (Edge TTS voice={voice}, rate={rate})...")
+                        self._synthesize_edge_tts_audio(merged_text, voice, rate, dubbed_audio_path)
 
                     mux_result = self._mux_translated_audio(
                         source_video=video,
@@ -5884,18 +6141,23 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
 
                 translation_options.addWidget(QLabel("Reproducer model:"))
                 self.reproducer_model_combo = QComboBox()
-                self.reproducer_model_combo.addItem("Auto voice by language", "auto")
-                self.reproducer_model_combo.addItem("en-US-JennyNeural", "en-US-JennyNeural")
-                self.reproducer_model_combo.addItem("en-US-GuyNeural", "en-US-GuyNeural")
-                self.reproducer_model_combo.addItem("en-GB-SoniaNeural", "en-GB-SoniaNeural")
-                self.reproducer_model_combo.addItem("es-ES-ElviraNeural", "es-ES-ElviraNeural")
-                self.reproducer_model_combo.addItem("fr-FR-DeniseNeural", "fr-FR-DeniseNeural")
-                self.reproducer_model_combo.addItem("de-DE-KatjaNeural", "de-DE-KatjaNeural")
-                self.reproducer_model_combo.addItem("it-IT-ElsaNeural", "it-IT-ElsaNeural")
-                self.reproducer_model_combo.addItem("pt-BR-FranciscaNeural", "pt-BR-FranciscaNeural")
-                self.reproducer_model_combo.addItem("ja-JP-NanamiNeural", "ja-JP-NanamiNeural")
+                self.reproducer_model_combo.addItem("Clone original voice + line emotion (XTTS-v2)", "xtts")
+                self.reproducer_model_combo.insertSeparator(self.reproducer_model_combo.count())
+                self.reproducer_model_combo.addItem("Edge TTS — Auto (by language)", "auto")
+                self.reproducer_model_combo.addItem("Edge TTS — en-US-Jenny (Female)", "en-US-JennyNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — en-US-Guy (Male)", "en-US-GuyNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — en-GB-Sonia (Female)", "en-GB-SoniaNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — es-ES-Elvira (Female)", "es-ES-ElviraNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — fr-FR-Denise (Female)", "fr-FR-DeniseNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — de-DE-Katja (Female)", "de-DE-KatjaNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — it-IT-Elsa (Female)", "it-IT-ElsaNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — pt-BR-Francisca (Female)", "pt-BR-FranciscaNeural")
+                self.reproducer_model_combo.addItem("Edge TTS — ja-JP-Nanami (Female)", "ja-JP-NanamiNeural")
                 self.reproducer_model_combo.setToolTip(
-                    "Select speech reproducer (Edge TTS voice model) for dubbed track output."
+                    "XTTS-v2 mode clones the original voice and uses each subtitle line's original audio slice as "
+                    "the speaker reference, so emotion and delivery are matched per line before being spoken in "
+                    "the target language.\n\n"
+                    "Edge TTS options are generic fallback voices and do not mimic the original actor's delivery."
                 )
                 translation_options.addWidget(self.reproducer_model_combo)
 
