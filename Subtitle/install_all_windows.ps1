@@ -29,6 +29,7 @@ param(
     [switch]$InstallAiSpeechBrain,
     [switch]$InstallAiVosk,
     [switch]$InstallAiAeneas,
+    [switch]$InstallAiXtts,
     [switch]$SkipAiSelectionPrompt,
 
     [switch]$InteractiveMenu,
@@ -262,6 +263,7 @@ function New-ScriptRelaunchArgs {
     if ($InstallAiSpeechBrain) { $relaunchArgs += "-InstallAiSpeechBrain" }
     if ($InstallAiVosk) { $relaunchArgs += "-InstallAiVosk" }
     if ($InstallAiAeneas) { $relaunchArgs += "-InstallAiAeneas" }
+    if ($InstallAiXtts) { $relaunchArgs += "-InstallAiXtts" }
 
     if ($SkipAiSelectionPrompt) { $relaunchArgs += "-SkipAiSelectionPrompt" }
     if ($InteractiveMenu) { $relaunchArgs += "-InteractiveMenu" }
@@ -511,6 +513,7 @@ function Set-AiSelectionFlagsFromKeys {
     $script:InstallAiSpeechBrain = $false
     $script:InstallAiVosk = $false
     $script:InstallAiAeneas = $false
+    $script:InstallAiXtts = $false
 
     foreach ($key in $SelectedKeys) {
         switch ($key) {
@@ -522,6 +525,7 @@ function Set-AiSelectionFlagsFromKeys {
             "speechbrain" { $script:InstallAiSpeechBrain = $true }
             "vosk" { $script:InstallAiVosk = $true }
             "aeneas" { $script:InstallAiAeneas = $true }
+            "xtts" { $script:InstallAiXtts = $true }
         }
     }
 
@@ -636,7 +640,7 @@ function Show-InteractiveInstallerControlPanel {
     $form.KeyPreview = $true
     $form.AutoScroll = $true
     # Keep the UI vertically scrollable on smaller displays and avoid horizontal scrolling.
-    $form.AutoScrollMinSize = New-Object System.Drawing.Size(0, 940)
+    $form.AutoScrollMinSize = New-Object System.Drawing.Size(0, 1020)
     $form.HorizontalScroll.Enabled = $false
     $form.HorizontalScroll.Visible = $false
 
@@ -961,6 +965,8 @@ function Show-InteractiveInstallerControlPanel {
     $aiCheckedList = New-Object System.Windows.Forms.CheckedListBox
     $aiCheckedList.Location = New-Object System.Drawing.Point(20, 644)
     $aiCheckedList.Size = New-Object System.Drawing.Size(920, 120)
+    $aiCheckedList.IntegralHeight = $false
+    $aiCheckedList.ScrollAlwaysVisible = $true
     $aiCheckedList.CheckOnClick = $true
     foreach ($def in $Definitions) {
         $label = "{0} ({1})" -f ([string]$def.display), ([string]$def.key)
@@ -1343,7 +1349,7 @@ function Show-InteractiveInstallerMenu {
 
     $shouldShow = $InteractiveMenu
     if (-not $shouldShow) {
-        $hasAnyAiFlag = $InstallAiAll -or $InstallAiOpenAIWhisper -or $InstallAiFasterWhisper -or $InstallAiWhisperX -or $InstallAiStableTs -or $InstallAiWhisperTimestamped -or $InstallAiSpeechBrain -or $InstallAiVosk -or $InstallAiAeneas
+        $hasAnyAiFlag = $InstallAiAll -or $InstallAiOpenAIWhisper -or $InstallAiFasterWhisper -or $InstallAiWhisperX -or $InstallAiStableTs -or $InstallAiWhisperTimestamped -or $InstallAiSpeechBrain -or $InstallAiVosk -or $InstallAiAeneas -or $InstallAiXtts
         $usingDefaultMethods = ($PythonInstallMethod -eq "auto" -and $FfmpegInstallMethod -eq "auto" -and $ToolInstallMethod -eq "auto")
         if ($usingDefaultMethods -and -not $hasAnyAiFlag -and -not $SkipAiSelectionPrompt) {
             $shouldShow = $true
@@ -1737,6 +1743,7 @@ function Get-AiBackendDefinitions {
         @{ key = "speechbrain"; display = "SpeechBrain"; import = "speechbrain"; packages = @("speechbrain", "soundfile", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
         @{ key = "vosk"; display = "Vosk"; import = "vosk"; packages = @("vosk", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
         @{ key = "aeneas"; display = "Aeneas"; import = "aeneas"; packages = @("aeneas", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
+        @{ key = "xtts"; display = "XTTS-v2 (Coqui voice cloning)"; import = "TTS"; probe_code = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; print('ok')"; packages = @("numpy<2.0.0", "pandas<2.0.0", "TTS") + $voiceTranslationPackages; needs_vcredist = $true }
     )
 }
 
@@ -1762,6 +1769,7 @@ function Get-AiBackendSelectionFromFlags {
         "speechbrain" = [bool]$InstallAiSpeechBrain
         "vosk" = [bool]$InstallAiVosk
         "aeneas" = [bool]$InstallAiAeneas
+        "xtts" = [bool]$InstallAiXtts
     }
 
     foreach ($entry in $flagMap.GetEnumerator()) {
@@ -1820,8 +1828,27 @@ function Get-InstalledAiBackends {
     $installed = @()
     $probePrevErrorAction = $ErrorActionPreference
     foreach ($def in $Definitions) {
-        $importName = [string]$def.import
-        $probeCode = "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$importName') is not None else 1)"
+        if ([string]$def.key -eq "xtts") {
+            $xttsPython = Join-Path $xttsVenvPath "Scripts\python.exe"
+            if (Test-Path $xttsPython) {
+                $xttsProbe = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; print('ok')"
+                $ErrorActionPreference = 'Continue'
+                $probe = & $xttsPython -c $xttsProbe 2>$null
+                $ErrorActionPreference = $probePrevErrorAction
+                if ($LASTEXITCODE -eq 0 -and $probe -match "ok") {
+                    $installed += "xtts"
+                    continue
+                }
+            }
+            continue
+        }
+        $probeCode = [string]$def.probe_code
+        if ([string]::IsNullOrWhiteSpace($probeCode)) {
+            $importName = [string]$def.import
+            $probeCode = "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$importName') is not None else 1)"
+        } else {
+            $probeCode = "import warnings; warnings.filterwarnings('ignore'); $probeCode"
+        }
         $ErrorActionPreference = 'Continue'
         & $PythonExe -c $probeCode 2>$null | Out-Null
         $ErrorActionPreference = $probePrevErrorAction
@@ -2027,7 +2054,9 @@ function Set-EspeakNgForAeneas {
             }
         }
 
-        Write-Host " ready (espeak.lib generated)" -ForegroundColor Green
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "OK" -NoNewline -ForegroundColor Green
+        Write-Host " ]" -ForegroundColor White
         return $true
 
     } catch {
@@ -2051,6 +2080,12 @@ function Install-AiBackends {
     $selectedDefs = @($Definitions | Where-Object { $selectedSet.ContainsKey([string]$_.key) })
     if ($selectedDefs.Count -eq 0) {
         return @{ installed = @(); failed = @(); attempted_packages = @() }
+    }
+
+    $selectedKeys = @($selectedDefs | ForEach-Object { [string]$_.key })
+    if ($selectedKeys -contains "xtts" -and $selectedKeys -contains "whisperx") {
+        Write-Host "WARNING: XTTS and WhisperX currently have conflicting numpy/pandas requirements in a single venv." -ForegroundColor Yellow
+        Write-Host "         Installer will prioritize XTTS compatibility; WhisperX may be marked as not ready." -ForegroundColor DarkYellow
     }
 
     $packageInstallOrder = New-Object System.Collections.Generic.List[string]
@@ -2089,6 +2124,11 @@ function Install-AiBackends {
     foreach ($pkg in $packageInstallOrder) {
         Write-Host "  Installing $pkg..." -NoNewline -ForegroundColor Gray
         $pkgExtraArgs = @()
+        if ($pkg -like "numpy<*" -or $pkg -like "pandas<*") {
+            # Prevent stale wheel artifacts from leaving an ABI-mismatched numpy/pandas pair.
+            $pkgExtraArgs += "--force-reinstall"
+            $pkgExtraArgs += "--no-cache-dir"
+        }
         if ($pkg -eq "aeneas") {
             $pkgExtraArgs += "--no-build-isolation"
             if ($aeneasNoCew) {
@@ -2122,8 +2162,13 @@ function Install-AiBackends {
     $failedBackends = @()
     $probePrevErrorAction = $ErrorActionPreference
     foreach ($def in $selectedDefs) {
-        $importName = [string]$def.import
-        $checkCode = "import warnings,importlib,sys; warnings.filterwarnings('ignore'); importlib.import_module('$importName'); print('ok')"
+        $checkCode = [string]$def.probe_code
+        if ([string]::IsNullOrWhiteSpace($checkCode)) {
+            $importName = [string]$def.import
+            $checkCode = "import warnings,importlib,sys; warnings.filterwarnings('ignore'); importlib.import_module('$importName'); print('ok')"
+        } else {
+            $checkCode = "import warnings; warnings.filterwarnings('ignore'); $checkCode"
+        }
         $ErrorActionPreference = 'Continue'
         $probe = & $PythonExe -c $checkCode 2>$null
         $ErrorActionPreference = $probePrevErrorAction
@@ -2190,6 +2235,120 @@ sys.exit(0 if ok else 1)
     }
     $ErrorActionPreference = $probePrevErrorAction
     return $false
+}
+
+function Install-XttsDedicatedEnvironment {
+    param(
+        [string]$BasePythonCmd,
+        [string]$XttsVenvPath
+    )
+
+    Write-Host "Setting up dedicated XTTS environment (venv_xtts)..." -ForegroundColor White
+
+    $createXttsVenv = $true
+    if (Test-Path $XttsVenvPath) {
+        $existingXttsPython = Join-Path $XttsVenvPath "Scripts\python.exe"
+        if (Test-Path $existingXttsPython) {
+            $existingVersion = & $existingXttsPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $existingVersion -match '^3\.(10|11|12)$') {
+                $createXttsVenv = $false
+            } else {
+                Remove-Item -Path $XttsVenvPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Remove-Item -Path $XttsVenvPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($createXttsVenv) {
+        Invoke-Expression "$BasePythonCmd -m venv `"$XttsVenvPath`"" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            return @{ success = $false; reason = "failed to create venv_xtts"; python = "" }
+        }
+    }
+
+    $xttsPython = Join-Path $XttsVenvPath "Scripts\python.exe"
+    if (-not (Test-Path $xttsPython)) {
+        return @{ success = $false; reason = "venv_xtts python.exe missing"; python = "" }
+    }
+
+    $verifyCode = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; from transformers import BeamSearchScorer; print('ok')"
+    if (-not $createXttsVenv) {
+        $torchVersionCode = "import torch; print(getattr(torch, '__version__', '0'))"
+        $torchaudioVersionCode = "import torchaudio; print(getattr(torchaudio, '__version__', '0'))"
+        $probePrevErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $torchVersionRaw = (& $xttsPython -c $torchVersionCode 2>$null | Select-Object -First 1)
+        $torchaudioVersionRaw = (& $xttsPython -c $torchaudioVersionCode 2>$null | Select-Object -First 1)
+        $ErrorActionPreference = $probePrevErrorAction
+
+        $torchMajor = 0
+        $torchMinor = 0
+        if ($torchVersionRaw -match '^(\d+)\.(\d+)') {
+            $torchMajor = [int]$matches[1]
+            $torchMinor = [int]$matches[2]
+        }
+
+        $torchCompatible = ($torchMajor -lt 2) -or ($torchMajor -eq 2 -and $torchMinor -lt 6)
+
+        $torchaudioMajor = 0
+        $torchaudioMinor = 0
+        if ($torchaudioVersionRaw -match '^(\d+)\.(\d+)') {
+            $torchaudioMajor = [int]$matches[1]
+            $torchaudioMinor = [int]$matches[2]
+        }
+        $torchaudioCompatible = ($torchaudioMajor -lt 2) -or ($torchaudioMajor -eq 2 -and $torchaudioMinor -lt 6)
+
+        if (-not $torchCompatible) {
+            Write-Host "Existing venv_xtts has torch $torchVersionRaw (requires <2.6 for XTTS compatibility). Reinstalling XTTS env packages..." -ForegroundColor Yellow
+        }
+        if (-not $torchaudioCompatible) {
+            Write-Host "Existing venv_xtts has torchaudio $torchaudioVersionRaw (requires <2.6 for XTTS compatibility). Reinstalling XTTS env packages..." -ForegroundColor Yellow
+        }
+
+        $probePrevErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $existingProbe = & $xttsPython -c $verifyCode 2>$null
+        $ErrorActionPreference = $probePrevErrorAction
+        if ($torchCompatible -and $torchaudioCompatible -and $LASTEXITCODE -eq 0 -and $existingProbe -match "ok") {
+            return @{ success = $true; reason = "already_ready"; python = $xttsPython; reused = $true }
+        }
+    }
+
+    $null = Invoke-PipInstall -PythonExe $xttsPython -Packages @("pip", "setuptools", "wheel") -Upgrade
+
+    $xttsPackages = @(
+        "torch<2.6.0",
+        "torchaudio<2.6.0",
+        "numpy<2.0.0",
+        "pandas<2.0.0",
+        "transformers<4.40.0",
+        "TTS",
+        "deep-translator",
+        "edge-tts"
+    )
+
+    foreach ($pkg in $xttsPackages) {
+        $extraArgs = @()
+        if ($pkg -like "torch<*" -or $pkg -like "torchaudio<*" -or $pkg -like "numpy<*" -or $pkg -like "pandas<*" -or $pkg -like "transformers<*") {
+            $extraArgs += "--force-reinstall"
+            $extraArgs += "--no-cache-dir"
+        }
+        $exitCode = Invoke-PipInstall -PythonExe $xttsPython -Packages @($pkg) -ExtraArgs $extraArgs
+        if ($exitCode -ne 0) {
+            return @{ success = $false; reason = "failed installing $pkg in venv_xtts"; python = $xttsPython }
+        }
+    }
+
+    $probePrevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $probe = & $xttsPython -c $verifyCode 2>$null
+    $ErrorActionPreference = $probePrevErrorAction
+    if ($LASTEXITCODE -ne 0 -or $probe -notmatch "ok") {
+        return @{ success = $false; reason = "XTTS import verification failed in venv_xtts"; python = $xttsPython; reused = $false }
+    }
+
+    return @{ success = $true; reason = ""; python = $xttsPython; reused = $false }
 }
 
 function Test-VCRedist {
@@ -3707,6 +3866,7 @@ $requirementsPath = Join-Path $scriptDir "requirements.txt"
 $ffmpegInstallerPath = Join-Path $scriptDir "install_ffmpeg_windows.ps1"
 $subtitleToolPath = Join-Path $scriptDir "subtitle_tool.py"
 $venvPath = Join-Path $scriptDir "venv"
+$xttsVenvPath = Join-Path $scriptDir "venv_xtts"
 $manifestPath = Join-Path $scriptDir ".install_manifest.json"
 $installLogPath = Join-Path $scriptDir "install_all_windows.log"
 
@@ -3821,6 +3981,7 @@ if ($script:RequestedUninstallAI) {
             "openai-whisper", "whisper", "pysubs2",
             "faster-whisper", "whisperx", "stable-ts", "whisper-timestamped",
             "speechbrain", "vosk", "aeneas",
+            "TTS", "coqpit", "trainer",
             "deep-translator", "edge-tts",
             "cinemagoer", "imdbpy"
         )
@@ -4783,7 +4944,26 @@ if ($selectedAiBackends.Count -gt 0) {
     }
 
     Write-VerboseLogBanner "Installing AI backend packages"
-    $aiInstallResult = Install-AiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions -SelectedBackends $selectedAiBackends
+    $installXttsDedicated = $selectedSet.ContainsKey("xtts")
+    $mainAiBackends = @($selectedAiBackends | Where-Object { $_ -ne "xtts" })
+
+    $aiInstallResult = Install-AiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions -SelectedBackends $mainAiBackends
+
+    if ($installXttsDedicated) {
+        $xttsInstallResult = Install-XttsDedicatedEnvironment -BasePythonCmd $pythonCmd -XttsVenvPath $xttsVenvPath
+        if ([bool]$xttsInstallResult.success) {
+            $aiInstallResult.installed = @($aiInstallResult.installed + @("xtts") | Select-Object -Unique)
+            if ([bool]$xttsInstallResult.reused) {
+                Write-Host "XTTS dedicated environment already ready (skipped install): $([string]$xttsInstallResult.python)" -ForegroundColor Green
+            } else {
+                Write-Host "XTTS dedicated environment ready: $([string]$xttsInstallResult.python)" -ForegroundColor Green
+            }
+        } else {
+            $aiInstallResult.failed = @($aiInstallResult.failed + @("xtts") | Select-Object -Unique)
+            Write-Host "XTTS dedicated environment failed: $([string]$xttsInstallResult.reason)" -ForegroundColor Yellow
+        }
+    }
+
     $script:PipBackendForAI = if ($script:LastPackageInstallBackendUsed) { $script:LastPackageInstallBackendUsed } else { "unknown" }
     $script:InstalledAiBackends = @($aiInstallResult.installed)
     $script:FailedAiBackends = @($aiInstallResult.failed)
@@ -5187,15 +5367,30 @@ $aiBackendChecks = @(
     @{label = "whisper-timestamped"; import = "whisper_timestamped"},
     @{label = "SpeechBrain"; import = "speechbrain"},
     @{label = "Vosk"; import = "vosk"},
-    @{label = "Aeneas"; import = "aeneas"}
+    @{label = "Aeneas"; import = "aeneas"},
+    @{label = "XTTS-v2 (Coqui)"; import = "TTS"; probe_code = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS"}
 )
 
 $availableAiBackends = @()
 foreach ($check in $aiBackendChecks) {
     $label = [string]$check.label
-    $moduleName = [string]$check.import
+    $checkPython = $venvPythonCmd
+    if ($label -eq "XTTS-v2 (Coqui)") {
+        $xttsPython = Join-Path $xttsVenvPath "Scripts\python.exe"
+        if (Test-Path $xttsPython) {
+            $checkPython = $xttsPython
+        }
+    }
+    $checkCode = [string]$check.probe_code
+    if ([string]::IsNullOrWhiteSpace($checkCode)) {
+        $moduleName = [string]$check.import
+        $checkCode = "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$moduleName') is not None else 1)"
+    }
     Write-Host "$label backend" -NoNewline -ForegroundColor White
-    & $venvPythonCmd -c "import importlib.util as u,sys; sys.exit(0 if u.find_spec('$moduleName') is not None else 1)" 2>$null | Out-Null
+    $probePrevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $checkPython -c $checkCode 2>$null | Out-Null
+    $ErrorActionPreference = $probePrevErrorAction
     if ($LASTEXITCODE -eq 0) {
         $availableAiBackends += $label
         Write-Host "..." -NoNewline -ForegroundColor White

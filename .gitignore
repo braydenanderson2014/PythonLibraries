@@ -12,6 +12,8 @@ venv/
 **/.venv/
 env/
 **/env/
+venv_xtts/
+**/venv_xtts/
 
 # Installer artifacts
 *.exe

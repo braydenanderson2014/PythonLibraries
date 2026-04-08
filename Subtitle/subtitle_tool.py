@@ -24,6 +24,7 @@ import os
 import random
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -124,9 +125,11 @@ except ImportError:
 try:
     from TTS.api import TTS as _CoquiTTS  # type: ignore[import]
     _COQUI_TTS_AVAILABLE = True
-except (ImportError, Exception):
+    _COQUI_TTS_IMPORT_ERROR = ""
+except (ImportError, Exception) as exc:
     _CoquiTTS = None  # type: ignore[assignment]
     _COQUI_TTS_AVAILABLE = False
+    _COQUI_TTS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 try:
     from imdb import Cinemagoer as _Cinemagoer
@@ -2621,6 +2624,90 @@ class SubtitleProcessor:
             return self._text_to_timestamp_segments(transcript, duration), (language or "")
 
         raise RuntimeError(f"Unsupported transcription backend: {backend}")
+
+    def _translate_to_english_with_backend(
+        self,
+        video: Path,
+        backend: str,
+        model_size: str,
+        source_language: Optional[str],
+        model_cache: Dict[str, object],
+    ) -> Tuple[List[Dict[str, object]], str]:
+        """Use supported Whisper-family backends to translate audio directly to English segments."""
+        if backend == "openai-whisper":
+            if whisper is None:
+                raise RuntimeError("openai-whisper is not installed")
+            model_key = f"openai:{model_size}"
+            model = model_cache.get(model_key)
+            if model is None:
+                self._log(f"Loading openai-whisper model: {model_size}...")
+                model = whisper.load_model(model_size)
+                model_cache[model_key] = model
+
+            options: Dict[str, object] = {"task": "translate"}
+            if source_language:
+                options["language"] = source_language
+            result = model.transcribe(str(video), **options)
+            return self._normalize_backend_segments(result.get("segments", [])), "en"
+
+        if backend == "faster-whisper":
+            module = importlib.import_module("faster_whisper")
+            model_key = f"faster:{model_size}"
+            model = model_cache.get(model_key)
+            if model is None:
+                self._log(f"Loading faster-whisper model: {model_size}...")
+                model = module.WhisperModel(model_size, device="auto", compute_type="int8")
+                model_cache[model_key] = model
+
+            segments_iter, _ = model.transcribe(
+                str(video),
+                language=source_language or None,
+                task="translate",
+            )
+            rows: List[Dict[str, object]] = []
+            for seg in segments_iter:
+                rows.append({"start": float(seg.start), "end": float(seg.end), "text": str(seg.text).strip()})
+            return self._normalize_backend_segments(rows), "en"
+
+        if backend == "stable-ts":
+            module = importlib.import_module("stable_whisper")
+            model_key = f"stable:{model_size}"
+            model = model_cache.get(model_key)
+            if model is None:
+                self._log(f"Loading stable-ts model: {model_size}...")
+                model = module.load_model(model_size)
+                model_cache[model_key] = model
+
+            result = model.transcribe(str(video), task="translate", language=source_language or None)
+            rows: List[Dict[str, object]] = []
+            for seg in getattr(result, "segments", []) or []:
+                rows.append(
+                    {
+                        "start": float(getattr(seg, "start", 0.0)),
+                        "end": float(getattr(seg, "end", 0.0)),
+                        "text": str(getattr(seg, "text", "")).strip(),
+                    }
+                )
+            return self._normalize_backend_segments(rows), "en"
+
+        if backend == "whisper-timestamped":
+            if whisper is None:
+                raise RuntimeError("openai-whisper is required for whisper-timestamped")
+            wt_module = importlib.import_module("whisper_timestamped")
+            model_key = f"wts:{model_size}"
+            model = model_cache.get(model_key)
+            if model is None:
+                self._log(f"Loading whisper-timestamped base model: {model_size}...")
+                model = whisper.load_model(model_size)
+                model_cache[model_key] = model
+
+            result = wt_module.transcribe(model, str(video), task="translate", language=source_language or None)
+            return self._normalize_backend_segments(result.get("segments", [])), "en"
+
+        raise RuntimeError(
+            "Selected AI backend does not support direct translation; "
+            "use openai-whisper, faster-whisper, stable-ts, or whisper-timestamped"
+        )
     
     def generate_subtitles(
         self,
@@ -2992,6 +3079,8 @@ class SubtitleProcessor:
 
         module = importlib.import_module("deep_translator")
         translator_key = (translator_model or "google").strip().lower()
+        if translator_key == "subtitle-backend":
+            translator_key = "google"
         if translator_key == "mymemory":
             if source == "auto":
                 raise RuntimeError("MyMemory translator requires explicit source language; set language hint or use Google")
@@ -3184,11 +3273,21 @@ class SubtitleProcessor:
         language: str,
         output_path: Path,
         temp_dir: str,
+        license_confirmed: bool = False,
     ) -> None:
-        if _CoquiTTS is None:
+        xtts_worker_python = os.getenv("SUBTITLE_XTTS_PYTHON", "").strip()
+        if not xtts_worker_python:
+            candidate = Path(__file__).resolve().parent / "venv_xtts" / "Scripts" / "python.exe"
+            if candidate.exists():
+                xtts_worker_python = str(candidate)
+
+        use_worker = bool(xtts_worker_python)
+        if not use_worker and _CoquiTTS is None:
+            details = f" Import error: {_COQUI_TTS_IMPORT_ERROR}" if _COQUI_TTS_IMPORT_ERROR else ""
             raise RuntimeError(
                 "Coqui TTS is not installed. Run: pip install TTS "
                 "(XTTS-v2 downloads a large model on first use)."
+                f"{details}"
             )
 
         lang = self._normalize_translation_language(language) or "en"
@@ -3227,8 +3326,14 @@ class SubtitleProcessor:
             fallback_start = max(0.0, min(total_duration - 6.0, total_duration * 0.2))
         self._extract_audio_reference_clip(source_video, fallback_ref, fallback_start, 6.0)
 
-        self._log("  Loading XTTS-v2 model for line-by-line voice/emotion matching...")
-        tts = _CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2")
+        tts = None
+        if use_worker:
+            self._log(
+                f"  Using dedicated XTTS worker Python: {xtts_worker_python}"
+            )
+        else:
+            self._log("  Loading XTTS-v2 model for line-by-line voice/emotion matching...")
+            tts = _CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2")
 
         concat_entries: List[Path] = []
         cursor = 0.0
@@ -3265,12 +3370,53 @@ class SubtitleProcessor:
             self._log(
                 f"  XTTS line {idx + 1}: cloning voice/emotion from {start:0.2f}s-{end:0.2f}s"
             )
-            tts.tts_to_file(
-                text=text,
-                speaker_wav=str(speaker_ref),
-                language=xtts_lang,
-                file_path=str(raw_segment_path),
-            )
+            if use_worker:
+                worker_script = Path(__file__).resolve().parent / "xtts_worker.py"
+                if not worker_script.exists():
+                    raise RuntimeError(f"XTTS worker script not found: {worker_script}")
+
+                cmd = [
+                    xtts_worker_python,
+                    str(worker_script),
+                    "--text",
+                    text,
+                    "--speaker-wav",
+                    str(speaker_ref),
+                    "--language",
+                    xtts_lang,
+                    "--output",
+                    str(raw_segment_path),
+                ]
+                consent_via_env = os.getenv("SUBTITLE_XTTS_ACCEPT_CPML", "").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "y",
+                }
+                provide_license_input = license_confirmed or consent_via_env
+                run = subprocess.run(
+                    cmd,
+                    input=("y\n" if provide_license_input else None),
+                    text=True,
+                    capture_output=True,
+                )
+                if run.returncode != 0:
+                    stderr_tail = (run.stderr or "").strip()[-1200:]
+                    stdout_tail = (run.stdout or "").strip()[-1200:]
+                    details = stderr_tail or stdout_tail or "XTTS worker failed"
+                    if ("CPML" in details or "commercial license" in details) and not provide_license_input:
+                        raise RuntimeError(
+                            "XTTS license confirmation is required. Re-run with UI confirmation or set "
+                            "SUBTITLE_XTTS_ACCEPT_CPML=1."
+                        )
+                    raise RuntimeError(f"XTTS worker failed: {details}")
+            else:
+                tts.tts_to_file(
+                    text=text,
+                    speaker_wav=str(speaker_ref),
+                    language=xtts_lang,
+                    file_path=str(raw_segment_path),
+                )
             self._fit_audio_to_target_duration(raw_segment_path, fitted_segment_path, target_duration)
             concat_entries.append(fitted_segment_path)
             cursor = max(cursor, end)
@@ -3361,6 +3507,7 @@ class SubtitleProcessor:
         prefer_english_subtitles: bool = True,
         translator_model: str = "google",
         reproducer_model: str = "auto",
+        xtts_license_confirmed: bool = False,
         overwrite: bool = False,
         output_suffix: str = "_translated_dub",
         output_root: Optional[str] = None,
@@ -3399,6 +3546,7 @@ class SubtitleProcessor:
                 base_segments: List[Dict[str, object]] = []
                 segment_source = "audio-transcription"
                 detected_lang: Optional[str] = (source_language or "").strip().lower() or None
+                translator_key = (translator_model or "google").strip().lower()
 
                 english_subtitle_path: Optional[Path] = None
                 if prefer_english_subtitles:
@@ -3431,12 +3579,45 @@ class SubtitleProcessor:
                 if not base_segments:
                     raise RuntimeError("No source segments available for translation")
 
-                translated_segments = self._translate_segments(
-                    segments=base_segments,
-                    target_language=target_lang,
-                    source_language=detected_lang,
-                    translator_model=translator_model,
-                )
+                translated_segments: List[Dict[str, object]] = []
+                if translator_key == "subtitle-backend" and english_subtitle_path is None:
+                    try:
+                        self._log("  Using subtitle AI backend translation (audio -> English)...")
+                        backend_translated_segments, _ = self._translate_to_english_with_backend(
+                            video=video,
+                            backend=selected_backend,
+                            model_size=model_size,
+                            source_language=source_language,
+                            model_cache=model_cache,
+                        )
+                        if not backend_translated_segments:
+                            raise RuntimeError("backend translation returned no segments")
+
+                        if target_lang == "en":
+                            translated_segments = backend_translated_segments
+                            segment_source = f"{segment_source}+backend-translate"
+                        else:
+                            self._log(
+                                "  Backend translation is English-only; translating English output to "
+                                f"{target_lang} with Google"
+                            )
+                            translated_segments = self._translate_segments(
+                                segments=backend_translated_segments,
+                                target_language=target_lang,
+                                source_language="en",
+                                translator_model="google",
+                            )
+                            segment_source = f"{segment_source}+backend-translate+google"
+                    except Exception as exc:
+                        self._log(f"  Backend translator unavailable: {exc}; falling back to text translation")
+
+                if not translated_segments:
+                    translated_segments = self._translate_segments(
+                        segments=base_segments,
+                        target_language=target_lang,
+                        source_language=detected_lang,
+                        translator_model=translator_model,
+                    )
                 if not translated_segments:
                     raise RuntimeError("Translation produced no segments")
 
@@ -3456,6 +3637,14 @@ class SubtitleProcessor:
                 output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
                 with tempfile.TemporaryDirectory(prefix="tts_dub_", dir=str(self._get_temp_workspace_root())) as temp_dir:
                     use_xtts = (reproducer_model or "auto").lower() == "xtts"
+                    if use_xtts and _CoquiTTS is None:
+                        details = f" Import error: {_COQUI_TTS_IMPORT_ERROR}" if _COQUI_TTS_IMPORT_ERROR else ""
+                        self._log(
+                            "  XTTS-v2 requested but Coqui TTS is not installed; "
+                            "falling back to Edge TTS. Install with: pip install TTS"
+                            f"{details}"
+                        )
+                        use_xtts = False
                     if use_xtts:
                         dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.wav"
                         self._log("  Synthesizing translated speech with line-by-line voice intent matching...")
@@ -3465,10 +3654,13 @@ class SubtitleProcessor:
                             language=target_lang,
                             output_path=dubbed_audio_path,
                             temp_dir=temp_dir,
+                            license_confirmed=xtts_license_confirmed,
                         )
                     else:
                         dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
                         edge_voice_name = (reproducer_model or "auto").removeprefix("edge:")
+                        if edge_voice_name.strip().lower() == "xtts":
+                            edge_voice_name = "auto"
                         voice = self._pick_edge_tts_voice(target_lang, reproducer_model=edge_voice_name)
                         rate = self._estimate_edge_tts_rate(translated_segments)
                         self._log(f"  Synthesizing translated speech (Edge TTS voice={voice}, rate={rate})...")
@@ -5516,6 +5708,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         prefer_english_subtitles=bool(self.options.get("prefer_english_subtitles", True)),
                         translator_model=str(self.options.get("translator_model", "google")),
                         reproducer_model=str(self.options.get("reproducer_model", "auto")),
+                        xtts_license_confirmed=bool(self.options.get("xtts_license_confirmed", False)),
                         overwrite=overwrite,
                         output_suffix=str(self.options.get("output_suffix", "_translated_dub")),
                         output_root=str(self.options.get("output_root", "")).strip() or None,
@@ -6134,8 +6327,12 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.translate_model_combo = QComboBox()
                 self.translate_model_combo.addItem("Google", "google")
                 self.translate_model_combo.addItem("MyMemory", "mymemory")
+                self.translate_model_combo.addItem("Subtitle backend (Whisper-family audio->English)", "subtitle-backend")
                 self.translate_model_combo.setToolTip(
-                    "Select translation model/provider used before speech synthesis."
+                    "Select translation model/provider used before speech synthesis.\n\n"
+                    "Subtitle backend mode uses supported Whisper-family AI backends to translate audio to English "
+                    "directly. If your target language is not English, it then translates English to the target "
+                    "with Google."
                 )
                 translation_options.addWidget(self.translate_model_combo)
 
@@ -6492,14 +6689,55 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             )
             dep_check = probe.check_dependencies()
 
+            xtts_worker_env = os.getenv("SUBTITLE_XTTS_PYTHON", "").strip()
+            xtts_worker_candidate = Path(__file__).resolve().parent / "venv_xtts" / "Scripts" / "python.exe"
+            xtts_worker_python = xtts_worker_env or (str(xtts_worker_candidate) if xtts_worker_candidate.exists() else "")
+            xtts_worker_script = Path(__file__).resolve().parent / "xtts_worker.py"
+
+            xtts_ready = False
+            xtts_reason = "not configured"
+            if xtts_worker_python:
+                try:
+                    probe_run = subprocess.run(
+                        [
+                            xtts_worker_python,
+                            "-c",
+                            "from TTS.api import TTS as _TTS; from transformers import BeamSearchScorer; print('ok')",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=25,
+                    )
+                    if probe_run.returncode == 0 and "ok" in (probe_run.stdout or ""):
+                        xtts_ready = True
+                        xtts_reason = "ready"
+                    else:
+                        stderr_tail = (probe_run.stderr or "").strip()
+                        stdout_tail = (probe_run.stdout or "").strip()
+                        xtts_reason = stderr_tail or stdout_tail or f"exit {probe_run.returncode}"
+                except Exception as exc:
+                    xtts_reason = f"probe failed: {exc}"
+            else:
+                xtts_reason = "SUBTITLE_XTTS_PYTHON not set and venv_xtts not found"
+
             lines = [
                 f"FFmpeg: {'FOUND' if dep_check.get('ffmpeg_found') else 'MISSING'}  ({dep_check.get('ffmpeg_path') or ffmpeg_bin})",
                 f"FFprobe: {'FOUND' if dep_check.get('ffprobe_found') else 'MISSING'}  ({dep_check.get('ffprobe_path') or ffprobe_bin})",
                 f"MKVToolNix (mkvmerge): {'FOUND' if dep_check.get('mkvmerge_found') else 'MISSING'}  ({dep_check.get('mkvmerge_path') or mkvmerge_bin})",
                 f"HandBrakeCLI: {'FOUND' if dep_check.get('handbrake_found') else 'MISSING'}  ({dep_check.get('handbrake_path') or handbrake_bin})",
                 f"MakeMKV (makemkvcon): {'FOUND' if dep_check.get('makemkv_found') else 'MISSING'}  ({dep_check.get('makemkv_path') or makemkv_bin})",
+                "",
+                f"Main Python: {sys.executable}",
+                f"XTTS worker Python: {xtts_worker_python or '(not found)'}",
+                f"XTTS worker script: {'FOUND' if xtts_worker_script.exists() else 'MISSING'}  ({xtts_worker_script})",
+                f"XTTS readiness: {'READY' if xtts_ready else 'NOT READY'}",
+                f"XTTS detail: {xtts_reason}",
             ]
             self.tool_status_box.setPlainText("\n".join(lines))
+
+            dep_check["xtts_worker_python"] = xtts_worker_python
+            dep_check["xtts_ready"] = xtts_ready
+            dep_check["xtts_reason"] = xtts_reason
 
             if log_missing:
                 if not dep_check["ffmpeg_found"]:
@@ -6807,7 +7045,26 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     if self.reproducer_model_combo
                     else "auto"
                 )
+                options["xtts_license_confirmed"] = False
                 options["output_suffix"] = "_translated_dub"
+
+                if str(options["reproducer_model"]).strip().lower() == "xtts":
+                    license_reply = QMessageBox.question(
+                        self,
+                        "XTTS Model License",
+                        "XTTS-v2 requires accepting the Coqui model license before first download/use.\n\n"
+                        "Please confirm one of the following:\n"
+                        "- You purchased a commercial Coqui license, or\n"
+                        "- You agree to the non-commercial CPML terms.\n\n"
+                        "Open license: https://coqui.ai/cpml\n\n"
+                        "Proceed with XTTS under these terms?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if license_reply != QMessageBox.StandardButton.Yes:
+                        self._log("XTTS run cancelled: license terms not confirmed.")
+                        return
+                    options["xtts_license_confirmed"] = True
 
                 use_subs_pref = bool(
                     self.translate_use_english_subs_checkbox.isChecked()
