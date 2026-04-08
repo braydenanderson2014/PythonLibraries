@@ -112,6 +112,16 @@ except ImportError:
     pysubs2 = None  # type: ignore[assignment]
 
 try:
+    from PIL import Image, ImageEnhance, ImageOps
+except ImportError:
+    Image = None  # type: ignore[assignment]
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None  # type: ignore[assignment]
+
+try:
     from imdb import Cinemagoer as _Cinemagoer
     _CINEMAGOER_AVAILABLE = True
 except ImportError:
@@ -234,6 +244,13 @@ TEXT_SUBTITLE_CODECS = {
     "text",
     "ttml",
 }
+IMAGE_SUBTITLE_CODECS = {
+    "dvd_subtitle",
+    "hdmv_pgs_subtitle",
+    "pgs",
+    "xsub",
+    "dvb_subtitle",
+}
 SUBTITLE_CODEC_EXT = {
     "subrip": ".srt",
     "ass": ".ass",
@@ -303,6 +320,8 @@ class ScanRecord:
     path: str
     embedded_subtitle_streams: int
     sidecar_subtitles: List[str]
+    image_based_subtitle_streams: int = 0
+    subtitle_stream_details: List[Dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -335,6 +354,7 @@ class SubtitleProcessor:
         makemkvcon_bin: Optional[str] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         use_hw_accel: bool = False,
+        log_to_console: bool = False,
         command_feedback: str = "normal",
         ffmpeg_loglevel: str = "warning",
         ffprobe_loglevel: str = "error",
@@ -346,6 +366,7 @@ class SubtitleProcessor:
         self.makemkvcon_bin = makemkvcon_bin or "makemkvcon"
         self.log_callback = log_callback
         self.use_hw_accel = use_hw_accel
+        self.log_to_console = bool(log_to_console)
         self.command_feedback = (
             command_feedback if command_feedback in COMMAND_FEEDBACK_LEVELS else "normal"
         )
@@ -358,6 +379,8 @@ class SubtitleProcessor:
     def _log(self, message: str) -> None:
         if self.log_callback:
             self.log_callback(message)
+        if self.log_to_console:
+            print(f"[log] {message}", flush=True)
 
     def _hw_accel_flags(self) -> List[str]:
         """Return ffmpeg hardware acceleration flags when enabled."""
@@ -1028,6 +1051,25 @@ class SubtitleProcessor:
             return ".srt"
         return SUBTITLE_CODEC_EXT.get(codec_name.lower(), ".srt")
 
+    def _is_image_subtitle_codec(self, codec_name: Optional[str]) -> bool:
+        return (codec_name or "").lower() in IMAGE_SUBTITLE_CODECS
+
+    def _subtitle_stream_detail(self, stream: Dict[str, object]) -> Dict[str, object]:
+        codec_name = str(stream.get("codec_name") or "").strip().lower()
+        tags = stream.get("tags") or {}
+        language = ""
+        title = ""
+        if isinstance(tags, dict):
+            language = str(tags.get("language") or "").strip().lower()
+            title = str(tags.get("title") or "").strip()
+        return {
+            "index": int(stream.get("index") or -1),
+            "codec": codec_name or "unknown",
+            "language": language,
+            "title": title,
+            "is_image_based": self._is_image_subtitle_codec(codec_name),
+        }
+
     def _is_text_subtitle_codec(self, codec_name: Optional[str]) -> bool:
         return (codec_name or "").lower() in TEXT_SUBTITLE_CODECS
 
@@ -1109,11 +1151,15 @@ class SubtitleProcessor:
             if only_with_embedded and not streams:
                 continue
             sidecars = self._find_sidecar_subtitles(video)
+            stream_details = [self._subtitle_stream_detail(s) for s in streams]
+            image_count = sum(1 for s in stream_details if bool(s.get("is_image_based")))
             output.append(
                 ScanRecord(
                     path=str(video),
                     embedded_subtitle_streams=len(streams),
                     sidecar_subtitles=[str(p) for p in sidecars],
+                    image_based_subtitle_streams=image_count,
+                    subtitle_stream_details=stream_details,
                 )
             )
         return output
@@ -1196,9 +1242,12 @@ class SubtitleProcessor:
             skipped_count = 0
             failed_count = 0
             txt_count = 0
+            image_stream_count = 0
 
             for stream_idx, stream in enumerate(streams):
                 codec_name = str(stream.get("codec_name") or "")
+                if self._is_image_subtitle_codec(codec_name):
+                    image_stream_count += 1
                 tags = stream.get("tags") or {}
                 language = ""
                 if isinstance(tags, dict):
@@ -1247,6 +1296,8 @@ class SubtitleProcessor:
             if extracted_count > 0:
                 summary.processed += 1
                 reason = f"extracted {extracted_count} subtitle stream(s)"
+                if image_stream_count:
+                    reason += f", image-based detected {image_stream_count}"
                 if txt_count:
                     reason += f", wrote {txt_count} .txt file(s)"
                 if skipped_count:
@@ -1261,7 +1312,10 @@ class SubtitleProcessor:
                 )
             else:
                 summary.failed += 1
-                summary.details.append({"file": str(video), "status": "failed", "reason": "extraction failed"})
+                fail_reason = "extraction failed"
+                if image_stream_count:
+                    fail_reason += f" (image-based detected: {image_stream_count})"
+                summary.details.append({"file": str(video), "status": "failed", "reason": fail_reason})
 
         return summary
 
@@ -2629,14 +2683,22 @@ class SubtitleProcessor:
                 continue
             
             try:
-                self._log(f"  Transcribing audio with {selected_backend}...")
-                segments, detected_lang = self._transcribe_with_backend(
-                    video=video,
-                    backend=selected_backend,
-                    model_size=model_size,
-                    language=language,
-                    model_cache=model_cache,
-                )
+                script_segments, script_source, script_path = self._build_script_segments_from_existing_subtitles(video)
+                if script_segments:
+                    self._log(f"  Using existing subtitle script source: {script_source}")
+                    if script_path is not None:
+                        self._log(f"  Script saved to: {script_path.name}")
+                    segments = self._normalize_backend_segments(script_segments)
+                    detected_lang = (language or "").strip().lower() or "unknown"
+                else:
+                    self._log(f"  Transcribing audio with {selected_backend}...")
+                    segments, detected_lang = self._transcribe_with_backend(
+                        video=video,
+                        backend=selected_backend,
+                        model_size=model_size,
+                        language=language,
+                        model_cache=model_cache,
+                    )
                 if not segments:
                     raise RuntimeError("transcription backend returned no segments")
                 
@@ -2719,6 +2781,175 @@ class SubtitleProcessor:
             )
         return rows
 
+    @staticmethod
+    def _clean_ocr_text(text: str) -> str:
+        cleaned = re.sub(r"\s+", " ", (text or "").strip())
+        if not cleaned:
+            return ""
+        cleaned = re.sub(r"^[\W_]+|[\W_]+$", "", cleaned)
+        if len(cleaned) < 2:
+            return ""
+        alnum = sum(1 for c in cleaned if c.isalnum())
+        if alnum == 0:
+            return ""
+        if (alnum / max(1, len(cleaned))) < 0.35:
+            return ""
+        return cleaned
+
+    def _segments_from_video_ocr(
+        self,
+        video: Path,
+        sample_fps: float = 0.5,
+    ) -> List[Dict[str, object]]:
+        if Image is None or pytesseract is None:
+            raise RuntimeError("OCR dependencies missing (install pillow and pytesseract)")
+
+        fps = max(0.2, float(sample_fps))
+        with tempfile.TemporaryDirectory(prefix="subtitle_ocr_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+            frames_dir = Path(temp_dir) / "frames"
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            frame_pattern = frames_dir / "frame_%06d.png"
+
+            cmd = [
+                self.ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                self.ffmpeg_loglevel,
+                "-nostats",
+                "-i",
+                str(video),
+                "-vf",
+                f"fps={fps}",
+                str(frame_pattern),
+            ]
+            result = self._run_command(cmd, description="extract frames for subtitle OCR")
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "ffmpeg frame extraction failed for OCR")
+
+            frame_files = sorted(frames_dir.glob("frame_*.png"))
+            if not frame_files:
+                return []
+
+            rows: List[Dict[str, object]] = []
+            for idx, frame in enumerate(frame_files):
+                try:
+                    img = Image.open(frame)
+                    w, h = img.size
+                    # Subtitles are usually in lower part of the frame.
+                    crop = img.crop((0, int(h * 0.58), w, h))
+                    gray = ImageOps.grayscale(crop)
+                    gray = ImageEnhance.Contrast(gray).enhance(2.2)
+                    bw = gray.point(lambda p: 255 if p > 165 else 0)
+                    text = str(
+                        pytesseract.image_to_string(  # type: ignore[attr-defined]
+                            bw,
+                            config="--psm 6",
+                        )
+                        or ""
+                    )
+                except Exception:
+                    continue
+
+                cleaned = self._clean_ocr_text(text)
+                if not cleaned:
+                    continue
+
+                start = idx / fps
+                end = start + max(1.5, 1.0 / fps)
+                if rows and str(rows[-1].get("text") or "") == cleaned:
+                    rows[-1]["end"] = end
+                    continue
+
+                rows.append({"start": start, "end": end, "text": cleaned})
+
+            # Bound segment ends to the next segment start for cleaner script timing.
+            for i in range(len(rows) - 1):
+                rows[i]["end"] = max(
+                    self._safe_float(rows[i].get("start"), 0.0) + 0.2,
+                    min(
+                        self._safe_float(rows[i].get("end"), 0.0),
+                        self._safe_float(rows[i + 1].get("start"), 0.0),
+                    ),
+                )
+            return rows
+
+    def _write_script_from_segments(self, video: Path, segments: List[Dict[str, object]]) -> Optional[Path]:
+        if not segments:
+            return None
+        script_path = video.with_name(f"{video.stem}.script.txt")
+        lines: List[str] = []
+        for seg in segments:
+            start = self._safe_float(seg.get("start"), 0.0)
+            end = self._safe_float(seg.get("end"), start + 0.2)
+            text = str(seg.get("text") or "").strip()
+            if not text:
+                continue
+            lines.append(f"[{start:0.2f}-{end:0.2f}] {text}")
+        if not lines:
+            return None
+        try:
+            script_path.write_text("\n".join(lines), encoding="utf-8")
+            return script_path
+        except OSError:
+            return None
+
+    def _build_script_segments_from_existing_subtitles(self, video: Path) -> Tuple[List[Dict[str, object]], str, Optional[Path]]:
+        # 1) Prefer text sidecar subtitles if present.
+        sidecars = self._find_sidecar_subtitles(video)
+        text_sidecar_exts = {".srt", ".ass", ".ssa", ".vtt", ".ttml"}
+        for sub in sidecars:
+            if sub.suffix.lower() not in text_sidecar_exts:
+                continue
+            try:
+                segments = self._segments_from_subtitle(sub)
+            except Exception:
+                continue
+            if segments:
+                script = self._write_script_from_segments(video, segments)
+                return segments, f"sidecar:{sub.name}", script
+
+        # 2) Try extracting any embedded text subtitle stream into a temporary text subtitle file.
+        streams = self._probe_subtitle_streams(video)
+        for stream_order, stream in enumerate(streams):
+            codec_name = str(stream.get("codec_name") or "")
+            if not self._is_text_subtitle_codec(codec_name):
+                continue
+            with tempfile.TemporaryDirectory(prefix="embedded_script_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+                out_ext = self._subtitle_extension_for_codec(codec_name)
+                out_sub = Path(temp_dir) / f"embedded_stream_{stream_order}{out_ext}"
+                cmd = [
+                    self.ffmpeg_bin,
+                    "-y",
+                    "-loglevel",
+                    self.ffmpeg_loglevel,
+                    "-nostats",
+                    "-i",
+                    str(video),
+                    "-map",
+                    f"0:s:{stream_order}",
+                    str(out_sub),
+                ]
+                result = self._run_command(cmd, description="extract embedded subtitle stream for script")
+                if result.returncode != 0 or not out_sub.exists():
+                    continue
+                try:
+                    segments = self._segments_from_subtitle(out_sub)
+                except Exception:
+                    continue
+                if segments:
+                    script = self._write_script_from_segments(video, segments)
+                    return segments, f"embedded-text-stream:{stream_order}", script
+
+        # 3) Fallback: OCR over sampled video frames (works for burned-in and image-style subtitles).
+        try:
+            ocr_segments = self._segments_from_video_ocr(video)
+        except Exception as exc:
+            return [], f"no-script-source (OCR unavailable: {exc})", None
+        if ocr_segments:
+            script = self._write_script_from_segments(video, ocr_segments)
+            return ocr_segments, "ocr-video-frames", script
+        return [], "no-script-source", None
+
     def _save_segments_to_srt(self, output_path: Path, segments: List[Dict[str, object]]) -> None:
         if pysubs2 is None:
             raise RuntimeError("pysubs2 is required to save subtitles")
@@ -2738,7 +2969,13 @@ class SubtitleProcessor:
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
         subs.save(str(output_path))
 
-    def _translate_text(self, text: str, target_language: str, source_language: Optional[str] = None) -> str:
+    def _translate_text(
+        self,
+        text: str,
+        target_language: str,
+        source_language: Optional[str] = None,
+        translator_model: str = "google",
+    ) -> str:
         cleaned = (text or "").strip()
         if not cleaned:
             return ""
@@ -2748,7 +2985,13 @@ class SubtitleProcessor:
             return cleaned
 
         module = importlib.import_module("deep_translator")
-        translator = module.GoogleTranslator(source=source, target=target)
+        translator_key = (translator_model or "google").strip().lower()
+        if translator_key == "mymemory":
+            if source == "auto":
+                raise RuntimeError("MyMemory translator requires explicit source language; set language hint or use Google")
+            translator = module.MyMemoryTranslator(source=source, target=target)
+        else:
+            translator = module.GoogleTranslator(source=source, target=target)
         translated = str(translator.translate(cleaned) or "").strip()
         return translated or cleaned
 
@@ -2757,13 +3000,19 @@ class SubtitleProcessor:
         segments: List[Dict[str, object]],
         target_language: str,
         source_language: Optional[str],
+        translator_model: str = "google",
     ) -> List[Dict[str, object]]:
         translated_rows: List[Dict[str, object]] = []
         for seg in segments:
             text = str(seg.get("text") or "").strip()
             if not text:
                 continue
-            translated_text = self._translate_text(text, target_language, source_language)
+            translated_text = self._translate_text(
+                text,
+                target_language,
+                source_language,
+                translator_model=translator_model,
+            )
             translated_rows.append(
                 {
                     "start": self._safe_float(seg.get("start"), 0.0),
@@ -2773,7 +3022,10 @@ class SubtitleProcessor:
             )
         return translated_rows
 
-    def _pick_edge_tts_voice(self, target_language: str) -> str:
+    def _pick_edge_tts_voice(self, target_language: str, reproducer_model: str = "auto") -> str:
+        requested = (reproducer_model or "auto").strip()
+        if requested and requested.lower() != "auto":
+            return requested
         lang = self._normalize_translation_language(target_language)
         voices = {
             "en": "en-US-JennyNeural",
@@ -2863,6 +3115,8 @@ class SubtitleProcessor:
         target_language: str = "en",
         backend: str = "auto",
         prefer_english_subtitles: bool = True,
+        translator_model: str = "google",
+        reproducer_model: str = "auto",
         overwrite: bool = False,
         output_suffix: str = "_translated_dub",
         output_root: Optional[str] = None,
@@ -2879,7 +3133,8 @@ class SubtitleProcessor:
 
         target_lang = self._normalize_translation_language(target_language)
         self._log(
-            f"Audio translation backend: {selected_backend} ({backend_reason}); target language: {target_lang}"
+            f"Audio translation backend: {selected_backend} ({backend_reason}); "
+            f"target language: {target_lang}; translator={translator_model}; reproducer={reproducer_model}"
         )
 
         videos = [Path(f) for f in target_files if Path(f).exists()]
@@ -2899,7 +3154,7 @@ class SubtitleProcessor:
                 self._log(f"Translating audio for {video.name}...")
                 base_segments: List[Dict[str, object]] = []
                 segment_source = "audio-transcription"
-                detected_lang = self._normalize_translation_language(source_language)
+                detected_lang: Optional[str] = (source_language or "").strip().lower() or None
 
                 english_subtitle_path: Optional[Path] = None
                 if prefer_english_subtitles:
@@ -2911,16 +3166,23 @@ class SubtitleProcessor:
                     segment_source = "english-sidecar-subtitle"
                     detected_lang = "en"
                 else:
-                    self._log("  No English subtitle source selected/found, transcribing audio...")
-                    base_segments, backend_detected = self._transcribe_with_backend(
-                        video=video,
-                        backend=selected_backend,
-                        model_size=model_size,
-                        language=source_language,
-                        model_cache=model_cache,
-                    )
-                    if backend_detected:
-                        detected_lang = self._normalize_translation_language(backend_detected)
+                    self._log("  Scanning existing subtitles to build script context...")
+                    base_segments, script_source, script_path = self._build_script_segments_from_existing_subtitles(video)
+                    if base_segments:
+                        segment_source = f"script:{script_source}"
+                        if script_path is not None:
+                            self._log(f"  Generated script: {script_path.name}")
+                    else:
+                        self._log("  No usable subtitle script found; transcribing audio...")
+                        base_segments, backend_detected = self._transcribe_with_backend(
+                            video=video,
+                            backend=selected_backend,
+                            model_size=model_size,
+                            language=source_language,
+                            model_cache=model_cache,
+                        )
+                        if backend_detected:
+                            detected_lang = self._normalize_translation_language(backend_detected)
 
                 if not base_segments:
                     raise RuntimeError("No source segments available for translation")
@@ -2929,6 +3191,7 @@ class SubtitleProcessor:
                     segments=base_segments,
                     target_language=target_lang,
                     source_language=detected_lang,
+                    translator_model=translator_model,
                 )
                 if not translated_segments:
                     raise RuntimeError("Translation produced no segments")
@@ -2949,7 +3212,7 @@ class SubtitleProcessor:
                 output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
                 with tempfile.TemporaryDirectory(prefix="tts_dub_", dir=str(self._get_temp_workspace_root())) as temp_dir:
                     dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
-                    voice = self._pick_edge_tts_voice(target_lang)
+                    voice = self._pick_edge_tts_voice(target_lang, reproducer_model=reproducer_model)
                     rate = self._estimate_edge_tts_rate(translated_segments)
                     self._log(f"  Synthesizing translated speech (voice={voice}, rate={rate})...")
                     self._synthesize_edge_tts_audio(merged_text, voice, rate, dubbed_audio_path)
@@ -2982,6 +3245,8 @@ class SubtitleProcessor:
                         "output_path": str(replace_target or output_path),
                         "subtitle_path": str(translated_subtitle_path),
                         "target_language": target_lang,
+                        "translator_model": translator_model,
+                        "reproducer_model": reproducer_model,
                     }
                 )
             except Exception as exc:
@@ -4123,6 +4388,8 @@ class JobManager:
                             "path": r.path,
                             "embedded_subtitle_streams": r.embedded_subtitle_streams,
                             "sidecar_subtitles": r.sidecar_subtitles,
+                            "image_based_subtitle_streams": r.image_based_subtitle_streams,
+                            "subtitle_stream_details": r.subtitle_stream_details,
                         }
                         for r in rows
                     ],
@@ -4874,6 +5141,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     makemkvcon_bin=str(self.options.get("makemkvcon_bin", "")).strip() or None,
                     log_callback=self.log_message.emit,
                     use_hw_accel=bool(self.options.get("use_hw_accel", False)),
+                    log_to_console=bool(self.options.get("log_to_console", True)),
                     command_feedback=str(self.options.get("command_feedback", "normal")),
                     ffmpeg_loglevel=str(self.options.get("ffmpeg_loglevel", "warning")),
                     ffprobe_loglevel=str(self.options.get("ffprobe_loglevel", "error")),
@@ -4898,6 +5166,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                                 "path": r.path,
                                 "embedded_subtitle_streams": r.embedded_subtitle_streams,
                                 "sidecar_subtitles": r.sidecar_subtitles,
+                                "image_based_subtitle_streams": r.image_based_subtitle_streams,
+                                "subtitle_stream_details": r.subtitle_stream_details,
                             }
                             for r in rows
                         ],
@@ -4987,6 +5257,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         target_language=str(self.options.get("target_language", "en")),
                         backend=str(self.options.get("ai_backend", "auto")),
                         prefer_english_subtitles=bool(self.options.get("prefer_english_subtitles", True)),
+                        translator_model=str(self.options.get("translator_model", "google")),
+                        reproducer_model=str(self.options.get("reproducer_model", "auto")),
                         overwrite=overwrite,
                         output_suffix=str(self.options.get("output_suffix", "_translated_dub")),
                         output_root=str(self.options.get("output_root", "")).strip() or None,
@@ -5415,6 +5687,11 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "Pass -hwaccel auto to ffmpeg. Enables GPU-assisted video demuxing and decoding\n"
                 "where supported (NVIDIA NVDEC, Intel QuickSync, AMD VCE, etc.)."
             )
+            self.log_to_console_checkbox = QCheckBox("Log activity to console")
+            self.log_to_console_checkbox.setChecked(True)
+            self.log_to_console_checkbox.setToolTip(
+                "Mirror key activity log messages to the terminal/console for quick status tracking."
+            )
             self.save_next_to_source_checkbox = QCheckBox("Save outputs next to source files")
             self.save_next_to_source_checkbox.setChecked(True)
             self.custom_output_dir_input = QLineEdit()
@@ -5441,22 +5718,23 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             options_layout.addWidget(self.scan_only_embedded_checkbox, 4, 0, 1, 2)
             options_layout.addWidget(self.only_selected_targets_checkbox, 5, 0, 1, 2)
             options_layout.addWidget(self.hw_accel_checkbox, 6, 0, 1, 2)
-            options_layout.addWidget(self.save_next_to_source_checkbox, 7, 0, 1, 2)
-            options_layout.addWidget(QLabel("Custom output folder:"), 8, 0)
+            options_layout.addWidget(self.log_to_console_checkbox, 7, 0, 1, 2)
+            options_layout.addWidget(self.save_next_to_source_checkbox, 8, 0, 1, 2)
+            options_layout.addWidget(QLabel("Custom output folder:"), 9, 0)
             custom_out_row = QHBoxLayout()
             custom_out_row.setContentsMargins(0, 0, 0, 0)
             custom_out_row.addWidget(self.custom_output_dir_input)
             custom_out_row.addWidget(self.custom_output_dir_browse_button)
-            options_layout.addLayout(custom_out_row, 8, 1)
-            options_layout.addWidget(QLabel("Remove output suffix:"), 9, 0)
-            options_layout.addWidget(self.remove_suffix_input, 9, 1)
-            options_layout.addWidget(QLabel("Include output suffix:"), 10, 0)
-            options_layout.addWidget(self.include_suffix_input, 10, 1)
-            options_layout.addWidget(QLabel("Extract output suffix:"), 11, 0)
-            options_layout.addWidget(self.extract_suffix_input, 11, 1)
-            options_layout.addWidget(QLabel("Conversion output suffix:"), 12, 0)
+            options_layout.addLayout(custom_out_row, 9, 1)
+            options_layout.addWidget(QLabel("Remove output suffix:"), 10, 0)
+            options_layout.addWidget(self.remove_suffix_input, 10, 1)
+            options_layout.addWidget(QLabel("Include output suffix:"), 11, 0)
+            options_layout.addWidget(self.include_suffix_input, 11, 1)
+            options_layout.addWidget(QLabel("Extract output suffix:"), 12, 0)
+            options_layout.addWidget(self.extract_suffix_input, 12, 1)
+            options_layout.addWidget(QLabel("Conversion output suffix:"), 13, 0)
             self.convert_suffix_input = QLineEdit("_converted")
-            options_layout.addWidget(self.convert_suffix_input, 12, 1)
+            options_layout.addWidget(self.convert_suffix_input, 13, 1)
 
             # Swiss Army Knife section
             tools_box = QGroupBox("Video Tools (Swiss Army Knife)")
@@ -5595,6 +5873,32 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 )
                 translation_options.addWidget(self.translate_target_language_input)
 
+                translation_options.addWidget(QLabel("Translator model:"))
+                self.translate_model_combo = QComboBox()
+                self.translate_model_combo.addItem("Google", "google")
+                self.translate_model_combo.addItem("MyMemory", "mymemory")
+                self.translate_model_combo.setToolTip(
+                    "Select translation model/provider used before speech synthesis."
+                )
+                translation_options.addWidget(self.translate_model_combo)
+
+                translation_options.addWidget(QLabel("Reproducer model:"))
+                self.reproducer_model_combo = QComboBox()
+                self.reproducer_model_combo.addItem("Auto voice by language", "auto")
+                self.reproducer_model_combo.addItem("en-US-JennyNeural", "en-US-JennyNeural")
+                self.reproducer_model_combo.addItem("en-US-GuyNeural", "en-US-GuyNeural")
+                self.reproducer_model_combo.addItem("en-GB-SoniaNeural", "en-GB-SoniaNeural")
+                self.reproducer_model_combo.addItem("es-ES-ElviraNeural", "es-ES-ElviraNeural")
+                self.reproducer_model_combo.addItem("fr-FR-DeniseNeural", "fr-FR-DeniseNeural")
+                self.reproducer_model_combo.addItem("de-DE-KatjaNeural", "de-DE-KatjaNeural")
+                self.reproducer_model_combo.addItem("it-IT-ElsaNeural", "it-IT-ElsaNeural")
+                self.reproducer_model_combo.addItem("pt-BR-FranciscaNeural", "pt-BR-FranciscaNeural")
+                self.reproducer_model_combo.addItem("ja-JP-NanamiNeural", "ja-JP-NanamiNeural")
+                self.reproducer_model_combo.setToolTip(
+                    "Select speech reproducer (Edge TTS voice model) for dubbed track output."
+                )
+                translation_options.addWidget(self.reproducer_model_combo)
+
                 self.translate_use_english_subs_checkbox = QCheckBox(
                     "Use English subtitles first when available"
                 )
@@ -5684,6 +5988,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.whisper_language_input = None
                 self.generate_button = None
                 self.translate_target_language_input = None
+                self.translate_model_combo = None
+                self.reproducer_model_combo = None
                 self.translate_use_english_subs_checkbox = None
                 self.translate_audio_button = None
                 self.audio_lang_strategy_combo = None
@@ -5842,6 +6148,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
         def _log(self, message: str) -> None:
             ts = datetime.now().strftime("%H:%M:%S")
             self.log_box.append(f"[{ts}] {message}")
+            if self.log_to_console_checkbox.isChecked():
+                print(f"[ui {ts}] {message}", flush=True)
 
         def _add_folder(self) -> None:
             folder = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -5882,6 +6190,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "export_txt": self.export_txt_checkbox.isChecked(),
                 "scan_only_embedded": self.scan_only_embedded_checkbox.isChecked(),
                 "use_hw_accel": self.hw_accel_checkbox.isChecked(),
+                "log_to_console": self.log_to_console_checkbox.isChecked(),
                 "output_root": output_root,
                 "ffmpeg_bin": self.ffmpeg_bin_input.text().strip() or "ffmpeg",
                 "ffprobe_bin": self.ffprobe_bin_input.text().strip() or "ffprobe",
@@ -6226,6 +6535,16 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     or "en"
                 )
                 options["target_language"] = target_lang
+                options["translator_model"] = (
+                    str(self.translate_model_combo.currentData() or "google")
+                    if self.translate_model_combo
+                    else "google"
+                )
+                options["reproducer_model"] = (
+                    str(self.reproducer_model_combo.currentData() or "auto")
+                    if self.reproducer_model_combo
+                    else "auto"
+                )
                 options["output_suffix"] = "_translated_dub"
 
                 use_subs_pref = bool(
@@ -6256,6 +6575,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     "Translate + Dub Audio",
                     "This will translate text and add a new dubbed audio stream to each selected video.\n\n"
                     f"Target language: {target_lang}\n"
+                    f"Translator model: {options['translator_model']}\n"
+                    f"Reproducer model: {options['reproducer_model']}\n"
                     f"Subtitle-first mode: {'enabled' if use_subs_pref else 'disabled'}\n\n"
                     "Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -6564,9 +6885,10 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 preview_limit = 15
                 for item in files[:preview_limit]:
                     sidecars = item.get("sidecar_subtitles", [])
+                    image_count = int(item.get("image_based_subtitle_streams", 0) or 0)
                     self._log(
                         f"- {item.get('path')} | embedded={item.get('embedded_subtitle_streams')} | "
-                        f"sidecars={len(sidecars)}"
+                        f"image-based={image_count} | sidecars={len(sidecars)}"
                     )
                 if count > preview_limit:
                     self._log(f"... {count - preview_limit} more file(s) not shown in log.")
@@ -7073,6 +7395,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "export_txt": self.export_txt_checkbox.isChecked(),
                 "scan_only_embedded": self.scan_only_embedded_checkbox.isChecked(),
                 "only_selected_targets": self.only_selected_targets_checkbox.isChecked(),
+                "log_to_console": self.log_to_console_checkbox.isChecked(),
                 "remove_suffix": self.remove_suffix_input.text(),
                 "include_suffix": self.include_suffix_input.text(),
                 "extract_suffix": self.extract_suffix_input.text(),
@@ -7095,6 +7418,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "whisper_model": self.whisper_model_combo.currentText() if self.whisper_model_combo else "base",
                 "whisper_language": self.whisper_language_input.text() if self.whisper_language_input else "",
                 "translate_target_language": self.translate_target_language_input.text() if self.translate_target_language_input else "en",
+                "translate_model": self.translate_model_combo.currentData() if self.translate_model_combo else "google",
+                "reproducer_model": self.reproducer_model_combo.currentData() if self.reproducer_model_combo else "auto",
                 "translate_use_english_subs": self.translate_use_english_subs_checkbox.isChecked() if self.translate_use_english_subs_checkbox else True,
                 "audio_lang_strategy": self.audio_lang_strategy_combo.currentData() if self.audio_lang_strategy_combo else "snippets",
                 "audio_lang_snippets": self.audio_lang_snippets_input.text() if self.audio_lang_snippets_input else "3",
@@ -7174,6 +7499,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.export_txt_checkbox.setChecked(ui_state.get("export_txt", True))
             self.scan_only_embedded_checkbox.setChecked(ui_state.get("scan_only_embedded", False))
             self.only_selected_targets_checkbox.setChecked(ui_state.get("only_selected_targets", False))
+            self.log_to_console_checkbox.setChecked(bool(ui_state.get("log_to_console", True)))
             self.save_next_to_source_checkbox.setChecked(ui_state.get("save_next_to_source", True))
             self.custom_output_dir_input.setText(str(ui_state.get("custom_output_dir", "")))
             self.custom_output_dir_input.setEnabled(not self.save_next_to_source_checkbox.isChecked())
@@ -7236,6 +7562,16 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.whisper_language_input.setText(ui_state.get("whisper_language", ""))
                 if self.translate_target_language_input is not None:
                     self.translate_target_language_input.setText(str(ui_state.get("translate_target_language", "en")))
+                if self.translate_model_combo is not None:
+                    translate_model = ui_state.get("translate_model", "google")
+                    translate_model_index = self.translate_model_combo.findData(translate_model)
+                    if translate_model_index >= 0:
+                        self.translate_model_combo.setCurrentIndex(translate_model_index)
+                if self.reproducer_model_combo is not None:
+                    reproducer_model = ui_state.get("reproducer_model", "auto")
+                    reproducer_model_index = self.reproducer_model_combo.findData(reproducer_model)
+                    if reproducer_model_index >= 0:
+                        self.reproducer_model_combo.setCurrentIndex(reproducer_model_index)
                 if self.translate_use_english_subs_checkbox is not None:
                     self.translate_use_english_subs_checkbox.setChecked(
                         bool(ui_state.get("translate_use_english_subs", True))
@@ -7359,6 +7695,8 @@ def run_cli_action(args: argparse.Namespace) -> int:
                     "path": r.path,
                     "embedded_subtitle_streams": r.embedded_subtitle_streams,
                     "sidecar_subtitles": r.sidecar_subtitles,
+                    "image_based_subtitle_streams": r.image_based_subtitle_streams,
+                    "subtitle_stream_details": r.subtitle_stream_details,
                 }
                 for r in rows
             ],

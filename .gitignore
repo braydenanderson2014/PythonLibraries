@@ -21,3 +21,5 @@ env/
 .install_manifest.json
 .subtitle_tool_settings.json
 *.tmp
+*.mp4
+*.mkv
