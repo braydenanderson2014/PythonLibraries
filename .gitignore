@@ -4,7 +4,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
+*.exp
+*.lib
 # Python virtual environments
 venv/
 **/venv/
@@ -14,6 +15,20 @@ env/
 **/env/
 venv_xtts/
 **/venv_xtts/
+
+# pip cache
+pip-log.txt
+pip-delete-this-directory.txt
+__pypackages__/
+.pip-cache/
+**/.pip-cache/
+.pip-tmp/
+**/.pip-tmp/
+
+# Subtitle runtime temp workspace
+.runtime-temp/
+**/.runtime-temp/
+
 
 # Installer artifacts
 *.exe

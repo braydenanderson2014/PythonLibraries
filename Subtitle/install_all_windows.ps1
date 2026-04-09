@@ -82,6 +82,7 @@ $script:PipBackendForRequirements = ""  # Backend used for requirements.txt
 $script:PipBackendForAI = ""            # Backend used for AI packages
 $script:RequestedUninstall = [bool]$Uninstall
 $script:RequestedUninstallAI = [bool]$UninstallAI
+$script:InstallerScratchRoot = ""
 
 # On PowerShell 7+, do not treat native command stderr text (warnings) as a
 # terminating error. The script already validates native command exit codes.
@@ -1743,7 +1744,7 @@ function Get-AiBackendDefinitions {
         @{ key = "speechbrain"; display = "SpeechBrain"; import = "speechbrain"; packages = @("speechbrain", "soundfile", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $true }
         @{ key = "vosk"; display = "Vosk"; import = "vosk"; packages = @("vosk", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
         @{ key = "aeneas"; display = "Aeneas"; import = "aeneas"; packages = @("aeneas", "pysubs2") + $voiceTranslationPackages; needs_vcredist = $false }
-        @{ key = "xtts"; display = "XTTS-v2 (Coqui voice cloning)"; import = "TTS"; probe_code = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; print('ok')"; packages = @("numpy<2.0.0", "pandas<2.0.0", "TTS") + $voiceTranslationPackages; needs_vcredist = $true }
+        @{ key = "xtts"; display = "XTTS-v2 (Coqui voice cloning)"; import = "TTS"; probe_code = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; import transformers.utils.import_utils as _iu; print('ok' if hasattr(_iu, 'is_torch_greater_or_equal') else 'missing')"; packages = @("numpy>=1.26.0,<2.0.0", "pandas>=1.4,<3.0", "transformers>=4.57,<5", "coqpit-config>=0.2.0,<0.3.0", "coqui-tts==0.27.5") + $voiceTranslationPackages; needs_vcredist = $true }
     )
 }
 
@@ -2272,7 +2273,7 @@ function Install-XttsDedicatedEnvironment {
         return @{ success = $false; reason = "venv_xtts python.exe missing"; python = "" }
     }
 
-    $verifyCode = "import warnings; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; from transformers import BeamSearchScorer; print('ok')"
+    $verifyCode = "import warnings, importlib.metadata as _m; warnings.filterwarnings('ignore'); from TTS.api import TTS as _TTS; import transformers.utils.import_utils as _iu; _coq = [str(x).strip().lower() for x in (_m.packages_distributions().get('coqpit', []) or [])]; _legacy = any(x == 'coqpit' for x in _coq); print('ok' if (hasattr(_iu, 'is_torch_greater_or_equal') and not _legacy) else 'missing')"
     if (-not $createXttsVenv) {
         $torchVersionCode = "import torch; print(getattr(torch, '__version__', '0'))"
         $torchaudioVersionCode = "import torchaudio; print(getattr(torchaudio, '__version__', '0'))"
@@ -2317,27 +2318,57 @@ function Install-XttsDedicatedEnvironment {
 
     $null = Invoke-PipInstall -PythonExe $xttsPython -Packages @("pip", "setuptools", "wheel") -Upgrade
 
+    # Ensure legacy 'tts' package does not shadow modern coqui-tts modules.
+    # Ignore failures because packages may not be present.
+    $nativePrevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $xttsPython -m pip uninstall -y tts coqui-tts coqpit coqpit-config *> $null
+    $ErrorActionPreference = $nativePrevErrorAction
+
+    # Install a consistent modern XTTS stack.
     $xttsPackages = @(
         "torch<2.6.0",
         "torchaudio<2.6.0",
-        "numpy<2.0.0",
-        "pandas<2.0.0",
-        "transformers<4.40.0",
-        "TTS",
+        "numpy>=1.26.0,<2.0.0",
+        "pandas>=1.4,<3.0",
+        "coqpit-config>=0.2.0,<0.3.0",
+        "coqui-tts==0.27.5",
+        "transformers>=4.57,<5",
         "deep-translator",
         "edge-tts"
     )
 
     foreach ($pkg in $xttsPackages) {
         $extraArgs = @()
-        if ($pkg -like "torch<*" -or $pkg -like "torchaudio<*" -or $pkg -like "numpy<*" -or $pkg -like "pandas<*" -or $pkg -like "transformers<*") {
-            $extraArgs += "--force-reinstall"
-            $extraArgs += "--no-cache-dir"
+        if (-not $createXttsVenv) {
+            # Reusing an existing venv: only force-reinstall torch/torchaudio when
+            # they were found to be at an incompatible version.
+            if (($pkg -like "torch<*" -and -not $torchCompatible) -or
+                ($pkg -like "torchaudio<*" -and -not $torchaudioCompatible)) {
+                $extraArgs += "--force-reinstall"
+                $extraArgs += "--no-cache-dir"
+            }
+            if ($pkg -like "transformers>*" -or $pkg -like "coqui-tts*" -or $pkg -like "coqpit-config*") {
+                $extraArgs += "--force-reinstall"
+            }
         }
         $exitCode = Invoke-PipInstall -PythonExe $xttsPython -Packages @($pkg) -ExtraArgs $extraArgs
         if ($exitCode -ne 0) {
             return @{ success = $false; reason = "failed installing $pkg in venv_xtts"; python = $xttsPython }
         }
+    }
+
+    # coqui-tts-trainer may pull legacy 'coqpit'; remove it so TTS import does not fail.
+    $nativePrevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $xttsPython -m pip uninstall -y coqpit *> $null
+    $ErrorActionPreference = $nativePrevErrorAction
+
+    # Re-pin transformers last in case coqui-tts upgraded it to a 5.x build,
+    # and keep numpy constrained to <2 for gruut/coqui compatibility.
+    $transformersRepinExit = Invoke-PipInstall -PythonExe $xttsPython -Packages @("numpy>=1.26.0,<2.0.0", "transformers>=4.57,<5") -ExtraArgs @("--force-reinstall")
+    if ($transformersRepinExit -ne 0) {
+        return @{ success = $false; reason = "failed re-pinning transformers in venv_xtts"; python = $xttsPython }
     }
 
     $probePrevErrorAction = $ErrorActionPreference
@@ -3871,6 +3902,43 @@ $manifestPath = Join-Path $scriptDir ".install_manifest.json"
 $installLogPath = Join-Path $scriptDir "install_all_windows.log"
 
 Set-Location $scriptDir
+
+function Initialize-InstallerScratchStorage {
+    param([string]$BaseDir)
+
+    $scratchRoot = Join-Path $BaseDir ".installer-scratch"
+    $tempDir = Join-Path $scratchRoot "temp"
+    $pipCacheDir = Join-Path $scratchRoot "pip-cache"
+    $uvCacheDir = Join-Path $scratchRoot "uv-cache"
+    $chocoCacheDir = Join-Path $scratchRoot "choco-cache"
+
+    foreach ($dir in @($scratchRoot, $tempDir, $pipCacheDir, $uvCacheDir, $chocoCacheDir)) {
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+    }
+
+    $script:InstallerScratchRoot = $scratchRoot
+    $env:TEMP = $tempDir
+    $env:TMP = $tempDir
+    $env:TMPDIR = $tempDir
+    $env:PIP_CACHE_DIR = $pipCacheDir
+    $env:UV_CACHE_DIR = $uvCacheDir
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$script:ChocoCacheLocation)) {
+        $chocoCacheDir = [string]$script:ChocoCacheLocation
+        if (-not (Test-Path -LiteralPath $chocoCacheDir)) {
+            New-Item -ItemType Directory -Path $chocoCacheDir -Force | Out-Null
+        }
+    } else {
+        $script:ChocoCacheLocation = $chocoCacheDir
+    }
+
+    Write-Host "Installer scratch storage set to: $scratchRoot" -ForegroundColor DarkGray
+}
+
+# Keep temp/cache writes on the script drive (e.g. D:) instead of C:.
+Initialize-InstallerScratchStorage -BaseDir $scriptDir
 
 # Start transcript so every line of output is captured to a log file.
 try {

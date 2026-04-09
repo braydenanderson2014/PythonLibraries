@@ -17,6 +17,9 @@ if not exist "%VENV_PYTHON%" (
 echo Launching Subtitle Tool GUI...
 echo Using virtual environment Python: %VENV_PYTHON%
 echo Using subtitle script: %SCRIPT_DIR%subtitle_ui.py
+set "SUBTITLE_TOOL_TEMP_DIR=%SCRIPT_DIR%.runtime-temp"
+if not exist "%SUBTITLE_TOOL_TEMP_DIR%" mkdir "%SUBTITLE_TOOL_TEMP_DIR%"
+echo Using runtime temp directory: %SUBTITLE_TOOL_TEMP_DIR%
 "%VENV_PYTHON%" subtitle_ui.py
 
 if %ERRORLEVEL% neq 0 (

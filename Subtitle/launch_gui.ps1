@@ -18,6 +18,10 @@ if (-not (Test-Path $venvPython)) {
 Write-Host "Launching Subtitle Tool GUI..." -ForegroundColor Cyan
 Write-Host "Using virtual environment Python: $venvPython" -ForegroundColor Gray
 Write-Host "Using subtitle script: $subtitleTool" -ForegroundColor Gray
+$runtimeTemp = Join-Path $scriptDir ".runtime-temp"
+New-Item -ItemType Directory -Path $runtimeTemp -Force | Out-Null
+$env:SUBTITLE_TOOL_TEMP_DIR = $runtimeTemp
+Write-Host "Using runtime temp directory: $runtimeTemp" -ForegroundColor Gray
 Write-Host ""
 
 & $venvPython $subtitleTool
