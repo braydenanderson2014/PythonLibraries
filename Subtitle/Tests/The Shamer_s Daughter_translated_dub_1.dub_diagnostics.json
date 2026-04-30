@@ -1,0 +1,20 @@
+{
+  "source_video": "D:\\PythonLibraries\\Subtitle\\Tests\\The Shamer_s Daughter.mp4",
+  "target_language": "en",
+  "segment_source": "script:sidecar:The Shamer_s Daughter.en.translated.srt+backend-translate",
+  "segment_total": 1293,
+  "segment_text_nonempty": 1293,
+  "segments_with_detected_audio": 1238,
+  "requested_tts_backend": "xtts",
+  "speech_mean_volume_db": -19.8,
+  "tts_backend_used": "xtts",
+  "mix_mean_volume_db": -22.2,
+  "used_mix_fallback": false,
+  "dubbed_audio_input_path": "D:\\PythonLibraries\\Subtitle\\.runtime-temp\\SubtitleTool\\temp\\tts_dub_jx3mxuu5\\The Shamer_s Daughter.en.dub_mix.wav",
+  "muxed_dub_mean_volume_db": -22.2,
+  "muxed_dub_stream_pos": 1,
+  "muxed_dub_check": "dub stream 1 signal OK (mean_volume=-22.20 dB, max_volume=-1.90 dB)",
+  "final_dub_mean_volume_db": -22.2,
+  "final_dub_stream_pos": 1,
+  "final_dub_check": "dub stream 1 signal OK (mean_volume=-22.20 dB, max_volume=-1.90 dB)"
+}

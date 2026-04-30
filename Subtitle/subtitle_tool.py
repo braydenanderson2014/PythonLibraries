@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections import Counter
+import difflib
 import importlib
 import json
 import os
@@ -101,6 +102,11 @@ try:
 except (ImportError, OSError) as e:
     # OSError can be raised if PyTorch DLLs fail to load (e.g., missing VC++ Redistributable)
     whisper = None  # type: ignore[assignment]
+
+try:
+    import torch
+except Exception:
+    torch = None  # type: ignore[assignment]
 
 try:
     import numpy as np
@@ -398,6 +404,7 @@ class SubtitleProcessor:
         mkvmerge_bin: Optional[str] = None,
         handbrake_bin: Optional[str] = None,
         makemkvcon_bin: Optional[str] = None,
+        temp_workspace_dir: Optional[str] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         use_hw_accel: bool = False,
         log_to_console: bool = False,
@@ -410,6 +417,7 @@ class SubtitleProcessor:
         self.mkvmerge_bin = mkvmerge_bin or "mkvmerge"
         self.handbrake_bin = handbrake_bin or "HandBrakeCLI"
         self.makemkvcon_bin = makemkvcon_bin or "makemkvcon"
+        self.temp_workspace_dir = (temp_workspace_dir or "").strip()
         self.log_callback = log_callback
         self.use_hw_accel = use_hw_accel
         self.log_to_console = bool(log_to_console)
@@ -432,6 +440,39 @@ class SubtitleProcessor:
         """Return ffmpeg hardware acceleration flags when enabled."""
         return ["-hwaccel", "auto"] if self.use_hw_accel else []
 
+    def _ai_device(self) -> str:
+        """Return preferred AI execution device derived from the UI hardware accel flag."""
+        if not self.use_hw_accel:
+            return "cpu"
+        if torch is None:
+            return "cpu"
+        try:
+            if bool(torch.cuda.is_available()):
+                return "cuda"
+        except Exception:
+            pass
+        return "cpu"
+
+    def _ai_compute_type(self) -> str:
+        device = self._ai_device()
+        if device == "cuda":
+            return "float16"
+        # int8 on CPU with ctranslate2 on Windows causes STATUS_ACCESS_VIOLATION (segfault);
+        # float32 is safe and universally supported on CPU.
+        return "float32"
+
+    def _whisper_fp16_enabled(self) -> bool:
+        return self._ai_device() == "cuda"
+
+    def _log_ai_device_choice(self, backend: str) -> None:
+        device = self._ai_device()
+        if device == "cuda":
+            self._log(f"AI backend {backend}: using GPU (CUDA)")
+        elif self.use_hw_accel:
+            self._log(f"AI backend {backend}: GPU requested by UI, but CUDA is unavailable; falling back to CPU")
+        else:
+            self._log(f"AI backend {backend}: using CPU")
+
     @staticmethod
     def _ts_input_stability_flags() -> List[str]:
         """Input flags that make ffmpeg probing/remuxing more stable for TS/M2TS sources."""
@@ -445,7 +486,7 @@ class SubtitleProcessor:
         ]
 
     def _get_temp_workspace_root(self) -> Path:
-        custom_dir = os.getenv("SUBTITLE_TOOL_TEMP_DIR", "").strip()
+        custom_dir = self.temp_workspace_dir or os.getenv("SUBTITLE_TOOL_TEMP_DIR", "").strip()
         if custom_dir:
             base = Path(custom_dir).expanduser()
         else:
@@ -673,6 +714,176 @@ class SubtitleProcessor:
             self._log(f"Failed parsing ffprobe audio stream output for {video_path}")
         return []
 
+    def _probe_audio_streams_with_disposition(self, video_path: Path) -> List[Dict[str, object]]:
+        cmd = [
+            self.ffprobe_bin,
+            "-v",
+            self.ffprobe_loglevel,
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index,disposition:stream_tags=language,title",
+            "-of",
+            "json",
+            str(video_path),
+        ]
+        result = self._run_command(cmd)
+        if result.returncode != 0:
+            self._log(f"ffprobe disposition probe failed for {video_path}: {result.stderr.strip()}")
+            return []
+
+        try:
+            payload = json.loads(result.stdout or "{}")
+            streams = payload.get("streams", [])
+            if isinstance(streams, list):
+                return streams
+        except json.JSONDecodeError:
+            self._log(f"Failed parsing ffprobe disposition output for {video_path}")
+        return []
+
+    def _find_translated_dub_stream_position(
+        self,
+        video_path: Path,
+        target_language: str,
+    ) -> Optional[int]:
+        """Find the audio stream position for the translated dub track in a muxed output."""
+        streams = self._probe_audio_streams_with_disposition(video_path)
+        if not streams:
+            return None
+
+        target_norm = self._normalize_translation_language(target_language)
+        tagged_candidates: List[int] = []
+        language_candidates: List[int] = []
+        default_candidates: List[int] = []
+        default_language_candidates: List[int] = []
+
+        for pos, stream in enumerate(streams):
+            tags = stream.get("tags") if isinstance(stream, dict) else {}
+            tags = tags if isinstance(tags, dict) else {}
+            title = str(tags.get("title") or "").strip().lower()
+            raw_lang = str(tags.get("language") or "").strip().lower()
+            lang_norm = self._normalize_translation_language(raw_lang) if raw_lang else ""
+            disposition = stream.get("disposition") if isinstance(stream, dict) else {}
+            disposition = disposition if isinstance(disposition, dict) else {}
+            is_default = int(disposition.get("default", 0) or 0) == 1
+
+            if "translated dub" in title:
+                tagged_candidates.append(pos)
+            elif "dub" in title and "audio" in title:
+                tagged_candidates.append(pos)
+            if lang_norm == target_norm:
+                language_candidates.append(pos)
+            if is_default:
+                default_candidates.append(pos)
+                if lang_norm == target_norm:
+                    default_language_candidates.append(pos)
+
+        if tagged_candidates:
+            return tagged_candidates[-1]
+        if default_language_candidates:
+            return default_language_candidates[-1]
+        if len(default_candidates) == 1:
+            return default_candidates[0]
+        if language_candidates:
+            return language_candidates[-1]
+        if streams:
+            return len(streams) - 1
+        return None
+
+    def _verify_muxed_dub_signal(
+        self,
+        output_path: Path,
+        target_language: str,
+        min_mean_db: float = -58.0,
+        min_peak_db: float = -38.0,
+    ) -> Tuple[bool, str, Optional[float], Optional[int]]:
+        """Validate dubbed output stream has usable signal and return diagnostic details."""
+        dub_pos = self._find_translated_dub_stream_position(output_path, target_language)
+        if dub_pos is None:
+            return False, "could not identify dubbed stream position", None, None
+
+        mean_db, peak_db = self._probe_audio_volume_stats_db(output_path, stream_index=dub_pos)
+        if mean_db is None:
+            return True, f"dub stream {dub_pos} volume probe unavailable", None, dub_pos
+        has_signal = mean_db > min_mean_db
+        if peak_db is not None:
+            has_signal = has_signal or (peak_db > min_peak_db)
+        if not has_signal:
+            peak_text = f", max_volume={peak_db:0.2f} dB" if peak_db is not None else ""
+            return (
+                False,
+                (
+                    f"dub stream {dub_pos} appears near-silent "
+                    f"(mean_volume={mean_db:0.2f} dB{peak_text})"
+                ),
+                mean_db,
+                dub_pos,
+            )
+        peak_ok_text = f", max_volume={peak_db:0.2f} dB" if peak_db is not None else ""
+        return (
+            True,
+            f"dub stream {dub_pos} signal OK (mean_volume={mean_db:0.2f} dB{peak_ok_text})",
+            mean_db,
+            dub_pos,
+        )
+
+    def _probe_audio_volume_stats_db(
+        self,
+        media_path: Path,
+        stream_index: Optional[int] = None,
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Return mean and max audio volume (dB) using ffmpeg volumedetect."""
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            "info",
+            "-nostats",
+            "-i",
+            str(media_path),
+        ]
+        if stream_index is not None:
+            cmd.extend(["-map", f"0:a:{stream_index}"])
+        cmd.extend([
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ])
+        result = self._run_command(cmd, description="probe audio mean volume")
+        output = (result.stderr or "") + "\n" + (result.stdout or "")
+
+        mean_db: Optional[float] = None
+        max_db: Optional[float] = None
+
+        mean_match = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", output)
+        if mean_match:
+            try:
+                mean_db = float(mean_match.group(1))
+            except ValueError:
+                mean_db = None
+        elif "mean_volume: -inf dB" in output:
+            mean_db = -120.0
+
+        max_match = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", output)
+        if max_match:
+            try:
+                max_db = float(max_match.group(1))
+            except ValueError:
+                max_db = None
+        elif "max_volume: -inf dB" in output:
+            max_db = -120.0
+
+        return mean_db, max_db
+
+    def _save_dub_diagnostics_report(self, output_video_path: Path, diagnostics: Dict[str, object]) -> Optional[Path]:
+        if not diagnostics:
+            return None
+        report_path = output_video_path.with_name(f"{output_video_path.stem}.dub_diagnostics.json")
+        report_path.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
+        return report_path
+
     def _probe_media_duration_seconds(self, video_path: Path) -> Optional[float]:
         cmd = [
             self.ffprobe_bin,
@@ -696,6 +907,61 @@ class SubtitleProcessor:
         if value <= 0:
             return None
         return value
+
+    def _probe_audio_mean_volume_db(self, media_path: Path, stream_index: Optional[int] = None) -> Optional[float]:
+        """Return mean audio volume (dB) using ffmpeg volumedetect, or None if unavailable."""
+        mean_db, _ = self._probe_audio_volume_stats_db(media_path, stream_index=stream_index)
+        return mean_db
+
+    def _audio_has_usable_signal(
+        self,
+        media_path: Path,
+        stream_index: Optional[int] = None,
+        min_mean_db: float = -58.0,
+        min_peak_db: float = -38.0,
+    ) -> bool:
+        """Heuristic check for non-silent audio content."""
+        mean_db, peak_db = self._probe_audio_volume_stats_db(media_path, stream_index=stream_index)
+        if mean_db is None:
+            # If analysis is unavailable, do not hard-fail pipeline.
+            self._log(f"  Audio level probe unavailable for {media_path.name}; assuming usable")
+            return True
+        peak_text = f", max_volume={peak_db:0.2f} dB" if peak_db is not None else ""
+        self._log(f"  Audio level probe for {media_path.name}: mean_volume={mean_db:0.2f} dB{peak_text}")
+        if mean_db > min_mean_db:
+            return True
+        if peak_db is not None and peak_db > min_peak_db:
+            return True
+        return False
+
+    def _boost_audio_gain(
+        self,
+        input_path: Path,
+        output_path: Path,
+        gain_db: float,
+    ) -> None:
+        """Apply fixed gain to an audio file and write a PCM WAV output."""
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            f"volume={gain_db:0.2f}dB",
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="boost dubbed audio gain")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "ffmpeg gain boost failed")
 
     def _probe_stream_counts(self, video_path: Path) -> Tuple[int, int, int]:
         cmd = [
@@ -2264,6 +2530,100 @@ class SubtitleProcessor:
                 pieces.append(txt)
         return " ".join(pieces).strip()
 
+    @staticmethod
+    def _split_sentences(text: str) -> List[str]:
+        cleaned = re.sub(r"\s+", " ", (text or "").strip())
+        if not cleaned:
+            return []
+        parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", cleaned) if p.strip()]
+        return parts or [cleaned]
+
+    def _resegment_translated_sentences(
+        self,
+        segments: List[Dict[str, object]],
+        max_words_per_chunk: int = 14,
+    ) -> List[Dict[str, object]]:
+        """Split long translated lines into sentence-sized timing chunks.
+
+        This reduces rushed speech and improves lip-sync plausibility by avoiding
+        very long utterances packed into a single subtitle window.
+        """
+        if not segments:
+            return segments
+
+        resegmented: List[Dict[str, object]] = []
+        for seg in segments:
+            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
+            end = max(start + 0.2, self._safe_float(seg.get("end"), start + 0.2))
+            text = self._clean_tts_text(str(seg.get("text") or "").strip())
+            if not text:
+                continue
+
+            sentence_units = self._split_sentences(text)
+            chunk_units: List[str] = []
+            for sentence in sentence_units:
+                words = sentence.split()
+                if len(words) <= max_words_per_chunk:
+                    chunk_units.append(sentence)
+                    continue
+                # Split long sentence into word chunks.
+                for i in range(0, len(words), max_words_per_chunk):
+                    chunk = " ".join(words[i : i + max_words_per_chunk]).strip()
+                    if chunk:
+                        chunk_units.append(chunk)
+
+            if len(chunk_units) <= 1:
+                resegmented.append({"start": start, "end": end, "text": text})
+                continue
+
+            total_words = sum(max(1, len(c.split())) for c in chunk_units)
+            span = max(0.25, end - start)
+            cursor = start
+            for idx, chunk in enumerate(chunk_units):
+                chunk_words = max(1, len(chunk.split()))
+                if idx == len(chunk_units) - 1:
+                    chunk_end = end
+                else:
+                    chunk_span = span * (chunk_words / total_words)
+                    chunk_end = min(end, cursor + max(0.30, chunk_span))
+                if chunk_end <= cursor:
+                    chunk_end = min(end, cursor + 0.30)
+                resegmented.append(
+                    {
+                        "start": cursor,
+                        "end": chunk_end,
+                        "text": chunk,
+                    }
+                )
+                cursor = chunk_end
+
+        if resegmented:
+            self._log(
+                f"  Sentence resegmentation: {len(segments)} -> {len(resegmented)} segment(s)"
+            )
+            return resegmented
+        return segments
+
+    def _save_regeneration_report(
+        self,
+        output_video_path: Path,
+        flagged_segments: List[Dict[str, object]],
+        target_language: str,
+    ) -> Optional[Path]:
+        if not flagged_segments:
+            return None
+        report_path = output_video_path.with_name(
+            f"{output_video_path.stem}.{target_language}.regen_candidates.json"
+        )
+        payload = {
+            "video": str(output_video_path),
+            "target_language": target_language,
+            "flagged_count": len(flagged_segments),
+            "segments": flagged_segments,
+        }
+        report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return report_path
+
     def _text_to_timestamp_segments(self, text: str, total_duration: Optional[float]) -> List[Dict[str, object]]:
         cleaned = re.sub(r"\s+", " ", (text or "").strip())
         if not cleaned:
@@ -2369,13 +2729,15 @@ class SubtitleProcessor:
         model_key = f"openai:{model_size}"
         model = model_cache.get(model_key)
         if model is None:
+            self._log_ai_device_choice("openai-whisper")
             self._log(f"Loading openai-whisper model: {model_size}...")
-            model = whisper.load_model(model_size)
+            model = whisper.load_model(model_size, device=self._ai_device())
             model_cache[model_key] = model
 
         options: Dict[str, object] = {"task": "transcribe"}
         if language:
             options["language"] = language
+        options["fp16"] = self._whisper_fp16_enabled()
         result = model.transcribe(str(video), **options)
         segments = self._normalize_backend_segments(result.get("segments", []))
         detected = str(result.get("language") or "").strip().lower()
@@ -2392,8 +2754,13 @@ class SubtitleProcessor:
         model_key = f"faster:{model_size}"
         model = model_cache.get(model_key)
         if model is None:
+            self._log_ai_device_choice("faster-whisper")
             self._log(f"Loading faster-whisper model: {model_size}...")
-            model = module.WhisperModel(model_size, device="auto", compute_type="int8")
+            model = module.WhisperModel(
+                model_size,
+                device=self._ai_device(),
+                compute_type=self._ai_compute_type(),
+            )
             model_cache[model_key] = model
 
         segments_iter, info = model.transcribe(
@@ -2418,8 +2785,13 @@ class SubtitleProcessor:
         model_key = f"whisperx:{model_size}"
         model = model_cache.get(model_key)
         if model is None:
+            self._log_ai_device_choice("whisperx")
             self._log(f"Loading WhisperX model: {model_size}...")
-            model = module.load_model(model_size, device="cpu", compute_type="int8")
+            model = module.load_model(
+                model_size,
+                device=self._ai_device(),
+                compute_type=self._ai_compute_type(),
+            )
             model_cache[model_key] = model
 
         audio = module.load_audio(str(video))
@@ -2429,8 +2801,8 @@ class SubtitleProcessor:
 
         try:
             if detected:
-                align_model, metadata = module.load_align_model(language_code=detected, device="cpu")
-                aligned = module.align(segments, align_model, metadata, audio, "cpu")
+                align_model, metadata = module.load_align_model(language_code=detected, device=self._ai_device())
+                aligned = module.align(segments, align_model, metadata, audio, self._ai_device())
                 if isinstance(aligned, dict) and isinstance(aligned.get("segments"), list):
                     segments = aligned.get("segments", segments)
         except Exception as exc:
@@ -2449,8 +2821,9 @@ class SubtitleProcessor:
         model_key = f"stable:{model_size}"
         model = model_cache.get(model_key)
         if model is None:
+            self._log_ai_device_choice("stable-ts")
             self._log(f"Loading stable-ts model: {model_size}...")
-            model = module.load_model(model_size)
+            model = module.load_model(model_size, device=self._ai_device())
             model_cache[model_key] = model
 
         result = model.transcribe(str(video), task="transcribe", language=language or None)
@@ -2480,8 +2853,9 @@ class SubtitleProcessor:
         model_key = f"wts:{model_size}"
         model = model_cache.get(model_key)
         if model is None:
+            self._log_ai_device_choice("whisper-timestamped")
             self._log(f"Loading whisper-timestamped base model: {model_size}...")
-            model = whisper.load_model(model_size)
+            model = whisper.load_model(model_size, device=self._ai_device())
             model_cache[model_key] = model
 
         result = wt_module.transcribe(model, str(video), task="transcribe", language=language or None)
@@ -2683,13 +3057,15 @@ class SubtitleProcessor:
             model_key = f"openai:{model_size}"
             model = model_cache.get(model_key)
             if model is None:
+                self._log_ai_device_choice("openai-whisper")
                 self._log(f"Loading openai-whisper model: {model_size}...")
-                model = whisper.load_model(model_size)
+                model = whisper.load_model(model_size, device=self._ai_device())
                 model_cache[model_key] = model
 
             options: Dict[str, object] = {"task": "translate"}
             if source_language:
                 options["language"] = source_language
+            options["fp16"] = self._whisper_fp16_enabled()
             result = model.transcribe(str(video), **options)
             return self._normalize_backend_segments(result.get("segments", [])), "en"
 
@@ -2698,8 +3074,13 @@ class SubtitleProcessor:
             model_key = f"faster:{model_size}"
             model = model_cache.get(model_key)
             if model is None:
+                self._log_ai_device_choice("faster-whisper")
                 self._log(f"Loading faster-whisper model: {model_size}...")
-                model = module.WhisperModel(model_size, device="auto", compute_type="int8")
+                model = module.WhisperModel(
+                    model_size,
+                    device=self._ai_device(),
+                    compute_type=self._ai_compute_type(),
+                )
                 model_cache[model_key] = model
 
             segments_iter, _ = model.transcribe(
@@ -2717,8 +3098,9 @@ class SubtitleProcessor:
             model_key = f"stable:{model_size}"
             model = model_cache.get(model_key)
             if model is None:
+                self._log_ai_device_choice("stable-ts")
                 self._log(f"Loading stable-ts model: {model_size}...")
-                model = module.load_model(model_size)
+                model = module.load_model(model_size, device=self._ai_device())
                 model_cache[model_key] = model
 
             result = model.transcribe(str(video), task="translate", language=source_language or None)
@@ -2740,8 +3122,9 @@ class SubtitleProcessor:
             model_key = f"wts:{model_size}"
             model = model_cache.get(model_key)
             if model is None:
+                self._log_ai_device_choice("whisper-timestamped")
                 self._log(f"Loading whisper-timestamped base model: {model_size}...")
-                model = whisper.load_model(model_size)
+                model = whisper.load_model(model_size, device=self._ai_device())
                 model_cache[model_key] = model
 
             result = wt_module.transcribe(model, str(video), task="translate", language=source_language or None)
@@ -3378,6 +3761,27 @@ class SubtitleProcessor:
             )
         return translated_rows
 
+    def _count_segments_with_audio(
+        self,
+        segments: List[Dict[str, object]],
+        voice_regions: List[Tuple[float, float]],
+    ) -> int:
+        """Count segments that overlap detected source-audio activity."""
+        if not segments or not voice_regions:
+            return 0
+
+        count = 0
+        for seg in segments:
+            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
+            end = max(start + 0.05, self._safe_float(seg.get("end"), start + 0.05))
+            has_overlap = any(
+                region_start < end and region_end > start
+                for region_start, region_end in voice_regions
+            )
+            if has_overlap:
+                count += 1
+        return count
+
     def _pick_edge_tts_voice(self, target_language: str, reproducer_model: str = "auto") -> str:
         requested = (reproducer_model or "auto").strip()
         if requested and requested.lower() != "auto":
@@ -3413,17 +3817,322 @@ class SubtitleProcessor:
         target_wps = total_words / total_seconds
         baseline_wps = 2.6
         pct = int(round(((target_wps / baseline_wps) - 1.0) * 100))
-        pct = max(-35, min(35, pct))
+        # Keep this conservative; aggressive positive rates can sound rushed.
+        pct = max(-25, min(8, pct))
         return f"{pct:+d}%"
 
-    def _synthesize_edge_tts_audio(self, text: str, voice: str, rate: str, output_path: Path) -> None:
-        module = importlib.import_module("edge_tts")
+    @staticmethod
+    def _normalize_for_similarity(text: str) -> str:
+        value = (text or "").lower()
+        value = re.sub(r"[^a-z0-9\s]", " ", value)
+        value = re.sub(r"\s+", " ", value).strip()
+        return value
 
+    def _text_similarity_score(self, expected_text: str, observed_text: str) -> float:
+        a = self._normalize_for_similarity(expected_text)
+        b = self._normalize_for_similarity(observed_text)
+        if not a or not b:
+            return 0.0
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    def _verify_synthesized_segment_text(
+        self,
+        audio_path: Path,
+        expected_text: str,
+        backend: str,
+        model_size: str,
+        model_cache: Dict[str, object],
+    ) -> Tuple[float, str]:
+        try:
+            observed_segments, _ = self._transcribe_with_backend(
+                video=audio_path,
+                backend=backend,
+                model_size=model_size,
+                language="en",
+                model_cache=model_cache,
+            )
+            observed_text = self._extract_transcript_text(observed_segments)
+            score = self._text_similarity_score(expected_text, observed_text)
+            return score, observed_text
+        except Exception as exc:
+            self._log(f"  Segment verification skipped: {exc}")
+            return 0.0, ""
+
+    def _synthesize_edge_tts_audio(
+        self,
+        text: str,
+        voice: str,
+        rate: str,
+        output_path: Path,
+        segments: Optional[List[Dict[str, object]]] = None,
+        temp_dir: Optional[str] = None,
+        verification_backend: Optional[str] = None,
+        verification_model_size: str = "base",
+        verification_model_cache: Optional[Dict[str, object]] = None,
+        enable_segment_verification: bool = True,
+        enable_second_pass: bool = True,
+        second_pass_mode: str = "balanced",
+        synth_stats: Optional[Dict[str, int]] = None,
+    ) -> List[Dict[str, object]]:
+        """Synthesize audio using Edge TTS with per-segment synthesis for better quality."""
+        module = importlib.import_module("edge_tts")
+        flagged_segments: List[Dict[str, object]] = []
+        local_synth_stats = synth_stats if synth_stats is not None else {}
+        local_synth_stats.setdefault("segment_total", 0)
+        local_synth_stats.setdefault("segment_text_nonempty", 0)
+        local_synth_stats.setdefault("segment_synthesized", 0)
+
+        # If segments provided, synthesize each segment separately for better timing and quality
+        if segments and temp_dir:
+            local_synth_stats["segment_total"] = len(segments)
+            concat_entries: List[Path] = []
+            segment_entry_pos: Dict[int, int] = {}
+            segment_target_durations: Dict[int, float] = {}
+            segment_texts: Dict[int, str] = {}
+            cursor = 0.0
+            temp_path = Path(temp_dir) / "edge_segments"
+            temp_path.mkdir(parents=True, exist_ok=True)
+
+            total_duration = None
+            for seg in segments:
+                try:
+                    seg_start = float(seg.get("start", 0.0))
+                    seg_end = float(seg.get("end", 0.1))
+                    if seg_end > (total_duration or 0):
+                        total_duration = seg_end
+                except (TypeError, ValueError):
+                    pass
+
+            for idx, seg in enumerate(segments):
+                seg_text = self._clean_tts_text(str(seg.get("text") or "").strip())
+                if not seg_text:
+                    continue
+
+                local_synth_stats["segment_text_nonempty"] += 1
+
+                start = max(0.0, float(seg.get("start", 0.0)))
+                end = max(start + 0.2, float(seg.get("end", start + 0.2)))
+                target_duration = max(0.2, end - start)
+                # Lip-sync guardrail: keep enough display time per word when possible.
+                words = max(1, len(seg_text.split()))
+                preferred_duration = max(0.35, words * 0.34)
+                if preferred_duration > target_duration:
+                    target_duration = preferred_duration
+
+                # Add silence for gaps
+                if start > cursor + 0.03:
+                    silence_path = temp_path / f"gap_{idx:05d}.wav"
+                    self._write_silence_clip(silence_path, start - cursor)
+                    concat_entries.append(silence_path)
+
+                # Synthesize this segment
+                segment_path = temp_path / f"segment_{idx:05d}.mp3"
+
+                async def _synthesize_segment() -> None:
+                    communicator = module.Communicate(text=seg_text, voice=voice, rate=rate)
+                    await communicator.save(str(segment_path))
+
+                asyncio.run(_synthesize_segment())
+
+                # Fit to target duration
+                fitted_segment = temp_path / f"segment_{idx:05d}.wav"
+                fitted_seconds = self._fit_audio_to_target_duration(
+                    segment_path,
+                    fitted_segment,
+                    target_duration,
+                    max_speedup=1.15,
+                )
+
+                # Optional selective verification and one retry for problematic segments.
+                should_verify = (
+                    enable_segment_verification
+                    and verification_backend is not None
+                    and verification_model_cache is not None
+                    and len(seg_text.split()) >= 2
+                    and target_duration <= 3.0
+                )
+                if should_verify:
+                    score, observed = self._verify_synthesized_segment_text(
+                        audio_path=fitted_segment,
+                        expected_text=seg_text,
+                        backend=verification_backend,
+                        model_size=verification_model_size,
+                        model_cache=verification_model_cache,
+                    )
+                    if score < 0.72:
+                        self._log(
+                            f"  Segment {idx + 1}: low verification score={score:0.2f}; retrying slower"
+                        )
+                        retry_segment_path = temp_path / f"segment_{idx:05d}.retry.mp3"
+
+                        async def _retry_segment() -> None:
+                            retry_rate = "-18%"
+                            communicator = module.Communicate(text=seg_text, voice=voice, rate=retry_rate)
+                            await communicator.save(str(retry_segment_path))
+
+                        asyncio.run(_retry_segment())
+                        retry_fitted = temp_path / f"segment_{idx:05d}.retry.wav"
+                        retry_seconds = self._fit_audio_to_target_duration(
+                            retry_segment_path,
+                            retry_fitted,
+                            target_duration,
+                            max_speedup=1.10,
+                        )
+                        retry_score, _ = self._verify_synthesized_segment_text(
+                            audio_path=retry_fitted,
+                            expected_text=seg_text,
+                            backend=verification_backend,
+                            model_size=verification_model_size,
+                            model_cache=verification_model_cache,
+                        )
+                        if retry_score > score:
+                            fitted_segment = retry_fitted
+                            fitted_seconds = retry_seconds
+                            score = retry_score
+                            self._log(
+                                f"  Segment {idx + 1}: retry improved verification to {retry_score:0.2f}"
+                            )
+                        elif observed:
+                            self._log(
+                                f"  Segment {idx + 1}: keeping original synthesis (observed='{observed[:60]}')"
+                            )
+
+                concat_entries.append(fitted_segment)
+                local_synth_stats["segment_synthesized"] += 1
+
+                # Test phase: mark regeneration candidates.
+                speedup_ratio = (target_duration / max(0.01, fitted_seconds)) if fitted_seconds > 0 else 1.0
+                if speedup_ratio > 1.12 or (should_verify and score < 0.74):
+                    flagged_segments.append(
+                        {
+                            "index": idx,
+                            "start": round(start, 3),
+                            "end": round(end, 3),
+                            "target_duration": round(target_duration, 3),
+                            "fitted_duration": round(fitted_seconds, 3),
+                            "speedup_ratio": round(speedup_ratio, 3),
+                            "verify_score": round(score, 3) if should_verify else None,
+                            "text": seg_text,
+                            "reason": "low_verify" if (should_verify and score < 0.74) else "high_speedup",
+                        }
+                    )
+                segment_entry_pos[idx] = len(concat_entries)
+                cursor = max(cursor, start + max(0.2, fitted_seconds))
+                segment_target_durations[idx] = target_duration
+                segment_texts[idx] = seg_text
+
+            # Automatic second pass: regenerate flagged segments with slower settings.
+            if enable_second_pass and flagged_segments:
+                mode = str(second_pass_mode).strip().lower() or "balanced"
+                if mode not in {"gentle", "balanced", "strict"}:
+                    mode = "balanced"
+                mode_cfg = {
+                    "gentle": {"rate": "-18%", "duration_scale": 1.05, "max_speedup": 1.08},
+                    "balanced": {"rate": "-24%", "duration_scale": 1.08, "max_speedup": 1.05},
+                    "strict": {"rate": "-30%", "duration_scale": 1.12, "max_speedup": 1.03},
+                }[mode]
+                self._log(
+                    f"  Second pass ({mode}): regenerating {len(flagged_segments)} flagged segment(s)"
+                )
+                seen_indices: set[int] = set()
+                for flagged in flagged_segments:
+                    idx = int(flagged.get("index", -1))
+                    if idx < 0 or idx in seen_indices:
+                        continue
+                    seen_indices.add(idx)
+                    if idx not in segment_entry_pos or idx not in segment_target_durations or idx not in segment_texts:
+                        continue
+
+                    retry_text = segment_texts[idx]
+                    retry_target = segment_target_durations[idx] * float(mode_cfg["duration_scale"])
+                    retry_mp3 = temp_path / f"segment_{idx:05d}.pass2.mp3"
+
+                    async def _second_pass_segment() -> None:
+                        retry_rate = str(mode_cfg["rate"])
+                        communicator = module.Communicate(text=retry_text, voice=voice, rate=retry_rate)
+                        await communicator.save(str(retry_mp3))
+
+                    asyncio.run(_second_pass_segment())
+                    retry_wav = temp_path / f"segment_{idx:05d}.pass2.wav"
+                    retry_seconds = self._fit_audio_to_target_duration(
+                        retry_mp3,
+                        retry_wav,
+                        retry_target,
+                        max_speedup=float(mode_cfg["max_speedup"]),
+                    )
+
+                    # Verify second pass when backend is available.
+                    if (
+                        enable_segment_verification
+                        and verification_backend is not None
+                        and verification_model_cache is not None
+                    ):
+                        retry_score, _ = self._verify_synthesized_segment_text(
+                            audio_path=retry_wav,
+                            expected_text=retry_text,
+                            backend=verification_backend,
+                            model_size=verification_model_size,
+                            model_cache=verification_model_cache,
+                        )
+                        flagged["second_pass_verify_score"] = round(retry_score, 3)
+                    flagged["second_pass_fitted_duration"] = round(retry_seconds, 3)
+                    flagged["second_pass_applied"] = True
+                    flagged["second_pass_mode"] = mode
+
+                    entry_pos = segment_entry_pos[idx]
+                    concat_entries[entry_pos] = retry_wav
+
+            # Add tail silence if needed
+            if total_duration and total_duration > cursor + 0.03:
+                tail_silence = temp_path / "tail_gap.wav"
+                self._write_silence_clip(tail_silence, total_duration - cursor)
+                concat_entries.append(tail_silence)
+
+            # Concatenate all segments
+            if concat_entries:
+                concat_manifest = temp_path / "edge_concat.txt"
+                concat_manifest.write_text(
+                    "\n".join(f"file '{p.as_posix()}'" for p in concat_entries),
+                    encoding="utf-8",
+                )
+                cmd = [
+                    self.ffmpeg_bin,
+                    "-y",
+                    "-loglevel",
+                    self.ffmpeg_loglevel,
+                    "-nostats",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_manifest),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "22050",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(output_path),
+                ]
+                result = self._run_command(cmd, description="concat Edge TTS segments")
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or "ffmpeg concat failed for Edge segments")
+                return flagged_segments
+
+        # Fallback: synthesize entire merged text at once
+        if segments:
+            local_synth_stats["segment_total"] = len(segments)
+            local_synth_stats["segment_text_nonempty"] = sum(
+                1 for seg in segments if self._clean_tts_text(str(seg.get("text") or "").strip())
+            )
+            local_synth_stats["segment_synthesized"] = local_synth_stats["segment_text_nonempty"]
         async def _run() -> None:
             communicator = module.Communicate(text=text, voice=voice, rate=rate)
             await communicator.save(str(output_path))
 
         asyncio.run(_run())
+        return flagged_segments
 
     def _extract_audio_reference_clip(
         self,
@@ -3458,16 +4167,67 @@ class SubtitleProcessor:
         result = self._run_command(cmd, description="extract voice reference clip")
         return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 2048
 
+    def _extract_best_audio_reference_clip(
+        self,
+        source_media: Path,
+        output_path: Path,
+        start_seconds: float,
+        duration_seconds: float,
+    ) -> Optional[Path]:
+        """Extract a nearby reference clip that contains usable signal.
+
+        XTTS becomes unstable when the speaker reference clip is mostly silence,
+        so try a few nearby windows before falling back.
+        """
+        total_duration = self._probe_media_duration_seconds(source_media)
+        clip_duration = max(0.35, float(duration_seconds))
+        base_start = max(0.0, float(start_seconds))
+        search_offsets = [0.0, -1.2, 1.2, -2.5, 2.5, -4.0, 4.0]
+
+        for attempt_idx, offset in enumerate(search_offsets):
+            candidate_start = max(0.0, base_start + offset)
+            if total_duration is not None:
+                candidate_start = min(candidate_start, max(0.0, total_duration - clip_duration))
+
+            candidate_path = (
+                output_path
+                if attempt_idx == 0
+                else output_path.with_name(f"{output_path.stem}.alt{attempt_idx}{output_path.suffix}")
+            )
+            has_clip = self._extract_audio_reference_clip(
+                source_media,
+                candidate_path,
+                candidate_start,
+                clip_duration,
+            )
+            if not has_clip:
+                continue
+            if self._audio_has_usable_signal(candidate_path, min_mean_db=-58.0, min_peak_db=-38.0):
+                if attempt_idx > 0:
+                    self._log(
+                        f"  XTTS reference retry: using nearby clip at {candidate_start:0.2f}s for {output_path.name}"
+                    )
+                return candidate_path
+
+            self._log(
+                f"  XTTS reference clip near {candidate_start:0.2f}s is near-silent; trying another window"
+            )
+
+        return None
+
     def _build_atempo_filter_chain(self, tempo: float) -> str:
+        """Build audio tempo adjustment filter chain using gentle stretching.
+        Uses smaller steps to preserve audio quality and avoid distortion."""
         remaining = max(0.25, min(8.0, float(tempo)))
         filters: List[str] = []
-        while remaining > 2.0:
-            filters.append("atempo=2.0")
-            remaining /= 2.0
-        while remaining < 0.5:
-            filters.append("atempo=0.5")
-            remaining /= 0.5
-        filters.append(f"atempo={remaining:.4f}")
+        while remaining > 1.5:
+            filters.append("atempo=1.5")
+            remaining /= 1.5
+        while remaining < 0.67:
+            filters.append("atempo=0.67")
+            remaining /= 0.67
+        if abs(remaining - 1.0) > 0.01:
+            filters.append(f"atempo={remaining:.4f}")
         return ",".join(filters)
 
     def _fit_audio_to_target_duration(
@@ -3475,14 +4235,35 @@ class SubtitleProcessor:
         input_path: Path,
         output_path: Path,
         target_seconds: float,
-    ) -> None:
+        max_speedup: float = 1.15,
+    ) -> float:
+        """Fit synthesized audio to target duration with speed-up guardrails.
+
+        Returns actual output duration in seconds.
+        """
         source_seconds = self._probe_media_duration_seconds(input_path) or 0.0
         target = max(0.2, float(target_seconds))
         if source_seconds <= 0:
             raise RuntimeError(f"Unable to measure synthesized segment duration: {input_path.name}")
 
-        tempo = max(0.25, min(8.0, source_seconds / target))
-        filter_chain = self._build_atempo_filter_chain(tempo)
+        # Prevent unnatural speech caused by shrinking long lines into very short subtitle windows.
+        if source_seconds > target * max(1.01, max_speedup):
+            relaxed_target = source_seconds / max(1.01, max_speedup)
+            self._log(
+                f"  Duration guardrail: relaxing target from {target:0.2f}s to {relaxed_target:0.2f}s"
+            )
+            target = relaxed_target
+
+        # Only apply tempo adjustment if significantly different from target (>10%)
+        tempo_ratio = source_seconds / target
+        if abs(tempo_ratio - 1.0) > 0.1:
+            tempo = max(0.25, min(8.0, tempo_ratio))
+            filter_chain = self._build_atempo_filter_chain(tempo)
+            # Add high-quality resampler to minimize audio degradation
+            filter_chain = f"{filter_chain},lowpass=11025:poles=2" if tempo_ratio > 1.5 else filter_chain
+        else:
+            filter_chain = "anull"  # No adjustment needed, use null filter
+        
         cmd = [
             self.ffmpeg_bin,
             "-y",
@@ -3504,6 +4285,7 @@ class SubtitleProcessor:
         result = self._run_command(cmd, description="fit synthesized segment duration")
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "ffmpeg duration fitting failed")
+        return self._probe_media_duration_seconds(output_path) or target
 
     def _write_silence_clip(self, output_path: Path, duration_seconds: float) -> None:
         duration = max(0.02, float(duration_seconds))
@@ -3527,6 +4309,294 @@ class SubtitleProcessor:
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "ffmpeg silence generation failed")
 
+    def _clean_tts_text(self, text: str) -> str:
+        """Conservative text cleanup to reduce TTS stutter/self-correction artifacts."""
+        value = (text or "").strip()
+        if not value:
+            return value
+
+        value = re.sub(r"\s*[/|]+\s*", " ", value)
+        value = re.sub(r"([,.;:!?])\1+", r"\1", value)
+        value = re.sub(r"\s+", " ", value).strip()
+
+        words = value.split(" ")
+        cleaned: List[str] = []
+        for word in words:
+            token = word.strip()
+            if not token:
+                continue
+            if cleaned:
+                prev = cleaned[-1]
+                if token.lower() == prev.lower():
+                    continue
+                similarity = difflib.SequenceMatcher(None, token.lower(), prev.lower()).ratio()
+                if similarity >= 0.92 and len(token) >= 4 and len(prev) >= 4:
+                    cleaned[-1] = token
+                    continue
+            cleaned.append(token)
+
+        return " ".join(cleaned).strip()
+
+    # ------------------------------------------------------------------
+    # Voice-activity detection and audio mixing helpers
+    # ------------------------------------------------------------------
+
+    def _detect_voice_activity(
+        self,
+        source_video: Path,
+        audio_stream_index: int = 0,
+        silence_noise_db: float = -35.0,
+        silence_min_duration: float = 0.25,
+    ) -> List[Tuple[float, float]]:
+        """Return a list of (start, end) voice-active regions by inverting detected silence.
+
+        Uses FFmpeg's silencedetect filter on the first audio stream.  Returns an
+        empty list when detection fails – callers must degrade gracefully.
+        """
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            "info",  # silencedetect writes to stderr at info level
+            "-nostats",
+            "-i",
+            str(source_video),
+            "-map",
+            f"0:a:{audio_stream_index}",
+            "-af",
+            f"silencedetect=noise={silence_noise_db:.1f}dB:duration={silence_min_duration:.2f}",
+            "-f",
+            "null",
+            "-",
+        ]
+        result = self._run_command(cmd, description="detect voice activity")
+        stderr = result.stderr or ""
+
+        silence_starts: List[float] = []
+        silence_ends: List[float] = []
+        for line in stderr.splitlines():
+            m_start = re.search(r"silence_start:\s*([\d.]+)", line)
+            m_end = re.search(r"silence_end:\s*([\d.]+)", line)
+            if m_start:
+                silence_starts.append(float(m_start.group(1)))
+            if m_end:
+                silence_ends.append(float(m_end.group(1)))
+
+        if not silence_starts and not silence_ends:
+            # No silence info → assume entire file is voice-active
+            total = self._probe_media_duration_seconds(source_video) or 0.0
+            return [(0.0, total)] if total > 0 else []
+
+        # Reconstruct voice segments as gaps between silence periods
+        total_duration = self._probe_media_duration_seconds(source_video) or 0.0
+        voice_regions: List[Tuple[float, float]] = []
+        cursor = 0.0
+        for sil_start in sorted(silence_starts):
+            if sil_start > cursor + 0.05:
+                voice_regions.append((cursor, sil_start))
+            # Find the matching silence end (first end after this start)
+            matching_ends = [e for e in silence_ends if e >= sil_start]
+            cursor = matching_ends[0] if matching_ends else sil_start
+        if total_duration > cursor + 0.05:
+            voice_regions.append((cursor, total_duration))
+
+        self._log(
+            f"  VAD: detected {len(voice_regions)} voice-active region(s) in {source_video.name}"
+        )
+        return voice_regions
+
+    def _snap_segments_to_vad(
+        self,
+        segments: List[Dict[str, object]],
+        voice_regions: List[Tuple[float, float]],
+        tolerance: float = 0.35,
+    ) -> List[Dict[str, object]]:
+        """Snap subtitle segment start/end times to nearby VAD region boundaries.
+
+        For each segment, if an actual voice-activity boundary is within *tolerance*
+        seconds, snap to that boundary.  This compensates for subtitle timing drift
+        and produces better-aligned dubs.
+        """
+        if not voice_regions:
+            return segments
+
+        # Flatten all VAD boundaries into a sorted list
+        boundaries: List[float] = sorted({t for pair in voice_regions for t in pair})
+
+        def nearest_boundary(t: float) -> float:
+            lo, hi = 0, len(boundaries) - 1
+            best = boundaries[0]
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                if abs(boundaries[mid] - t) < abs(best - t):
+                    best = boundaries[mid]
+                if boundaries[mid] < t:
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            return best
+
+        snapped: List[Dict[str, object]] = []
+        snapped_count = 0
+        for seg in segments:
+            seg = dict(seg)
+            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
+            end = max(start + 0.05, self._safe_float(seg.get("end"), start + 0.05))
+
+            nb_start = nearest_boundary(start)
+            nb_end = nearest_boundary(end)
+
+            if abs(nb_start - start) <= tolerance:
+                seg["start"] = nb_start
+                snapped_count += 1
+            if abs(nb_end - end) <= tolerance:
+                seg["end"] = nb_end
+
+            # Ensure end stays after start
+            if self._safe_float(seg.get("end"), 0.0) <= self._safe_float(seg.get("start"), 0.0):
+                seg["end"] = self._safe_float(seg.get("start"), 0.0) + 0.2
+
+            snapped.append(seg)
+
+        if snapped_count:
+            self._log(
+                f"  VAD: snapped {snapped_count}/{len(segments)} segment boundaries to voice activity"
+            )
+        return snapped
+
+    def _detect_speaker_turns(self, source_video: Path) -> List[Dict[str, object]]:
+        """Best-effort diarization using WhisperX when available.
+
+        Requires:
+        - `whisperx` installed
+        - `HF_TOKEN` (or HUGGINGFACE_TOKEN) env var for pyannote pipeline access
+        """
+        token = (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN") or "").strip()
+        if not token:
+            return []
+
+        try:
+            whisperx = importlib.import_module("whisperx")
+        except Exception:
+            return []
+
+        try:
+            self._log("  Diarization: running WhisperX speaker turn detection...")
+            device = "cpu"
+            if hasattr(whisperx, "DiarizationPipeline"):
+                diarize = whisperx.DiarizationPipeline(use_auth_token=token, device=device)
+                result = diarize(str(source_video))
+            else:
+                return []
+
+            turns: List[Dict[str, object]] = []
+            if hasattr(result, "iterrows"):
+                for _, row in result.iterrows():
+                    start = self._safe_float(row.get("start"), 0.0)
+                    end = max(start + 0.1, self._safe_float(row.get("end"), start + 0.1))
+                    speaker = str(row.get("speaker") or "SPEAKER_UNKNOWN")
+                    turns.append({"start": start, "end": end, "speaker": speaker})
+            elif isinstance(result, list):
+                for row in result:
+                    if not isinstance(row, dict):
+                        continue
+                    start = self._safe_float(row.get("start"), 0.0)
+                    end = max(start + 0.1, self._safe_float(row.get("end"), start + 0.1))
+                    speaker = str(row.get("speaker") or "SPEAKER_UNKNOWN")
+                    turns.append({"start": start, "end": end, "speaker": speaker})
+
+            if turns:
+                self._log(f"  Diarization: detected {len(turns)} speaker turn(s)")
+            return turns
+        except Exception as exc:
+            self._log(f"  Diarization unavailable (non-fatal): {exc}")
+            return []
+
+    @staticmethod
+    def _speaker_for_time(speaker_turns: List[Dict[str, object]], time_point: float) -> Optional[str]:
+        for turn in speaker_turns:
+            start = float(turn.get("start", 0.0))
+            end = float(turn.get("end", start + 0.1))
+            if start <= time_point <= end:
+                return str(turn.get("speaker") or "") or None
+        return None
+
+    def _create_dubbed_mix_audio(
+        self,
+        source_video: Path,
+        dubbed_speech_path: Path,
+        output_path: Path,
+        duck_ratio: float = 10.0,
+        duck_threshold: float = 0.015,
+        duck_attack_ms: float = 40.0,
+        duck_release_ms: float = 200.0,
+        original_makeup_gain: float = 1.0,
+    ) -> None:
+        """Mix dubbed speech over the original audio using sidechain compression.
+
+        The dubbed track (which already has silence at non-speech times) acts as a
+        sidechain key: whenever it is above *duck_threshold*, the original audio is
+        compressed by *duck_ratio*, ducking the original language speech while letting
+        music and background sound through at a reduced level.  The two are then mixed
+        to produce a single stream that sounds like "original ambient audio + dubbed
+        voices".
+
+        Parameters
+        ----------
+        source_video:       Source file whose primary audio stream is used.
+        dubbed_speech_path: WAV produced by TTS synthesis (speech + silence gaps).
+        output_path:        Destination WAV for the mixed result.
+        duck_ratio:         Compression ratio applied to original when dub is active.
+                            10:1 ducks strongly; 4:1 is subtler.
+        duck_threshold:     Linear amplitude above which sidechain kicks in (≈ -33 dB).
+        duck_attack_ms:     How quickly (ms) ducking engages.
+        duck_release_ms:    How quickly (ms) ducking releases after speech ends.
+        original_makeup_gain: Volume multiplier on original after compression (≥ 1 = louder).
+        """
+        # Filter graph:
+        #  [0:a:0] → normalize format → [orig]
+        #  [1:a]   → split into [dub_play] and [dub_key]
+        #  [orig][dub_key] → sidechaincompress → [ducked]
+        #  [ducked][dub_play] → amix (no normalization) → [mixed]
+        filter_complex = (
+            "[0:a:0]aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono[orig];"
+            "[1:a]aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,asplit=2[dub_play][dub_key];"
+            f"[orig][dub_key]sidechaincompress="
+            f"threshold={duck_threshold:.4f}:"
+            f"ratio={duck_ratio:.2f}:"
+            f"attack={duck_attack_ms:.1f}:"
+            f"release={duck_release_ms:.1f}:"
+            f"makeup={original_makeup_gain:.2f}"
+            "[ducked];"
+            "[ducked][dub_play]amix=inputs=2:normalize=0[mixed]"
+        )
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-i",
+            str(source_video),
+            "-i",
+            str(dubbed_speech_path),
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[mixed]",
+            "-shortest",
+            "-ac",
+            "2",           # stereo output so music stays in stereo when source is stereo
+            "-ar",
+            "44100",       # CD-quality for the mix track
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        result = self._run_command(cmd, description="create sidechain-ducked dub mix")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "ffmpeg sidechain mix failed")
+
     def _synthesize_xtts_audio(
         self,
         source_video: Path,
@@ -3535,6 +4605,8 @@ class SubtitleProcessor:
         output_path: Path,
         temp_dir: str,
         license_confirmed: bool = False,
+        enable_diarization: bool = True,
+        synth_stats: Optional[Dict[str, int]] = None,
     ) -> None:
         xtts_worker_python = os.getenv("SUBTITLE_XTTS_PYTHON", "").strip()
         if not xtts_worker_python:
@@ -3585,52 +4657,16 @@ class SubtitleProcessor:
         fallback_start = 0.0
         if total_duration and total_duration > 60:
             fallback_start = max(0.0, min(total_duration - 6.0, total_duration * 0.2))
-        self._extract_audio_reference_clip(source_video, fallback_ref, fallback_start, 6.0)
+        fallback_candidate = self._extract_best_audio_reference_clip(
+            source_video,
+            fallback_ref,
+            fallback_start,
+            6.0,
+        )
+        if fallback_candidate is not None:
+            fallback_ref = fallback_candidate
 
-        tts = None
-        if use_worker:
-            self._log(
-                f"  Using dedicated XTTS worker Python: {xtts_worker_python}"
-            )
-        else:
-            self._log("  Loading XTTS-v2 model for line-by-line voice/emotion matching...")
-            tts = _CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2")
-
-        concat_entries: List[Path] = []
-        cursor = 0.0
-        voiced_segments = 0
-
-        for idx, seg in enumerate(segments):
-            text = str(seg.get("text") or "").strip()
-            if not text:
-                continue
-
-            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
-            end = max(start + 0.2, self._safe_float(seg.get("end"), start + 0.2))
-            target_duration = max(0.2, end - start)
-
-            if start > cursor + 0.03:
-                silence_path = fitted_dir / f"gap_{idx:05d}.wav"
-                self._write_silence_clip(silence_path, start - cursor)
-                concat_entries.append(silence_path)
-
-            ref_start = max(0.0, start - 0.12)
-            ref_end = end + 0.18
-            if total_duration is not None:
-                ref_end = min(total_duration, ref_end)
-            ref_duration = max(0.6, min(8.0, ref_end - ref_start))
-            ref_path = refs_dir / f"ref_{idx:05d}.wav"
-            has_ref = self._extract_audio_reference_clip(source_video, ref_path, ref_start, ref_duration)
-            speaker_ref = ref_path if has_ref else fallback_ref
-            if not speaker_ref.exists():
-                raise RuntimeError("Unable to extract any source audio to use as a voice reference")
-
-            raw_segment_path = raw_dir / f"segment_{idx:05d}.wav"
-            fitted_segment_path = fitted_dir / f"segment_{idx:05d}.wav"
-
-            self._log(
-                f"  XTTS line {idx + 1}: cloning voice/emotion from {start:0.2f}s-{end:0.2f}s"
-            )
+        def _run_xtts_segment(current_text: str, speaker_reference: Path, destination: Path) -> None:
             if use_worker:
                 worker_script = Path(__file__).resolve().parent / "xtts_worker.py"
                 if not worker_script.exists():
@@ -3640,13 +4676,13 @@ class SubtitleProcessor:
                     xtts_worker_python,
                     str(worker_script),
                     "--text",
-                    text,
+                    current_text,
                     "--speaker-wav",
-                    str(speaker_ref),
+                    str(speaker_reference),
                     "--language",
                     xtts_lang,
                     "--output",
-                    str(raw_segment_path),
+                    str(destination),
                 ]
                 consent_via_env = os.getenv("SUBTITLE_XTTS_ACCEPT_CPML", "").strip().lower() in {
                     "1",
@@ -3673,15 +4709,108 @@ class SubtitleProcessor:
                     raise RuntimeError(f"XTTS worker failed: {details}")
             else:
                 tts.tts_to_file(
-                    text=text,
-                    speaker_wav=str(speaker_ref),
+                    text=current_text,
+                    speaker_wav=str(speaker_reference),
                     language=xtts_lang,
-                    file_path=str(raw_segment_path),
+                    file_path=str(destination),
                 )
-            self._fit_audio_to_target_duration(raw_segment_path, fitted_segment_path, target_duration)
+
+        tts = None
+        if use_worker:
+            self._log(
+                f"  Using dedicated XTTS worker Python: {xtts_worker_python}"
+            )
+        else:
+            self._log("  Loading XTTS-v2 model for line-by-line voice/emotion matching...")
+            tts = _CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2")
+
+        concat_entries: List[Path] = []
+        cursor = 0.0
+        voiced_segments = 0
+        local_synth_stats = synth_stats if synth_stats is not None else {}
+        local_synth_stats.setdefault("segment_total", len(segments))
+        local_synth_stats.setdefault("segment_text_nonempty", 0)
+        local_synth_stats.setdefault("segment_synthesized", 0)
+        speaker_turns = self._detect_speaker_turns(source_video) if enable_diarization else []
+        speaker_ref_cache: Dict[str, Path] = {}
+        last_ref_path: Optional[Path] = None
+        last_ref_end: float = -999.0
+
+        for idx, seg in enumerate(segments):
+            text = self._clean_tts_text(str(seg.get("text") or "").strip())
+            if not text:
+                continue
+
+            local_synth_stats["segment_text_nonempty"] += 1
+
+            start = max(0.0, self._safe_float(seg.get("start"), 0.0))
+            end = max(start + 0.2, self._safe_float(seg.get("end"), start + 0.2))
+            target_duration = max(0.2, end - start)
+            words = max(1, len(text.split()))
+            target_duration = max(target_duration, words * 0.34)
+
+            if start > cursor + 0.03:
+                silence_path = fitted_dir / f"gap_{idx:05d}.wav"
+                self._write_silence_clip(silence_path, start - cursor)
+                concat_entries.append(silence_path)
+
+            ref_start = max(0.0, start - 0.12)
+            ref_end = end + 0.18
+            if total_duration is not None:
+                ref_end = min(total_duration, ref_end)
+            ref_duration = max(0.6, min(8.0, ref_end - ref_start))
+            ref_path = refs_dir / f"ref_{idx:05d}.wav"
+            speaker_id = self._speaker_for_time(speaker_turns, (start + end) / 2.0)
+            if speaker_id and speaker_id in speaker_ref_cache:
+                speaker_ref = speaker_ref_cache[speaker_id]
+            else:
+                reuse_previous_ref = last_ref_path is not None and (start - last_ref_end) <= 2.5
+                if reuse_previous_ref:
+                    speaker_ref = last_ref_path
+                else:
+                    extracted_ref = self._extract_best_audio_reference_clip(
+                        source_video,
+                        ref_path,
+                        ref_start,
+                        ref_duration,
+                    )
+                    speaker_ref = extracted_ref if extracted_ref is not None else fallback_ref
+            if not speaker_ref.exists():
+                raise RuntimeError("Unable to extract any source audio to use as a voice reference")
+
+            if speaker_id:
+                speaker_ref_cache[speaker_id] = speaker_ref
+            last_ref_path = speaker_ref
+            last_ref_end = end
+
+            raw_segment_path = raw_dir / f"segment_{idx:05d}.wav"
+            fitted_segment_path = fitted_dir / f"segment_{idx:05d}.wav"
+
+            self._log(
+                f"  XTTS line {idx + 1}: cloning voice/emotion from {start:0.2f}s-{end:0.2f}s"
+            )
+            _run_xtts_segment(text, speaker_ref, raw_segment_path)
+            if not self._audio_has_usable_signal(raw_segment_path):
+                if fallback_ref.exists() and speaker_ref.resolve() != fallback_ref.resolve():
+                    self._log(
+                        f"  XTTS line {idx + 1}: segment came back near-silent; retrying with fallback speaker reference"
+                    )
+                    _run_xtts_segment(text, fallback_ref, raw_segment_path)
+                    speaker_ref = fallback_ref
+                if not self._audio_has_usable_signal(raw_segment_path):
+                    raise RuntimeError(
+                        f"XTTS generated near-silent audio for segment {idx + 1} even after fallback reference retry"
+                    )
+            fitted_seconds = self._fit_audio_to_target_duration(
+                raw_segment_path,
+                fitted_segment_path,
+                target_duration,
+                max_speedup=1.15,
+            )
             concat_entries.append(fitted_segment_path)
-            cursor = max(cursor, end)
+            cursor = max(cursor, start + max(0.2, fitted_seconds))
             voiced_segments += 1
+            local_synth_stats["segment_synthesized"] += 1
 
         if voiced_segments == 0:
             raise RuntimeError("XTTS had no subtitle lines to synthesize")
@@ -3727,9 +4856,153 @@ class SubtitleProcessor:
         output_path: Path,
         target_language: str,
     ) -> subprocess.CompletedProcess:
+        """Mux translated audio track into video, preserving all streams and setting dubbed track as default."""
         source_audio_count = len(self._probe_audio_streams(source_video))
         lang_tag = self._normalize_language_code(self._normalize_translation_language(target_language))
         new_audio_index = max(0, source_audio_count)
+        
+        # Build proper FFmpeg command that:
+        # 1. Copies all original streams (video + audio + subs)
+        # 2. Adds the new dubbed audio track with proper codec
+        # 3. Sets the dubbed track as default audio when it's English
+        # 4. Preserves original metadata
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-fflags",
+            "+genpts",
+            "-i",
+            str(source_video),
+            "-i",
+            str(translated_audio_path),
+            "-map",
+            "0:v",  # Map all video streams from source
+            "-map",
+            "0:a",  # Map all audio streams from source
+            "-map",
+            "0:s?",  # Map all subtitle streams from source (optional)
+            "-map",
+            "1:a:0",  # Map new dubbed audio
+            "-c:v",
+            "copy",  # Copy video codec
+        ]
+        
+        # Copy each original audio stream unchanged.
+        for i in range(source_audio_count):
+            cmd.extend([f"-c:a:{i}", "copy"])
+
+        # Add codec for new dubbed audio stream.
+        cmd.extend([
+            "-c:a:" + str(new_audio_index),
+            "aac",
+            "-ar:a:" + str(new_audio_index),
+            "48000",
+        ])  # New dubbed track as AAC at 48kHz for better downstream compatibility
+        
+        # Add metadata for new audio stream
+        cmd.extend([
+            f"-metadata:s:a:{new_audio_index}",
+            f"language={lang_tag}",
+            f"-metadata:s:a:{new_audio_index}",
+            f"title=Translated Dub ({lang_tag})",
+        ])
+        
+        # Mark translated dub as the default audio and clear default on originals.
+        cmd.extend([
+            f"-disposition:a:{source_audio_count}",
+            "default",
+        ])
+        for i in range(source_audio_count):
+            cmd.extend([
+                f"-disposition:a:{i}",
+                "0",
+            ])
+        
+        cmd.extend([
+            "-max_interleave_delta",
+            "0",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-c:s",
+            "copy",
+        ])  # Copy subtitle codecs and normalize mux timing
+        cmd.append(str(output_path))
+        
+        return self._run_command(cmd, description="mux translated audio")
+
+    def _normalize_output_timestamps_for_compat(self, output_path: Path) -> None:
+        """Do a lightweight remux to normalize timestamps for stricter muxers (e.g., HandBrake)."""
+        fixed_path = output_path.with_name(f"{output_path.stem}.hbfix{output_path.suffix}")
+        cmd = [
+            self.ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            self.ffmpeg_loglevel,
+            "-nostats",
+            "-fflags",
+            "+genpts",
+            "-i",
+            str(output_path),
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-max_interleave_delta",
+            "0",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-muxpreload",
+            "0",
+            "-muxdelay",
+            "0",
+            str(fixed_path),
+        ]
+        result = self._run_command(cmd, description="normalize output timestamps for compatibility")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "timestamp normalization remux failed")
+        fixed_path.replace(output_path)
+
+    def _ensure_target_language_default_audio(self, output_path: Path, target_language: str) -> None:
+        """Verify and enforce English dubbed stream as the only default audio stream."""
+        target_lang = self._normalize_translation_language(target_language)
+        if target_lang not in {"en", "eng", "english"}:
+            return
+
+        streams = self._probe_audio_streams_with_disposition(output_path)
+        if not streams:
+            return
+
+        english_positions: List[int] = []
+        default_positions: List[int] = []
+        for pos, stream in enumerate(streams):
+            tags = stream.get("tags") if isinstance(stream, dict) else {}
+            tags = tags if isinstance(tags, dict) else {}
+            raw_lang = str(tags.get("language") or "").strip().lower()
+            normalized = self._normalize_translation_language(raw_lang) if raw_lang else ""
+
+            disposition = stream.get("disposition") if isinstance(stream, dict) else {}
+            disposition = disposition if isinstance(disposition, dict) else {}
+            is_default = int(disposition.get("default", 0) or 0) == 1
+            if is_default:
+                default_positions.append(pos)
+
+            if normalized in {"en", "eng", "english"} or raw_lang in {"en", "eng"}:
+                english_positions.append(pos)
+
+        if not english_positions:
+            self._log("  Verify default audio: no English-tagged audio stream found")
+            return
+
+        target_pos = english_positions[-1]
+        if target_pos in default_positions and len(default_positions) == 1:
+            self._log("  Verify default audio: English dubbed track already default")
+            return
+
+        self._log("  Verify default audio: fixing audio dispositions for English dub")
+        temp_output = output_path.with_name(f"{output_path.stem}.defaultfix{output_path.suffix}")
         cmd = [
             self.ffmpeg_bin,
             "-y",
@@ -3737,24 +5010,20 @@ class SubtitleProcessor:
             self.ffmpeg_loglevel,
             "-nostats",
             "-i",
-            str(source_video),
-            "-i",
-            str(translated_audio_path),
+            str(output_path),
             "-map",
             "0",
-            "-map",
-            "1:a:0",
             "-c",
             "copy",
-            f"-c:a:{new_audio_index}",
-            "aac",
-            f"-metadata:s:a:{new_audio_index}",
-            f"language={lang_tag}",
-            f"-metadata:s:a:{new_audio_index}",
-            f"title=Translated Dub ({lang_tag})",
-            str(output_path),
         ]
-        return self._run_command(cmd, description="mux translated audio")
+        for pos in range(len(streams)):
+            cmd.extend([f"-disposition:a:{pos}", "default" if pos == target_pos else "0"])
+        cmd.append(str(temp_output))
+
+        result = self._run_command(cmd, description="enforce English default audio")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "failed to enforce English default audio")
+        temp_output.replace(output_path)
 
     def translate_audio_with_voice_match(
         self,
@@ -3769,6 +5038,9 @@ class SubtitleProcessor:
         translator_model: str = "google",
         reproducer_model: str = "auto",
         xtts_license_confirmed: bool = False,
+        enable_second_pass: bool = True,
+        second_pass_mode: str = "balanced",
+        enable_diarization: bool = True,
         compare_existing_with_generated: bool = False,
         overwrite: bool = False,
         output_suffix: str = "_translated_dub",
@@ -3787,7 +5059,8 @@ class SubtitleProcessor:
         target_lang = self._normalize_translation_language(target_language)
         self._log(
             f"Audio translation backend: {selected_backend} ({backend_reason}); "
-            f"target language: {target_lang}; translator={translator_model}; reproducer={reproducer_model}"
+            f"target language: {target_lang}; translator={translator_model}; reproducer={reproducer_model}; "
+            f"second_pass={enable_second_pass}/{second_pass_mode}; diarization={enable_diarization}"
         )
 
         videos = [Path(f) for f in target_files if Path(f).exists()]
@@ -3899,6 +5172,7 @@ class SubtitleProcessor:
                     raise RuntimeError("No source segments available for translation")
 
                 translated_segments: List[Dict[str, object]] = []
+                voice_regions: List[Tuple[float, float]] = []
                 if translator_key == "subtitle-backend" and english_subtitle_path is None:
                     try:
                         self._log("  Using subtitle AI backend translation (audio -> English)...")
@@ -3940,6 +5214,22 @@ class SubtitleProcessor:
                 if not translated_segments:
                     raise RuntimeError("Translation produced no segments")
 
+                # Split long translated lines into sentence-sized chunks for better pacing/lip-sync.
+                translated_segments = self._resegment_translated_sentences(translated_segments)
+
+                # ── VAD: snap segment boundaries to actual voice activity ──────────
+                self._log("  Running voice activity detection on original audio...")
+                try:
+                    voice_regions = self._detect_voice_activity(video)
+                    if voice_regions:
+                        translated_segments = self._snap_segments_to_vad(
+                            translated_segments, voice_regions
+                        )
+                    else:
+                        self._log("  VAD returned no regions; using raw subtitle timings")
+                except Exception as vad_exc:
+                    self._log(f"  VAD detection failed (non-fatal): {vad_exc}")
+
                 translated_subtitle_path = video.with_name(f"{video.stem}.{target_lang}.translated.srt")
                 if not translated_subtitle_path.exists() or overwrite:
                     self._save_segments_to_srt(translated_subtitle_path, translated_segments)
@@ -3954,28 +5244,166 @@ class SubtitleProcessor:
                     raise RuntimeError("No translated text available for TTS")
 
                 output_path, replace_target = self._build_output_paths(video, output_suffix, overwrite, output_root)
+                flagged_segments: List[Dict[str, object]] = []
+                dub_diagnostics: Dict[str, object] = {
+                    "source_video": str(video),
+                    "target_language": target_lang,
+                    "segment_source": segment_source,
+                }
+                dub_diagnostics["segment_total"] = len(translated_segments)
+                dub_diagnostics["segment_text_nonempty"] = sum(
+                    1 for seg in translated_segments if self._clean_tts_text(str(seg.get("text") or "").strip())
+                )
+                dub_diagnostics["segments_with_detected_audio"] = self._count_segments_with_audio(
+                    translated_segments,
+                    voice_regions,
+                ) if voice_regions else 0
                 with tempfile.TemporaryDirectory(prefix="tts_dub_", dir=str(self._get_temp_workspace_root())) as temp_dir:
+                    # dubbed_speech_path = pure speech (+ silence gaps) from TTS
+                    dubbed_speech_path = Path(temp_dir) / f"{video.stem}.{target_lang}.speech.wav"
                     use_xtts = (reproducer_model or "auto").lower() == "xtts"
+                    dub_diagnostics["requested_tts_backend"] = "xtts" if use_xtts else "edge"
+                    synth_stats: Dict[str, int] = {
+                        "segment_total": len(translated_segments),
+                        "segment_text_nonempty": 0,
+                        "segment_synthesized": 0,
+                    }
                     if use_xtts:
-                        dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.wav"
                         self._log("  Synthesizing translated speech with line-by-line voice intent matching...")
                         self._synthesize_xtts_audio(
                             source_video=video,
                             segments=translated_segments,
                             language=target_lang,
-                            output_path=dubbed_audio_path,
+                            output_path=dubbed_speech_path,
                             temp_dir=temp_dir,
                             license_confirmed=xtts_license_confirmed,
+                            enable_diarization=enable_diarization,
+                            synth_stats=synth_stats,
                         )
                     else:
-                        dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub.mp3"
                         edge_voice_name = (reproducer_model or "auto").removeprefix("edge:")
                         if edge_voice_name.strip().lower() == "xtts":
                             edge_voice_name = "auto"
                         voice = self._pick_edge_tts_voice(target_lang, reproducer_model=edge_voice_name)
                         rate = self._estimate_edge_tts_rate(translated_segments)
-                        self._log(f"  Synthesizing translated speech (Edge TTS voice={voice}, rate={rate})...")
-                        self._synthesize_edge_tts_audio(merged_text, voice, rate, dubbed_audio_path)
+                        self._log(f"  Synthesizing translated speech per-segment (Edge TTS voice={voice}, rate={rate})...")
+                        second_pass_enabled = bool(enable_second_pass)
+                        if str(second_pass_mode).strip().lower() == "off":
+                            second_pass_enabled = False
+                        flagged_segments = self._synthesize_edge_tts_audio(
+                            merged_text,
+                            voice,
+                            rate,
+                            dubbed_speech_path,
+                            segments=translated_segments,
+                            temp_dir=temp_dir,
+                            verification_backend=selected_backend,
+                            verification_model_size=model_size,
+                            verification_model_cache=model_cache,
+                            enable_segment_verification=True,
+                            enable_second_pass=second_pass_enabled,
+                            second_pass_mode=str(second_pass_mode or "balanced"),
+                            synth_stats=synth_stats,
+                        )
+                        dub_diagnostics["segments_synthesized"] = synth_stats.get("segment_synthesized", 0)
+                        dub_diagnostics["segment_text_nonempty"] = synth_stats.get(
+                            "segment_text_nonempty",
+                            dub_diagnostics["segment_text_nonempty"],
+                        )
+
+                    speech_mean = self._probe_audio_mean_volume_db(dubbed_speech_path)
+                    dub_diagnostics["speech_mean_volume_db"] = speech_mean
+                    dub_diagnostics["tts_backend_used"] = "xtts" if use_xtts else "edge"
+                    if speech_mean is not None and speech_mean <= -58.0:
+                        self._log(
+                            f"  Dub speech is very quiet (mean_volume={speech_mean:0.2f} dB); applying gain rescue"
+                        )
+                        rescued_speech_path = Path(temp_dir) / f"{video.stem}.{target_lang}.speech_boosted.wav"
+                        # Lift extremely quiet tracks to a usable range while capping max boost.
+                        required_gain = max(0.0, min(60.0, -27.0 - speech_mean))
+                        if required_gain > 0.5:
+                            self._boost_audio_gain(
+                                input_path=dubbed_speech_path,
+                                output_path=rescued_speech_path,
+                                gain_db=required_gain,
+                            )
+                            rescued_mean = self._probe_audio_mean_volume_db(rescued_speech_path)
+                            dub_diagnostics["speech_gain_rescue_db"] = round(required_gain, 2)
+                            dub_diagnostics["speech_rescued_mean_volume_db"] = rescued_mean
+                            dubbed_speech_path = rescued_speech_path
+                            speech_mean = rescued_mean
+                            dub_diagnostics["speech_mean_volume_db"] = speech_mean
+                    if not self._audio_has_usable_signal(dubbed_speech_path):
+                        if use_xtts:
+                            self._log(
+                                "  XTTS synthesis is still unusable after gain rescue; falling back to Edge TTS"
+                            )
+                            fallback_speech_path = Path(temp_dir) / f"{video.stem}.{target_lang}.speech.edge_fallback.wav"
+                            fallback_voice = self._pick_edge_tts_voice(target_lang, reproducer_model="auto")
+                            fallback_rate = self._estimate_edge_tts_rate(translated_segments)
+                            synth_stats = {
+                                "segment_total": len(translated_segments),
+                                "segment_text_nonempty": 0,
+                                "segment_synthesized": 0,
+                            }
+                            fallback_flagged = self._synthesize_edge_tts_audio(
+                                merged_text,
+                                fallback_voice,
+                                fallback_rate,
+                                fallback_speech_path,
+                                segments=translated_segments,
+                                temp_dir=temp_dir,
+                                verification_backend=selected_backend,
+                                verification_model_size=model_size,
+                                verification_model_cache=model_cache,
+                                enable_segment_verification=True,
+                                enable_second_pass=bool(enable_second_pass),
+                                second_pass_mode=str(second_pass_mode or "balanced"),
+                                synth_stats=synth_stats,
+                            )
+                            if fallback_flagged:
+                                flagged_segments = fallback_flagged
+                            dubbed_speech_path = fallback_speech_path
+                            speech_mean = self._probe_audio_mean_volume_db(dubbed_speech_path)
+                            dub_diagnostics["xtts_edge_fallback"] = True
+                            dub_diagnostics["tts_backend_used"] = "edge-fallback"
+                            dub_diagnostics["speech_mean_volume_db"] = speech_mean
+                            dub_diagnostics["segments_synthesized"] = synth_stats.get("segment_synthesized", 0)
+                        if not self._audio_has_usable_signal(dubbed_speech_path):
+                            raise RuntimeError(
+                                "Dub synthesis appears silent (very low signal level). "
+                                "Check TTS model/voice settings and source subtitles."
+                            )
+
+                    # ── Audio mix: duck original speech, layer in dubbed voices ───
+                    # The result preserves music/SFX from the original while replacing
+                    # spoken dialogue with the new-language dub.
+                    dubbed_audio_path = Path(temp_dir) / f"{video.stem}.{target_lang}.dub_mix.wav"
+                    self._log("  Mixing dubbed speech over original audio (sidechain ducking)...")
+                    mix_used_fallback = False
+                    try:
+                        self._create_dubbed_mix_audio(
+                            source_video=video,
+                            dubbed_speech_path=dubbed_speech_path,
+                            output_path=dubbed_audio_path,
+                        )
+                        mix_mean = self._probe_audio_mean_volume_db(dubbed_audio_path)
+                        dub_diagnostics["mix_mean_volume_db"] = mix_mean
+                        if not self._audio_has_usable_signal(dubbed_audio_path):
+                            self._log(
+                                "  Sidechain mix produced very low audio signal; falling back to speech-only track"
+                            )
+                            dubbed_audio_path = dubbed_speech_path
+                            mix_used_fallback = True
+                    except Exception as mix_exc:
+                        self._log(
+                            f"  Sidechain mix failed ({mix_exc}); falling back to speech-only track"
+                        )
+                        dubbed_audio_path = dubbed_speech_path
+                        mix_used_fallback = True
+
+                    dub_diagnostics["used_mix_fallback"] = mix_used_fallback
+                    dub_diagnostics["dubbed_audio_input_path"] = str(dubbed_audio_path)
 
                     mux_result = self._mux_translated_audio(
                         source_video=video,
@@ -3986,12 +5414,101 @@ class SubtitleProcessor:
                     if mux_result.returncode != 0:
                         raise RuntimeError(mux_result.stderr.strip() or "ffmpeg mux failed")
 
+                    mux_streams = self._probe_audio_streams(output_path)
+                    if mux_streams:
+                        for pos, stream in enumerate(mux_streams):
+                            if not isinstance(stream, dict):
+                                continue
+                            tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+                            tags = tags if isinstance(tags, dict) else {}
+                            self._log(
+                                "  Mux audio stream {pos}: index={index}, codec={codec}, lang={lang}, title={title}, channels={channels}".format(
+                                    pos=pos,
+                                    index=stream.get("index", "?"),
+                                    codec=stream.get("codec_name", "?"),
+                                    lang=tags.get("language", "und"),
+                                    title=tags.get("title", ""),
+                                    channels=stream.get("channels", "?"),
+                                )
+                            )
+
+                    # Root-cause validation: ensure muxed dubbed stream is actually audible.
+                    stream_ok, stream_msg, mux_mean_db, mux_stream_pos = self._verify_muxed_dub_signal(
+                        output_path,
+                        target_lang,
+                    )
+                    dub_diagnostics["muxed_dub_mean_volume_db"] = mux_mean_db
+                    dub_diagnostics["muxed_dub_stream_pos"] = mux_stream_pos
+                    dub_diagnostics["muxed_dub_check"] = stream_msg
+                    if not stream_ok and dubbed_audio_path != dubbed_speech_path:
+                        self._log(
+                            f"  Muxed dub stream check failed ({stream_msg}); remuxing with speech-only fallback"
+                        )
+                        remux_result = self._mux_translated_audio(
+                            source_video=video,
+                            translated_audio_path=dubbed_speech_path,
+                            output_path=output_path,
+                            target_language=target_lang,
+                        )
+                        if remux_result.returncode != 0:
+                            raise RuntimeError(remux_result.stderr.strip() or "fallback remux failed")
+
+                        stream_ok2, stream_msg2, mux_mean_db2, mux_stream_pos2 = self._verify_muxed_dub_signal(
+                            output_path,
+                            target_lang,
+                        )
+                        dub_diagnostics["remuxed_with_speech_fallback"] = True
+                        dub_diagnostics["fallback_muxed_dub_mean_volume_db"] = mux_mean_db2
+                        dub_diagnostics["fallback_muxed_dub_stream_pos"] = mux_stream_pos2
+                        dub_diagnostics["fallback_muxed_dub_check"] = stream_msg2
+                        if not stream_ok2:
+                            stream_inventory = self._probe_audio_streams_with_disposition(output_path)
+                            dub_diagnostics["fallback_muxed_stream_inventory"] = stream_inventory
+                            raise RuntimeError(
+                                "Dubbed stream remained invalid after fallback remux: "
+                                f"{stream_msg2} | audio_streams={json.dumps(stream_inventory, ensure_ascii=False)}"
+                            )
+
                 is_valid, invalid_reason = self._validate_muxed_output(video, output_path)
                 if not is_valid:
                     raise RuntimeError(f"translated output validation failed: {invalid_reason}")
 
                 if replace_target:
                     output_path.replace(replace_target)
+
+                try:
+                    self._ensure_target_language_default_audio(replace_target or output_path, target_lang)
+                except Exception as default_exc:
+                    self._log(f"  WARNING: default-audio verification failed: {default_exc}")
+
+                try:
+                    self._normalize_output_timestamps_for_compat(replace_target or output_path)
+                except Exception as compat_exc:
+                    self._log(f"  WARNING: compatibility remux skipped: {compat_exc}")
+
+                final_stream_ok, final_stream_msg, final_mean_db, final_stream_pos = self._verify_muxed_dub_signal(
+                    replace_target or output_path,
+                    target_lang,
+                )
+                dub_diagnostics["final_dub_mean_volume_db"] = final_mean_db
+                dub_diagnostics["final_dub_stream_pos"] = final_stream_pos
+                dub_diagnostics["final_dub_check"] = final_stream_msg
+                if not final_stream_ok:
+                    raise RuntimeError(f"Final dubbed stream check failed: {final_stream_msg}")
+
+                diagnostics_report = self._save_dub_diagnostics_report(replace_target or output_path, dub_diagnostics)
+                if diagnostics_report is not None:
+                    self._log(f"  Dub diagnostics report: {diagnostics_report.name}")
+
+                report_path = self._save_regeneration_report(
+                    replace_target or output_path,
+                    flagged_segments,
+                    target_lang,
+                )
+                if report_path is not None:
+                    self._log(
+                        f"  Test phase: {len(flagged_segments)} candidate segment(s) flagged for regeneration -> {report_path.name}"
+                    )
 
                 summary.processed += 1
                 summary.details.append(
@@ -4007,6 +5524,7 @@ class SubtitleProcessor:
                         "target_language": target_lang,
                         "translator_model": translator_model,
                         "reproducer_model": reproducer_model,
+                        "regen_candidates": len(flagged_segments),
                     }
                 )
             except Exception as exc:
@@ -4064,8 +5582,9 @@ class SubtitleProcessor:
             return summary
 
         try:
+            self._log_ai_device_choice("audio-language-tagging")
             self._log(f"Loading Whisper model for audio language tagging: {model_size}...")
-            model = whisper.load_model(model_size)
+            model = whisper.load_model(model_size, device=self._ai_device())
         except Exception as exc:
             summary.failed = len(videos)
             for video in videos:
@@ -4921,8 +6440,9 @@ class SubtitleProcessor:
             return summary
 
         try:
+            self._log_ai_device_choice("subtitle-sync")
             self._log(f"Loading Whisper model for subtitle sync: {model_size}...")
-            model = whisper.load_model(model_size)
+            model = whisper.load_model(model_size, device=self._ai_device())
             self._log("Model loaded.")
         except Exception as exc:
             summary.failed = len(videos)
@@ -4968,6 +6488,7 @@ class SubtitleProcessor:
                 transcribe_opts: Dict[str, object] = {"task": "transcribe"}
                 if language:
                     transcribe_opts["language"] = language
+                transcribe_opts["fp16"] = self._whisper_fp16_enabled()
                 result = model.transcribe(str(video), **transcribe_opts)
             except Exception as exc:
                 summary.failed += 1
@@ -5899,6 +7420,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     mkvmerge_bin=str(self.options.get("mkvmerge_bin", "")).strip() or None,
                     handbrake_bin=str(self.options.get("handbrake_bin", "")).strip() or None,
                     makemkvcon_bin=str(self.options.get("makemkvcon_bin", "")).strip() or None,
+                    temp_workspace_dir=str(self.options.get("temp_workspace_dir", "")).strip() or None,
                     log_callback=self.log_message.emit,
                     use_hw_accel=bool(self.options.get("use_hw_accel", False)),
                     log_to_console=bool(self.options.get("log_to_console", True)),
@@ -6021,6 +7543,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                         translator_model=str(self.options.get("translator_model", "google")),
                         reproducer_model=str(self.options.get("reproducer_model", "auto")),
                         xtts_license_confirmed=bool(self.options.get("xtts_license_confirmed", False)),
+                        enable_second_pass=bool(self.options.get("enable_second_pass", True)),
+                        second_pass_mode=str(self.options.get("second_pass_mode", "balanced")),
+                        enable_diarization=bool(self.options.get("enable_diarization", True)),
                         compare_existing_with_generated=bool(self.options.get("compare_subtitle_sources", True)),
                         overwrite=overwrite,
                         output_suffix=str(self.options.get("output_suffix", "_translated_dub")),
@@ -6690,6 +8215,34 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 )
                 translation_options.addWidget(self.compare_subtitle_sources_checkbox)
 
+                self.auto_second_pass_checkbox = QCheckBox("Auto second pass for flagged segments")
+                self.auto_second_pass_checkbox.setChecked(True)
+                self.auto_second_pass_checkbox.setToolTip(
+                    "Automatically regenerate problematic segments (stutter/speed/low verify) before final mux."
+                )
+                translation_options.addWidget(self.auto_second_pass_checkbox)
+
+                translation_options.addWidget(QLabel("Second-pass mode:"))
+                self.second_pass_mode_combo = QComboBox()
+                self.second_pass_mode_combo.addItem("Gentle", "gentle")
+                self.second_pass_mode_combo.addItem("Balanced", "balanced")
+                self.second_pass_mode_combo.addItem("Strict", "strict")
+                self.second_pass_mode_combo.setCurrentIndex(1)
+                self.second_pass_mode_combo.setToolTip(
+                    "Gentle: fewer changes, faster.\n"
+                    "Balanced: recommended default.\n"
+                    "Strict: strongest slowdown/relaxation for hard segments."
+                )
+                translation_options.addWidget(self.second_pass_mode_combo)
+
+                self.enable_diarization_checkbox = QCheckBox("Speaker diarization (XTTS, optional)")
+                self.enable_diarization_checkbox.setChecked(True)
+                self.enable_diarization_checkbox.setToolTip(
+                    "Use WhisperX speaker turns to keep voice/emotion references consistent per speaker.\n"
+                    "Requires whisperx and HF_TOKEN; falls back automatically if unavailable."
+                )
+                translation_options.addWidget(self.enable_diarization_checkbox)
+
                 self.translate_audio_button = QPushButton("Translate + Dub Audio")
                 self.translate_audio_button.setToolTip(
                     "Translate using English subtitles when available, then create a dubbed audio track."
@@ -6777,6 +8330,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 self.reproducer_model_combo = None
                 self.translate_use_english_subs_checkbox = None
                 self.compare_subtitle_sources_checkbox = None
+                self.auto_second_pass_checkbox = None
+                self.second_pass_mode_combo = None
+                self.enable_diarization_checkbox = None
                 self.translate_audio_button = None
                 self.audio_lang_strategy_combo = None
                 self.audio_lang_snippets_input = None
@@ -6816,6 +8372,12 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.makemkvcon_bin_input = QLineEdit()
             self.makemkvcon_bin_input.setPlaceholderText("makemkvcon")
             self.makemkvcon_bin_input.setText("makemkvcon")
+            self.temp_workspace_dir_input = QLineEdit()
+            self.temp_workspace_dir_input.setPlaceholderText("Optional: e.g. E:/SubtitleTemp")
+            self.temp_workspace_dir_input.setToolTip(
+                "Optional temp workspace root for intermediate files (.wav, transcription artifacts, etc.).\n"
+                "Use another drive to avoid running out of space on the system drive."
+            )
 
             def _tool_row(row: int, label: str, line_edit: QLineEdit) -> None:
                 diagnostics_layout.addWidget(QLabel(label), row, 0)
@@ -6830,43 +8392,49 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             _tool_row(3, "HandBrakeCLI:", self.handbrake_bin_input)
             _tool_row(4, "MakeMKV (makemkvcon):", self.makemkvcon_bin_input)
 
-            diagnostics_layout.addWidget(QLabel("Command feedback:"), 5, 0)
+            diagnostics_layout.addWidget(QLabel("Temp workspace dir:"), 5, 0)
+            diagnostics_layout.addWidget(self.temp_workspace_dir_input, 5, 1)
+            self.temp_workspace_dir_browse_button = QPushButton("Browse...")
+            self.temp_workspace_dir_browse_button.clicked.connect(self._choose_temp_workspace_directory)
+            diagnostics_layout.addWidget(self.temp_workspace_dir_browse_button, 5, 2)
+
+            diagnostics_layout.addWidget(QLabel("Command feedback:"), 6, 0)
             self.command_feedback_combo = QComboBox()
             self.command_feedback_combo.addItem("Quiet", "quiet")
             self.command_feedback_combo.addItem("Normal", "normal")
             self.command_feedback_combo.addItem("Verbose", "verbose")
             self.command_feedback_combo.setCurrentIndex(1)
-            diagnostics_layout.addWidget(self.command_feedback_combo, 5, 1, 1, 2)
+            diagnostics_layout.addWidget(self.command_feedback_combo, 6, 1, 1, 2)
 
-            diagnostics_layout.addWidget(QLabel("FFmpeg loglevel:"), 6, 0)
+            diagnostics_layout.addWidget(QLabel("FFmpeg loglevel:"), 7, 0)
             self.ffmpeg_loglevel_combo = QComboBox()
             for level in ["quiet", "error", "warning", "info", "verbose"]:
                 self.ffmpeg_loglevel_combo.addItem(level, level)
             ffmpeg_idx = self.ffmpeg_loglevel_combo.findData("warning")
             if ffmpeg_idx >= 0:
                 self.ffmpeg_loglevel_combo.setCurrentIndex(ffmpeg_idx)
-            diagnostics_layout.addWidget(self.ffmpeg_loglevel_combo, 6, 1, 1, 2)
+            diagnostics_layout.addWidget(self.ffmpeg_loglevel_combo, 7, 1, 1, 2)
 
-            diagnostics_layout.addWidget(QLabel("FFprobe loglevel:"), 7, 0)
+            diagnostics_layout.addWidget(QLabel("FFprobe loglevel:"), 8, 0)
             self.ffprobe_loglevel_combo = QComboBox()
             for level in ["quiet", "error", "warning", "info", "verbose"]:
                 self.ffprobe_loglevel_combo.addItem(level, level)
             ffprobe_idx = self.ffprobe_loglevel_combo.findData("error")
             if ffprobe_idx >= 0:
                 self.ffprobe_loglevel_combo.setCurrentIndex(ffprobe_idx)
-            diagnostics_layout.addWidget(self.ffprobe_loglevel_combo, 7, 1, 1, 2)
+            diagnostics_layout.addWidget(self.ffprobe_loglevel_combo, 8, 1, 1, 2)
 
             self.tool_status_refresh_button = QPushButton("Refresh Tool Status")
             self.tool_status_refresh_button.clicked.connect(
                 lambda: self._refresh_dependency_status(log_missing=False, announce=True)
             )
-            diagnostics_layout.addWidget(self.tool_status_refresh_button, 8, 0, 1, 3)
+            diagnostics_layout.addWidget(self.tool_status_refresh_button, 9, 0, 1, 3)
 
             self.tool_status_box = QTextEdit()
             self.tool_status_box.setReadOnly(True)
             self.tool_status_box.setMinimumHeight(140)
             self.tool_status_box.setMaximumHeight(220)
-            diagnostics_layout.addWidget(self.tool_status_box, 9, 0, 1, 3)
+            diagnostics_layout.addWidget(self.tool_status_box, 10, 0, 1, 3)
 
             button_row = QHBoxLayout()
             self.scan_button = QPushButton("Scan Videos")
@@ -6902,6 +8470,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.progress = QProgressBar()
             self.progress.setRange(0, 1)
             self.progress.setValue(0)
+            self._set_progress_ok_state()
 
             self.log_box = QTextEdit()
             self.log_box.setReadOnly(True)
@@ -6936,6 +8505,14 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.log_box.append(f"[{ts}] {message}")
             if self.log_to_console_checkbox.isChecked():
                 print(f"[ui {ts}] {message}", flush=True)
+
+        def _set_progress_ok_state(self) -> None:
+            # Keep progress chunk green during normal operation.
+            self.progress.setStyleSheet("QProgressBar::chunk { background-color: #0d7d3c; }")
+
+        def _set_progress_error_state(self) -> None:
+            # Turn chunk red on failure to make errors obvious.
+            self.progress.setStyleSheet("QProgressBar::chunk { background-color: #c62828; }")
 
         def _add_folder(self) -> None:
             folder = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -6983,6 +8560,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "mkvmerge_bin": self.mkvmerge_bin_input.text().strip() or "mkvmerge",
                 "handbrake_bin": self.handbrake_bin_input.text().strip() or "HandBrakeCLI",
                 "makemkvcon_bin": self.makemkvcon_bin_input.text().strip() or "makemkvcon",
+                "temp_workspace_dir": self.temp_workspace_dir_input.text().strip(),
                 "command_feedback": str(self.command_feedback_combo.currentData() or "normal"),
                 "ffmpeg_loglevel": str(self.ffmpeg_loglevel_combo.currentData() or "warning"),
                 "ffprobe_loglevel": str(self.ffprobe_loglevel_combo.currentData() or "error"),
@@ -6994,6 +8572,11 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
             if folder:
                 self.custom_output_dir_input.setText(folder)
+
+        def _choose_temp_workspace_directory(self) -> None:
+            folder = QFileDialog.getExistingDirectory(self, "Select Temp Workspace Folder")
+            if folder:
+                self.temp_workspace_dir_input.setText(folder)
 
         def _choose_executable_path(self, target_input: QLineEdit) -> None:
             file_path, _ = QFileDialog.getOpenFileName(self, "Select Executable")
@@ -7055,6 +8638,8 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 f"MakeMKV (makemkvcon): {'FOUND' if dep_check.get('makemkv_found') else 'MISSING'}  ({dep_check.get('makemkv_path') or makemkv_bin})",
                 "",
                 f"Main Python: {sys.executable}",
+                f"CUDA available: {'YES' if (torch is not None and bool(torch.cuda.is_available())) else 'NO'}",
+                f"AI device if HW accel is enabled: {'cuda' if (torch is not None and bool(torch.cuda.is_available())) else 'cpu'}",
                 f"XTTS worker Python: {xtts_worker_python or '(not found)'}",
                 f"XTTS worker script: {'FOUND' if xtts_worker_script.exists() else 'MISSING'}  ({xtts_worker_script})",
                 f"XTTS readiness: {'READY' if xtts_ready else 'NOT READY'}",
@@ -7110,6 +8695,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             if self.sync_button is not None:
                 self.sync_button.setEnabled(not running)
             if running:
+                self._set_progress_ok_state()
                 self.progress.setRange(0, 0)
             else:
                 self.progress.setRange(0, 1)
@@ -7295,6 +8881,17 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 options["compare_subtitle_sources"] = bool(
                     self.compare_subtitle_sources_checkbox.isChecked()
                 ) if self.compare_subtitle_sources_checkbox is not None else True
+                options["enable_second_pass"] = bool(
+                    self.auto_second_pass_checkbox.isChecked()
+                ) if self.auto_second_pass_checkbox is not None else True
+                options["second_pass_mode"] = (
+                    str(self.second_pass_mode_combo.currentData() or "balanced")
+                    if self.second_pass_mode_combo is not None
+                    else "balanced"
+                )
+                options["enable_diarization"] = bool(
+                    self.enable_diarization_checkbox.isChecked()
+                ) if self.enable_diarization_checkbox is not None else True
 
                 if pysubs2 is None:
                     QMessageBox.warning(
@@ -7412,6 +9009,17 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     )
                     use_subs_pref = reply == QMessageBox.StandardButton.Yes
                 options["prefer_english_subtitles"] = use_subs_pref
+                options["enable_second_pass"] = bool(
+                    self.auto_second_pass_checkbox.isChecked()
+                ) if self.auto_second_pass_checkbox is not None else True
+                options["second_pass_mode"] = (
+                    str(self.second_pass_mode_combo.currentData() or "balanced")
+                    if self.second_pass_mode_combo is not None
+                    else "balanced"
+                )
+                options["enable_diarization"] = bool(
+                    self.enable_diarization_checkbox.isChecked()
+                ) if self.enable_diarization_checkbox is not None else True
 
                 if pysubs2 is None:
                     QMessageBox.warning(
@@ -7430,6 +9038,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     f"Translator model: {options['translator_model']}\n"
                     f"Reproducer model: {options['reproducer_model']}\n"
                     f"Subtitle-first mode: {'enabled' if use_subs_pref else 'disabled'}\n\n"
+                    f"Auto second pass: {'enabled' if options['enable_second_pass'] else 'disabled'}\n"
+                    f"Second-pass mode: {options['second_pass_mode']}\n"
+                    f"Diarization: {'enabled' if options['enable_diarization'] else 'disabled'}\n\n"
                     "Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes,
@@ -7729,6 +9340,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             QTimer.singleShot(50, lambda: self._start_worker("prune_audio_streams", options))
 
         def _on_result(self, result: Dict[str, object]) -> None:
+            self._set_progress_ok_state()
             action = str(result.get("action", "unknown"))
             if action == "scan":
                 files = result.get("files", [])
@@ -7830,6 +9442,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 )
 
         def _on_error(self, error_text: str) -> None:
+            self._set_progress_error_state()
             self._log("Task failed. See error below:")
             self._log(error_text)
             
@@ -8263,6 +9876,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "mkvmerge_bin": self.mkvmerge_bin_input.text(),
                 "handbrake_bin": self.handbrake_bin_input.text(),
                 "makemkvcon_bin": self.makemkvcon_bin_input.text(),
+                "temp_workspace_dir": self.temp_workspace_dir_input.text(),
                 "command_feedback": self.command_feedback_combo.currentData(),
                 "ffmpeg_loglevel": self.ffmpeg_loglevel_combo.currentData(),
                 "ffprobe_loglevel": self.ffprobe_loglevel_combo.currentData(),
@@ -8274,6 +9888,9 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                 "reproducer_model": self.reproducer_model_combo.currentData() if self.reproducer_model_combo else "auto",
                 "translate_use_english_subs": self.translate_use_english_subs_checkbox.isChecked() if self.translate_use_english_subs_checkbox else True,
                 "compare_subtitle_sources": self.compare_subtitle_sources_checkbox.isChecked() if self.compare_subtitle_sources_checkbox else True,
+                "enable_second_pass": self.auto_second_pass_checkbox.isChecked() if self.auto_second_pass_checkbox else True,
+                "second_pass_mode": self.second_pass_mode_combo.currentData() if self.second_pass_mode_combo else "balanced",
+                "enable_diarization": self.enable_diarization_checkbox.isChecked() if self.enable_diarization_checkbox else True,
                 "audio_lang_strategy": self.audio_lang_strategy_combo.currentData() if self.audio_lang_strategy_combo else "snippets",
                 "audio_lang_snippets": self.audio_lang_snippets_input.text() if self.audio_lang_snippets_input else "3",
                 "audio_lang_seconds": self.audio_lang_seconds_input.text() if self.audio_lang_seconds_input else "25",
@@ -8385,6 +10002,7 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
             self.mkvmerge_bin_input.setText(str(ui_state.get("mkvmerge_bin", self.mkvmerge_bin_input.text())))
             self.handbrake_bin_input.setText(str(ui_state.get("handbrake_bin", self.handbrake_bin_input.text())))
             self.makemkvcon_bin_input.setText(str(ui_state.get("makemkvcon_bin", self.makemkvcon_bin_input.text())))
+            self.temp_workspace_dir_input.setText(str(ui_state.get("temp_workspace_dir", "")))
 
             command_feedback = ui_state.get("command_feedback", "normal")
             feedback_index = self.command_feedback_combo.findData(command_feedback)
@@ -8433,6 +10051,15 @@ For detailed information, see SUBTITLE_TOOL_HELP.md in the installation director
                     self.compare_subtitle_sources_checkbox.setChecked(
                         bool(ui_state.get("compare_subtitle_sources", True))
                     )
+                if self.auto_second_pass_checkbox is not None:
+                    self.auto_second_pass_checkbox.setChecked(bool(ui_state.get("enable_second_pass", True)))
+                if self.second_pass_mode_combo is not None:
+                    second_pass_mode = ui_state.get("second_pass_mode", "balanced")
+                    second_pass_mode_index = self.second_pass_mode_combo.findData(second_pass_mode)
+                    if second_pass_mode_index >= 0:
+                        self.second_pass_mode_combo.setCurrentIndex(second_pass_mode_index)
+                if self.enable_diarization_checkbox is not None:
+                    self.enable_diarization_checkbox.setChecked(bool(ui_state.get("enable_diarization", True)))
 
             if self.use_ai and self.audio_lang_strategy_combo and self.audio_lang_snippets_input and self.audio_lang_seconds_input:
                 strategy = ui_state.get("audio_lang_strategy", "snippets")

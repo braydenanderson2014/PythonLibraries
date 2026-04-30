@@ -55,7 +55,11 @@ param(
 
     # Full uninstall mode: also allow removing system packages that existed
     # before this installer was first run.
-    [switch]$UninstallIncludePreexisting
+    [switch]$UninstallIncludePreexisting,
+
+    # Hardware acceleration: auto-detect NVIDIA GPU, or force CPU/CUDA
+    [ValidateSet("auto", "cuda", "cpu")]
+    [string]$HardwareAccel = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,6 +87,9 @@ $script:PipBackendForAI = ""            # Backend used for AI packages
 $script:RequestedUninstall = [bool]$Uninstall
 $script:RequestedUninstallAI = [bool]$UninstallAI
 $script:InstallerScratchRoot = ""
+$script:HardwareAccel = [string]$HardwareAccel
+$script:DetectedNvidiaGpu = $false
+$script:CudaIndexUrl = "https://download.pytorch.org/whl/cpu"
 
 # On PowerShell 7+, do not treat native command stderr text (warnings) as a
 # terminating error. The script already validates native command exit codes.
@@ -107,6 +114,19 @@ function Clear-InstallerArtifacts {
 }
 
 function Remove-PathRobust {
+        # Validate script execution environment
+        if ($PSVersionTable.PSVersion.Major -lt 5) {
+            Write-Host "ERROR: This script requires PowerShell 5.0 or later." -ForegroundColor Red
+            Write-Host "Your version: $($PSVersionTable.PSVersion)" -ForegroundColor Red
+            exit 1
+        }
+
+        # Check if running in PowerShell ISE (not recommended)
+        if ($PROFILE -and $PROFILE -match "ISE") {
+            Write-Host "WARNING: Running in PowerShell ISE may cause issues." -ForegroundColor Yellow
+            Write-Host "          For best results, run this script in PowerShell Console instead." -ForegroundColor Yellow
+            Write-Host "" -ForegroundColor Yellow
+        }
     param([string]$Path)
 
     if (-not $Path -or -not (Test-Path -LiteralPath $Path)) {
@@ -245,7 +265,8 @@ function New-ScriptRelaunchArgs {
         "-FfmpegInstallMethod", [string]$FfmpegInstallMethod,
         "-ToolInstallMethod", [string]$ToolInstallMethod,
         "-PythonPackageInstallBackend", [string]$script:PythonPackageInstallBackend,
-        "-WingetInstallScope", [string]$script:WingetInstallScope
+        "-WingetInstallScope", [string]$script:WingetInstallScope,
+        "-HardwareAccel", [string]$script:HardwareAccel
     )
 
     if ($script:WingetInstallLocation) {
@@ -1733,6 +1754,45 @@ function Install-OptionalSystemTool {
     }
 }
 
+function Detect-NvidiaGpu {
+    # Try nvidia-smi first
+    $nvidiaCmd = Get-Command "nvidia-smi" -ErrorAction SilentlyContinue
+    if ($nvidiaCmd) {
+        try {
+            $output = & nvidia-smi --query-gpu=count --format=csv,noheader 2>$null | Select-Object -First 1
+            if ($output -and [int]$output -gt 0) {
+                return $true
+            }
+        } catch {
+            # Fall through to WMI
+        }
+    }
+
+    # Fallback: try WMI to detect NVIDIA GPUs
+    try {
+        $gpu = Get-WmiObject -Class Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "NVIDIA|GeForce|Quadro|Tesla|RTX" } | Select-Object -First 1
+        if ($gpu) {
+            return $true
+        }
+    } catch {
+        # Silently continue
+    }
+
+    return $false
+}
+
+function Get-TorchIndexUrl {
+    param([bool]$UseCuda)
+    
+    if ($UseCuda) {
+        # PyTorch CUDA 11.8 index (compatible with most NVIDIA drivers)
+        return "https://download.pytorch.org/whl/cu118"
+    } else {
+        # CPU-only index
+        return "https://download.pytorch.org/whl/cpu"
+    }
+}
+
 function Get-AiBackendDefinitions {
     $voiceTranslationPackages = @("deep-translator", "edge-tts")
     return @(
@@ -2070,7 +2130,8 @@ function Install-AiBackends {
     param(
         [string]$PythonExe,
         [array]$Definitions,
-        [string[]]$SelectedBackends
+        [string[]]$SelectedBackends,
+        [bool]$UseCuda = $false
     )
 
     $selectedSet = @{}
@@ -2129,6 +2190,12 @@ function Install-AiBackends {
             # Prevent stale wheel artifacts from leaving an ABI-mismatched numpy/pandas pair.
             $pkgExtraArgs += "--force-reinstall"
             $pkgExtraArgs += "--no-cache-dir"
+        }
+        if ($pkg -eq "torch") {
+            # Use the appropriate PyTorch index based on GPU detection
+            $cudaBuildType = if ($UseCuda) { "CUDA" } else { "CPU" }
+            $pkgExtraArgs += "--index-url", (Get-TorchIndexUrl -UseCuda $UseCuda)
+            Write-Host " (installing $cudaBuildType build)" -NoNewline -ForegroundColor DarkCyan
         }
         if ($pkg -eq "aeneas") {
             $pkgExtraArgs += "--no-build-isolation"
@@ -3630,9 +3697,13 @@ function Install-Python {
 }
 
 function Repair-TorchInVenv {
-    param([string]$PythonExe)
+    param(
+        [string]$PythonExe,
+        [bool]$UseCuda = $false
+    )
 
-    Write-Host "Attempting PyTorch repair (CPU build) in current venv..." -ForegroundColor Yellow
+    $buildType = if ($UseCuda) { "CUDA" } else { "CPU" }
+    Write-Host "Attempting PyTorch repair ($buildType build) in current venv..." -ForegroundColor Yellow
 
     # Remove potentially broken Torch packages first.
     & $PythonExe -m pip uninstall -y torch torchvision torchaudio 2>&1 | Out-Null
@@ -3640,11 +3711,13 @@ function Repair-TorchInVenv {
     # Clear pip cache to avoid reusing a corrupted wheel.
     & $PythonExe -m pip cache purge 2>&1 | Out-Null
 
-    # Install a fresh CPU wheel directly from the official PyTorch CPU index.
+    $indexUrl = Get-TorchIndexUrl -UseCuda $UseCuda
+
+    # Install a fresh wheel directly from the official PyTorch index.
     if ($script:QuietOutput) {
-        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | Out-Null
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url $indexUrl torch 2>&1 | Out-Null
     } else {
-        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cpu torch 2>&1 | ForEach-Object {
+        & $PythonExe -m pip install --no-cache-dir --force-reinstall --index-url $indexUrl torch 2>&1 | ForEach-Object {
             if ($_ -match "Successfully installed|Requirement already satisfied|Collecting|Downloading") {
                 Write-Host "  $_" -ForegroundColor Gray
             }
@@ -4924,6 +4997,40 @@ $script:FailedAiBackends = @()
 $script:InstalledOptionalAiBackends = @()
 $script:FailedOptionalAiBackends = @()
 
+# Detect hardware acceleration support for PyTorch
+Write-Host ""
+Write-Host "Checking for hardware acceleration (NVIDIA GPU)..." -NoNewline -ForegroundColor White
+if ($script:HardwareAccel -eq "cuda") {
+    $script:DetectedNvidiaGpu = $true
+    Write-Host " [ " -NoNewline -ForegroundColor White
+    Write-Host "FORCED" -NoNewline -ForegroundColor Cyan
+    Write-Host " ]" -ForegroundColor White
+    $script:CudaIndexUrl = Get-TorchIndexUrl -UseCuda $true
+    Write-Host "CUDA PyTorch will be installed (forced by -HardwareAccel cuda parameter)" -ForegroundColor Cyan
+} elseif ($script:HardwareAccel -eq "cpu") {
+    $script:DetectedNvidiaGpu = $false
+    Write-Host " [ " -NoNewline -ForegroundColor White
+    Write-Host "DISABLED" -NoNewline -ForegroundColor Yellow
+    Write-Host " ]" -ForegroundColor White
+    $script:CudaIndexUrl = Get-TorchIndexUrl -UseCuda $false
+    Write-Host "CPU PyTorch will be installed (forced by -HardwareAccel cpu parameter)" -ForegroundColor Yellow
+} else {
+    $script:DetectedNvidiaGpu = Detect-NvidiaGpu
+    if ($script:DetectedNvidiaGpu) {
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "FOUND" -NoNewline -ForegroundColor Green
+        Write-Host " ]" -ForegroundColor White
+        $script:CudaIndexUrl = Get-TorchIndexUrl -UseCuda $true
+        Write-Host "CUDA-enabled PyTorch will be installed for GPU acceleration" -ForegroundColor Green
+    } else {
+        Write-Host " [ " -NoNewline -ForegroundColor White
+        Write-Host "NOT FOUND" -NoNewline -ForegroundColor Yellow
+        Write-Host " ]" -ForegroundColor White
+        $script:CudaIndexUrl = Get-TorchIndexUrl -UseCuda $false
+        Write-Host "CPU PyTorch will be installed (no NVIDIA GPU detected)" -ForegroundColor Yellow
+    }
+}
+
 $aiSettingOverride = $null
 
 Write-Host ""
@@ -5015,7 +5122,7 @@ if ($selectedAiBackends.Count -gt 0) {
     $installXttsDedicated = $selectedSet.ContainsKey("xtts")
     $mainAiBackends = @($selectedAiBackends | Where-Object { $_ -ne "xtts" })
 
-    $aiInstallResult = Install-AiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions -SelectedBackends $mainAiBackends
+    $aiInstallResult = Install-AiBackends -PythonExe $venvPythonCmd -Definitions $aiDefinitions -SelectedBackends $mainAiBackends -UseCuda $script:DetectedNvidiaGpu
 
     if ($installXttsDedicated) {
         $xttsInstallResult = Install-XttsDedicatedEnvironment -BasePythonCmd $pythonCmd -XttsVenvPath $xttsVenvPath
@@ -5090,6 +5197,10 @@ if ($LASTEXITCODE -ne 0) {
     Write-StatusFail "ffmpeg installation"
     throw "ffmpeg installation failed."
 }
+
+# Refresh parent process PATH from registry after child PowerShell installer completes
+# Child installer (winget/choco/scoop) may have updated system PATH, so reload it here
+Update-ProcessPathFromRegistry
 if (-not $script:FfmpegPreExisted -and (Test-Path -LiteralPath $ffmpegMethodOut)) {
     try {
         $methodFromInstaller = [string](Get-Content -LiteralPath $ffmpegMethodOut -Raw -ErrorAction SilentlyContinue)
@@ -5112,11 +5223,23 @@ Write-Host "..." -NoNewline -ForegroundColor White
 Write-Host " [ " -NoNewline -ForegroundColor White
 Write-Host "OK" -NoNewline -ForegroundColor Green
 Write-Host " ]" -ForegroundColor White
+
+# Verify ffmpeg is now accessible after PATH refresh
+$ffmpegAccessible = [bool](Test-CommandAvailable "ffmpeg")
+$ffprobePath = (Get-Command 'ffprobe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
+$ffmpegPath = (Get-Command 'ffmpeg' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
+
+if (-not $ffmpegAccessible -and $script:FfmpegInstallUsed) {
+    Write-Host "WARNING: ffmpeg was installed but is not yet accessible on PATH." -ForegroundColor Yellow
+    Write-Host "Try restarting your terminal or computer for PATH changes to take full effect." -ForegroundColor DarkYellow
+}
+
 Write-VerboseLog -Lines @(
     "ffmpeg pre-existed : $script:FfmpegPreExisted",
     "install method used: $(if ($script:FfmpegInstallUsed) { $script:FfmpegInstallUsed } else { 'N/A (pre-existed)' })",
-    "ffmpeg path        : $((Get-Command 'ffmpeg' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue))",
-    "ffprobe path       : $((Get-Command 'ffprobe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue))"
+    "ffmpeg accessible  : $ffmpegAccessible",
+    "ffmpeg path        : $(if ($ffmpegPath) { $ffmpegPath } else { 'N/A' })",
+    "ffprobe path       : $(if ($ffprobePath) { $ffprobePath } else { 'N/A' })"
 ) -Prefix "  "
 
 Write-Host ""

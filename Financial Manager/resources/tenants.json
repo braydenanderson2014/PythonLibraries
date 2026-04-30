@@ -248,8 +248,8 @@
         12
       ]
     ],
-    "total_rent_paid": 22690.0,
-    "delinquency_balance": 1600.0,
+    "total_rent_paid": 23990.0,
+    "delinquency_balance": 300.0,
     "delinquent_months": [
       [
         2026,
@@ -679,6 +679,16 @@
         "month": 3,
         "is_credit_usage": false,
         "notes": "Applied for Delinquet month"
+      },
+      {
+        "amount": 1300.0,
+        "type": "Zelle",
+        "date": "2026-04-28",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": ""
       }
     ],
     "service_credit": 0.0,
