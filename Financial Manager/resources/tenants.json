@@ -73,16 +73,118 @@
     "delinquent_months": [],
     "account_status": "active",
     "monthly_status": {
-      "2025-12": "Paid in Full",
-      "2026-01": "Paid in Full",
-      "2026-02": "Paid in Full",
-      "2026-03": "Paid in Full",
-      "2026-04": "Paid in Full",
-      "2026-05": "Paid in Full",
-      "2026-06": "Paid in Full",
-      "2026-07": "Pending",
-      "2026-08": "Pending",
-      "2026-09": "Pending"
+      "2025-12": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-12-01",
+        "paid_in_full_date": "2025-12-14",
+        "payment_type": "Venmo",
+        "payment_date": "2025-12-14",
+        "late_note": "Paid after due date on 2025-12-14"
+      },
+      "2026-01": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-01-01",
+        "paid_in_full_date": "2025-12-26",
+        "payment_type": "Venmo",
+        "payment_date": "2025-12-26"
+      },
+      "2026-02": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-02-01",
+        "paid_in_full_date": "2026-01-24",
+        "payment_type": "Venmo",
+        "payment_date": "2026-01-24"
+      },
+      "2026-03": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-03-01",
+        "paid_in_full_date": "2026-02-25",
+        "payment_type": "Zelle",
+        "payment_date": "2026-02-25"
+      },
+      "2026-04": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-04-01",
+        "paid_in_full_date": "2026-03-24",
+        "payment_type": "Venmo",
+        "payment_date": "2026-03-24"
+      },
+      "2026-05": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-05-01",
+        "paid_in_full_date": "2026-04-20",
+        "payment_type": "Bilt",
+        "payment_date": "2026-04-20"
+      },
+      "2026-06": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-06-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Bilt",
+        "payment_date": "2026-05-22"
+      },
+      "2026-07": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-07-01"
+      },
+      "2026-08": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-08-01"
+      },
+      "2026-09": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-09-01"
+      }
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
@@ -167,7 +269,8 @@
       "mode": "fixed",
       "grace_period_days": 0,
       "start_date": null,
-      "end_date": null
+      "end_date": null,
+      "waive_if_paid_within_month": false
     },
     "user_ids": [
       "admin"
@@ -299,30 +402,282 @@
     ],
     "account_status": "active",
     "monthly_status": {
-      "2025-01": "Paid in Full",
-      "2025-02": "Paid in Full",
-      "2025-03": "Paid in Full",
-      "2025-04": "Paid in Full",
-      "2025-05": "Paid in Full",
-      "2025-06": "Overpayment",
-      "2025-07": "Paid in Full",
-      "2025-08": "Overpayment",
-      "2025-09": "Overpayment",
-      "2025-10": "Overpayment",
-      "2025-11": "Overpayment",
-      "2025-12": "Paid in Full",
-      "2026-01": "Overpayment",
-      "2026-02": "Overpayment",
-      "2026-03": "Delinquent",
-      "2026-04": "Paid in Full",
-      "2026-05": "Delinquent",
-      "2026-06": "Pending",
-      "2026-07": "Pending",
-      "2026-08": "Pending",
-      "2026-09": "Pending",
-      "2026-10": "Pending",
-      "2026-11": "Pending",
-      "2026-12": "Pending"
+      "2025-01": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-01-01",
+        "paid_in_full_date": "2025-01-01",
+        "payment_type": "Cash",
+        "payment_date": "2025-01-01"
+      },
+      "2025-02": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-02-01",
+        "paid_in_full_date": "2025-02-01",
+        "payment_type": "Cash",
+        "payment_date": "2025-02-01"
+      },
+      "2025-03": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-03-01",
+        "paid_in_full_date": "2025-03-02",
+        "payment_type": "Zelle",
+        "payment_date": "2025-03-02",
+        "late_note": "Paid after due date on 2025-03-02"
+      },
+      "2025-04": {
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-04-01",
+        "paid_in_full_date": "2025-04-01",
+        "payment_type": "Zelle",
+        "payment_date": "2025-04-01"
+      },
+      "2025-05": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-05-01",
+        "paid_in_full_date": "2026-01-29",
+        "payment_type": "Overpayment Credit (Applied: $50.00)",
+        "payment_date": "2026-01-29",
+        "late_note": "Paid after due date on 2026-01-29"
+      },
+      "2025-06": {
+        "status": "Overpayment",
+        "display_status": "Overpayment",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-06-01",
+        "paid_in_full_date": "2025-05-30",
+        "payment_type": "Zelle",
+        "payment_date": "2025-05-30"
+      },
+      "2025-07": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-07-01",
+        "paid_in_full_date": "2025-07-31",
+        "payment_type": "Cash",
+        "payment_date": "2025-07-31",
+        "late_note": "Paid after due date on 2025-07-31"
+      },
+      "2025-08": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-08-01",
+        "paid_in_full_date": "2025-08-24",
+        "payment_type": "Cash",
+        "payment_date": "2025-08-24",
+        "late_note": "Paid after due date on 2025-08-24"
+      },
+      "2025-09": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-09-01",
+        "paid_in_full_date": "2026-03-07",
+        "payment_type": "Zelle",
+        "payment_date": "2026-03-07",
+        "late_note": "Paid after due date on 2026-03-07"
+      },
+      "2025-10": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-10-01",
+        "paid_in_full_date": "2026-01-13",
+        "payment_type": "Cash",
+        "payment_date": "2026-01-13",
+        "late_note": "Paid after due date on 2026-01-13"
+      },
+      "2025-11": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-11-01",
+        "paid_in_full_date": "2026-01-07",
+        "payment_type": "Cash",
+        "payment_date": "2026-01-07",
+        "late_note": "Paid after due date on 2026-01-07"
+      },
+      "2025-12": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2025-12-01",
+        "paid_in_full_date": "2026-03-07",
+        "payment_type": "Cash",
+        "payment_date": "2026-03-07",
+        "late_note": "Paid after due date on 2026-03-07"
+      },
+      "2026-01": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-01-01",
+        "paid_in_full_date": "2026-02-04",
+        "payment_type": "Cash",
+        "payment_date": "2026-02-04",
+        "late_note": "Paid after due date on 2026-02-04"
+      },
+      "2026-02": {
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-02-01",
+        "paid_in_full_date": "2026-04-01",
+        "payment_type": "Zelle",
+        "payment_date": "2026-04-01",
+        "late_note": "Paid after due date on 2026-04-01"
+      },
+      "2026-03": {
+        "status": "Delinquent",
+        "display_status": "Delinquent",
+        "was_late": true,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-03-01",
+        "payment_type": "Zelle",
+        "payment_date": "2026-04-04",
+        "late_note": "Late and still owes $250.00"
+      },
+      "2026-04": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-04-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Zelle",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid after due date on 2026-05-22"
+      },
+      "2026-05": {
+        "status": "Delinquent",
+        "display_status": "Delinquent",
+        "was_late": true,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-05-01",
+        "late_note": "Late and still owes $1350.00"
+      },
+      "2026-06": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-06-01"
+      },
+      "2026-07": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-07-01"
+      },
+      "2026-08": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-08-01"
+      },
+      "2026-09": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-09-01"
+      },
+      "2026-10": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-10-01"
+      },
+      "2026-11": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-11-01"
+      },
+      "2026-12": {
+        "status": "Pending",
+        "display_status": "Pending",
+        "was_late": false,
+        "paid_late": false,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-12-01"
+      }
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
@@ -747,7 +1102,8 @@
       "mode": "fixed",
       "grace_period_days": 0,
       "start_date": null,
-      "end_date": null
+      "end_date": null,
+      "waive_if_paid_within_month": false
     },
     "user_ids": [
       "admin",
@@ -759,13 +1115,23 @@
   "7mutZhNFBc": {
     "name": "John Cena",
     "tenant_id": "7mutZhNFBc",
-    "rental_period": [
-      "2026-01-01",
-      "2030-04-05"
-    ],
+    "rental_period": {
+      "start_date": "2026-01-01",
+      "end_date": "2026-05-22",
+      "lease_type": "Fixed Term"
+    },
     "deposit_amount": 0.0,
-    "contact_info": {},
-    "notes": [],
+    "contact_info": {
+      "phone": "",
+      "email": "",
+      "contact": "",
+      "emergency_contact": ""
+    },
+    "notes": [
+      "[2026-05-22 20:54:36] Tenant details updated: Account status changed from 'active' to 'suspended'",
+      "[2026-05-22 22:03:24] Tenant details updated: Account status changed from 'suspended' to 'terminated'",
+      "[2026-05-22 22:21:52] Tenant details updated: Rental period changed from 2026-01-01 to 2030-04-05 \u2192 2026-01-01 to 2026-05-22"
+    ],
     "rent_amount": 1350.0,
     "monthly_exceptions": {},
     "months_to_charge": [
@@ -788,314 +1154,82 @@
       [
         2026,
         5
-      ],
-      [
-        2026,
-        6
-      ],
-      [
-        2026,
-        7
-      ],
-      [
-        2026,
-        8
-      ],
-      [
-        2026,
-        9
-      ],
-      [
-        2026,
-        10
-      ],
-      [
-        2026,
-        11
-      ],
-      [
-        2026,
-        12
-      ],
-      [
-        2027,
-        1
-      ],
-      [
-        2027,
-        2
-      ],
-      [
-        2027,
-        3
-      ],
-      [
-        2027,
-        4
-      ],
-      [
-        2027,
-        5
-      ],
-      [
-        2027,
-        6
-      ],
-      [
-        2027,
-        7
-      ],
-      [
-        2027,
-        8
-      ],
-      [
-        2027,
-        9
-      ],
-      [
-        2027,
-        10
-      ],
-      [
-        2027,
-        11
-      ],
-      [
-        2027,
-        12
-      ],
-      [
-        2028,
-        1
-      ],
-      [
-        2028,
-        2
-      ],
-      [
-        2028,
-        3
-      ],
-      [
-        2028,
-        4
-      ],
-      [
-        2028,
-        5
-      ],
-      [
-        2028,
-        6
-      ],
-      [
-        2028,
-        7
-      ],
-      [
-        2028,
-        8
-      ],
-      [
-        2028,
-        9
-      ],
-      [
-        2028,
-        10
-      ],
-      [
-        2028,
-        11
-      ],
-      [
-        2028,
-        12
-      ],
-      [
-        2029,
-        1
-      ],
-      [
-        2029,
-        2
-      ],
-      [
-        2029,
-        3
-      ],
-      [
-        2029,
-        4
-      ],
-      [
-        2029,
-        5
-      ],
-      [
-        2029,
-        6
-      ],
-      [
-        2029,
-        7
-      ],
-      [
-        2029,
-        8
-      ],
-      [
-        2029,
-        9
-      ],
-      [
-        2029,
-        10
-      ],
-      [
-        2029,
-        11
-      ],
-      [
-        2029,
-        12
-      ],
-      [
-        2030,
-        1
-      ],
-      [
-        2030,
-        2
-      ],
-      [
-        2030,
-        3
-      ],
-      [
-        2030,
-        4
       ]
     ],
-    "total_rent_paid": 1090.0,
-    "delinquency_balance": 5660.0,
-    "delinquent_months": [
-      [
-        2026,
-        2
-      ],
-      [
-        2026,
-        3
-      ],
-      [
-        2026,
-        4
-      ],
-      [
-        2026,
-        5
-      ]
-    ],
-    "account_status": "active",
+    "total_rent_paid": 6750.0,
+    "delinquency_balance": 0.0,
+    "delinquent_months": [],
+    "account_status": "terminated",
     "monthly_status": {
-      "2026-01": "Paid in Full",
-      "2026-02": "Delinquent",
-      "2026-03": "Delinquent",
-      "2026-04": "Delinquent",
-      "2026-05": "Delinquent",
-      "2026-06": "Pending",
-      "2026-07": "Pending",
-      "2026-08": "Pending",
-      "2026-09": "Pending",
-      "2026-10": "Pending",
-      "2026-11": "Pending",
-      "2026-12": "Pending",
-      "2027-01": "Pending",
-      "2027-02": "Pending",
-      "2027-03": "Pending",
-      "2027-04": "Pending",
-      "2027-05": "Pending",
-      "2027-06": "Pending",
-      "2027-07": "Pending",
-      "2027-08": "Pending",
-      "2027-09": "Pending",
-      "2027-10": "Pending",
-      "2027-11": "Pending",
-      "2027-12": "Pending",
-      "2028-01": "Pending",
-      "2028-02": "Pending",
-      "2028-03": "Pending",
-      "2028-04": "Pending",
-      "2028-05": "Pending",
-      "2028-06": "Pending",
-      "2028-07": "Pending",
-      "2028-08": "Pending",
-      "2028-09": "Pending",
-      "2028-10": "Pending",
-      "2028-11": "Pending",
-      "2028-12": "Pending",
-      "2029-01": "Pending",
-      "2029-02": "Pending",
-      "2029-03": "Pending",
-      "2029-04": "Pending",
-      "2029-05": "Pending",
-      "2029-06": "Pending",
-      "2029-07": "Pending",
-      "2029-08": "Pending",
-      "2029-09": "Pending",
-      "2029-10": "Pending",
-      "2029-11": "Pending",
-      "2029-12": "Pending",
-      "2030-01": "Pending",
-      "2030-02": "Pending",
-      "2030-03": "Pending",
-      "2030-04": "Pending"
+      "2026-01": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": true,
+        "late_fee_amount": 135.0,
+        "due_date": "2026-01-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Cash",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid late; late fees assessed $135.00"
+      },
+      "2026-02": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": true,
+        "late_fee_amount": 120.0,
+        "due_date": "2026-02-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Cash",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid late; late fees assessed $120.00"
+      },
+      "2026-03": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": true,
+        "late_fee_amount": 135.0,
+        "due_date": "2026-03-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Cash",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid late; late fees assessed $135.00"
+      },
+      "2026-04": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": true,
+        "late_fee_amount": 130.0,
+        "due_date": "2026-04-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Cash",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid late; late fees assessed $130.00"
+      },
+      "2026-05": {
+        "status": "Paid in Full",
+        "display_status": "Paid Late",
+        "was_late": true,
+        "paid_late": true,
+        "late_fee_charged": false,
+        "late_fee_amount": 0.0,
+        "due_date": "2026-05-01",
+        "paid_in_full_date": "2026-05-22",
+        "payment_type": "Cash",
+        "payment_date": "2026-05-22",
+        "late_note": "Paid after due date on 2026-05-22"
+      }
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
     "payment_history": [
-      {
-        "amount": -135.0,
-        "type": "Daily Late Fee",
-        "date": "2026-04-05",
-        "payment_month": "2026-01",
-        "year": 2026,
-        "month": 1,
-        "is_credit_usage": false,
-        "notes": "Reconciled daily late fee (2026-01), grace 3 day(s), 27 day(s) late in-month through 2026-04-05."
-      },
-      {
-        "amount": -120.0,
-        "type": "Daily Late Fee",
-        "date": "2026-04-05",
-        "payment_month": "2026-02",
-        "year": 2026,
-        "month": 2,
-        "is_credit_usage": false,
-        "notes": "Reconciled daily late fee (2026-02), grace 3 day(s), 24 day(s) late in-month through 2026-04-05."
-      },
-      {
-        "amount": -135.0,
-        "type": "Daily Late Fee",
-        "date": "2026-04-05",
-        "payment_month": "2026-03",
-        "year": 2026,
-        "month": 3,
-        "is_credit_usage": false,
-        "notes": "Reconciled daily late fee (2026-03), grace 3 day(s), 27 day(s) late in-month through 2026-04-05."
-      },
-      {
-        "amount": -5.0,
-        "type": "Daily Late Fee",
-        "date": "2026-04-05",
-        "payment_month": "2026-04",
-        "year": 2026,
-        "month": 4,
-        "is_credit_usage": false,
-        "notes": "Reconciled daily late fee (2026-04), grace 3 day(s), 1 day(s) late in-month through 2026-04-05."
-      },
       {
         "amount": 1350.0,
         "type": "Cash",
@@ -1115,6 +1249,86 @@
         "month": 1,
         "is_credit_usage": false,
         "notes": "late fees"
+      },
+      {
+        "amount": 1470.0,
+        "type": "Cash",
+        "date": "2026-05-22",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1485.0,
+        "type": "Cash",
+        "date": "2026-05-22",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1480.0,
+        "type": "Cash",
+        "date": "2026-05-22",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 1350.0,
+        "type": "Cash",
+        "date": "2026-05-22",
+        "payment_month": "2026-05",
+        "year": 2026,
+        "month": 5,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": -135.0,
+        "type": "Daily Late Fee",
+        "date": "2026-01-31",
+        "payment_month": "2026-01",
+        "year": 2026,
+        "month": 1,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-01), grace 3 day(s), 27 day(s) late in-month through 2026-01-31."
+      },
+      {
+        "amount": -120.0,
+        "type": "Daily Late Fee",
+        "date": "2026-02-28",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-02), grace 3 day(s), 24 day(s) late in-month through 2026-02-28."
+      },
+      {
+        "amount": -135.0,
+        "type": "Daily Late Fee",
+        "date": "2026-03-31",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-03), grace 3 day(s), 27 day(s) late in-month through 2026-03-31."
+      },
+      {
+        "amount": -130.0,
+        "type": "Daily Late Fee",
+        "date": "2026-04-30",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": "Reconciled daily late fee (2026-04), grace 3 day(s), 26 day(s) late in-month through 2026-04-30."
       }
     ],
     "service_credit": 0.0,
@@ -1126,12 +1340,13 @@
       "mode": "daily",
       "grace_period_days": 3,
       "start_date": "2026-01-01",
-      "end_date": null
+      "end_date": null,
+      "waive_if_paid_within_month": true
     },
     "user_ids": [
       "admin"
     ],
     "user_id": "admin",
-    "last_modified": "2026-04-05T00:18:04.917515"
+    "last_modified": "2026-05-22T22:21:52.419798"
   }
 }

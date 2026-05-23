@@ -63,8 +63,11 @@ class Tenant:
             'mode': 'fixed',
             'grace_period_days': 0,
             'start_date': None,
-            'end_date': None
+            'end_date': None,
+            'waive_if_paid_within_month': False,
         }
+        if isinstance(self.late_fee_config, dict):
+            self.late_fee_config.setdefault('waive_if_paid_within_month', False)
         # Support both user_id (legacy) and user_ids (new multi-user)
         if user_ids is not None:
             self.user_ids = user_ids if isinstance(user_ids, list) else [user_ids]
@@ -402,7 +405,8 @@ class TenantManager:
                             'mode': 'fixed',
                             'grace_period_days': 0,
                             'start_date': None,
-                            'end_date': None
+                            'end_date': None,
+                            'waive_if_paid_within_month': False,
                         }
                     
                     # Migration: Convert user_id to user_ids (new multi-user system)

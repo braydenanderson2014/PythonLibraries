@@ -131,19 +131,34 @@ class MainWindow(QMainWindow):
         # Enable/disable tenant-dependent actions based on whether a tenant is loaded
         print(f'[DEBUG] on_tenant_viewed: viewed={viewed}, rent_menu_exists={self.rent_menu is not None}')
         if hasattr(self, 'tenant_dependent_actions'):
-            # Always enable when a tenant is viewed, and check if we should disable
-            if viewed:
+            tenant = getattr(self.rent_management_tab, 'selected_tenant', None)
+            has_tenant = viewed or tenant is not None
+
+            if not has_tenant:
                 for action in self.tenant_dependent_actions:
-                    action.setEnabled(True)
-            else:
-                # Only disable if no tenant is loaded in rent management tab
-                if hasattr(self.rent_management_tab, 'selected_tenant') and self.rent_management_tab.selected_tenant:
-                    for action in self.tenant_dependent_actions:
-                        action.setEnabled(True)  # Keep enabled if tenant still loaded
-                else:
-                    for action in self.tenant_dependent_actions:
-                        action.setEnabled(False)  # Disable if no tenant
-            logger.debug("MainWindow", f"Tenant-dependent actions enabled: {viewed or (hasattr(self.rent_management_tab, 'selected_tenant') and self.rent_management_tab.selected_tenant)}")
+                    action.setEnabled(False)
+                logger.debug("MainWindow", "Tenant-dependent actions enabled: False")
+                return
+
+            account_status = getattr(tenant, 'account_status', 'active') if tenant else 'active'
+            account_status = account_status.lower() if account_status else 'active'
+
+            for action in self.tenant_dependent_actions:
+                action.setEnabled(True)
+
+            for action in getattr(self, 'inactive_or_terminated_actions', []):
+                action.setEnabled(account_status not in ['inactive', 'terminated'])
+
+            for action in getattr(self, 'active_only_actions', []):
+                action.setEnabled(account_status == 'active')
+
+            for action in getattr(self, 'active_or_inactive_actions', []):
+                action.setEnabled(account_status in ['active', 'inactive'])
+
+            for action in getattr(self, 'terminated_disabled_actions', []):
+                action.setEnabled(account_status != 'terminated')
+
+            logger.debug("MainWindow", f"Tenant-dependent actions enabled for status '{account_status}'")
 
     def init_menu_bar(self):
         menu_bar = self.menuBar()
@@ -164,34 +179,34 @@ class MainWindow(QMainWindow):
         
         # Rent menu
         self.rent_menu = QMenu('Rent', self)
-        edit_tenant_action = QAction('Edit Tenant Details', self, triggered=self.edit_tenant_details)
-        edit_rent_action = QAction('Edit Rent Amount', self, triggered=self.edit_rent_amount)
-        edit_deposit_action = QAction('Edit Deposit Amount', self, triggered=self.edit_deposit_amount)
+        self.edit_tenant_action = QAction('Edit Tenant Details', self, triggered=self.edit_tenant_details)
+        self.edit_rent_action = QAction('Edit Rent Amount', self, triggered=self.edit_rent_amount)
+        self.edit_deposit_action = QAction('Edit Deposit Amount', self, triggered=self.edit_deposit_amount)
         
         # Add separator
-        self.rent_menu.addAction(edit_tenant_action)
-        self.rent_menu.addAction(edit_rent_action)
-        self.rent_menu.addAction(edit_deposit_action)
+        self.rent_menu.addAction(self.edit_tenant_action)
+        self.rent_menu.addAction(self.edit_rent_action)
+        self.rent_menu.addAction(self.edit_deposit_action)
         self.rent_menu.addSeparator()
         
         # Payment and override actions
-        add_payment_action = QAction('Add Payment', self, triggered=self.add_payment)
-        add_service_credit_action = QAction('Add Service Credit', self, triggered=self.add_service_credit)
-        convert_credits_action = QAction('Convert Credits', self, triggered=self.convert_credits)
-        monthly_override_action = QAction('Monthly Override', self, triggered=self.monthly_override)
-        yearly_override_action = QAction('Yearly Override', self, triggered=self.yearly_override)
-        renew_lease_action = QAction('Renew Lease', self, triggered=self.renew_lease)
-        query_system_action = QAction('Query System', self, triggered=self.query_system)
+        self.add_payment_action = QAction('Add Payment', self, triggered=self.add_payment)
+        self.add_service_credit_action = QAction('Add Service Credit', self, triggered=self.add_service_credit)
+        self.convert_credits_action = QAction('Convert Credits', self, triggered=self.convert_credits)
+        self.monthly_override_action = QAction('Monthly Override', self, triggered=self.monthly_override)
+        self.yearly_override_action = QAction('Yearly Override', self, triggered=self.yearly_override)
+        self.renew_lease_action = QAction('Renew Lease', self, triggered=self.renew_lease)
+        self.query_system_action = QAction('Query System', self, triggered=self.query_system)
         
-        self.rent_menu.addAction(add_payment_action)
-        self.rent_menu.addAction(add_service_credit_action)
-        self.rent_menu.addAction(convert_credits_action)
+        self.rent_menu.addAction(self.add_payment_action)
+        self.rent_menu.addAction(self.add_service_credit_action)
+        self.rent_menu.addAction(self.convert_credits_action)
         self.rent_menu.addSeparator()
-        self.rent_menu.addAction(monthly_override_action)
-        self.rent_menu.addAction(yearly_override_action)
-        self.rent_menu.addAction(renew_lease_action)
+        self.rent_menu.addAction(self.monthly_override_action)
+        self.rent_menu.addAction(self.yearly_override_action)
+        self.rent_menu.addAction(self.renew_lease_action)
         self.rent_menu.addSeparator()
-        self.rent_menu.addAction(query_system_action)
+        self.rent_menu.addAction(self.query_system_action)
         self.rent_menu.addSeparator()
         
         # Import legacy data action (always enabled, doesn't require tenant selection)
@@ -204,10 +219,28 @@ class MainWindow(QMainWindow):
         
         # Store actions that require tenant selection for later enabling/disabling
         self.tenant_dependent_actions = [
-            edit_tenant_action, edit_rent_action, edit_deposit_action,
-            add_payment_action, add_service_credit_action, convert_credits_action,
-            monthly_override_action, yearly_override_action, renew_lease_action,
-            query_system_action
+            self.edit_tenant_action, self.edit_rent_action, self.edit_deposit_action,
+            self.add_payment_action, self.add_service_credit_action, self.convert_credits_action,
+            self.monthly_override_action, self.yearly_override_action, self.renew_lease_action,
+            self.query_system_action
+        ]
+
+        self.inactive_or_terminated_actions = [
+            self.add_payment_action
+        ]
+
+        self.active_only_actions = [
+            self.add_service_credit_action
+        ]
+
+        self.active_or_inactive_actions = [
+            self.renew_lease_action
+        ]
+
+        self.terminated_disabled_actions = [
+            self.edit_rent_action,
+            self.monthly_override_action,
+            self.yearly_override_action
         ]
         
         # Disable tenant-dependent actions by default, but keep menu enabled

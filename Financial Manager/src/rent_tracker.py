@@ -15,6 +15,207 @@ from action_queue import ActionQueue
 from assets.Logger import Logger
 logger = Logger()
 class RentTracker:
+    def _month_key(self, year, month):
+        return f"{int(year):04d}-{int(month):02d}"
+
+    def _parse_payment_date(self, raw_date):
+        if isinstance(raw_date, datetime):
+            return raw_date.date()
+        if isinstance(raw_date, date):
+            return raw_date
+        if not raw_date:
+            return None
+
+        if hasattr(raw_date, 'toString'):
+            try:
+                raw_date = raw_date.toString('yyyy-MM-dd')
+            except Exception:
+                raw_date = str(raw_date)
+
+        raw_text = str(raw_date).strip()
+        if not raw_text:
+            return None
+
+        try:
+            return date.fromisoformat(raw_text)
+        except Exception:
+            pass
+
+        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y'):
+            try:
+                return datetime.strptime(raw_text, fmt).date()
+            except Exception:
+                continue
+
+        return None
+
+    def _get_monthly_status_entry(self, tenant, year, month):
+        if not hasattr(tenant, 'monthly_status') or tenant.monthly_status is None:
+            tenant.monthly_status = {}
+
+        month_key = self._month_key(year, month)
+        raw_entry = tenant.monthly_status.get(month_key)
+        if raw_entry is None:
+            raw_entry = tenant.monthly_status.get((int(year), int(month)))
+
+        if isinstance(raw_entry, dict):
+            entry = raw_entry.copy()
+        elif isinstance(raw_entry, str) and raw_entry:
+            entry = {'status': raw_entry}
+        else:
+            entry = {}
+
+        return month_key, entry
+
+    def _set_monthly_status_entry(self, tenant, year, month, entry):
+        if not hasattr(tenant, 'monthly_status') or tenant.monthly_status is None:
+            tenant.monthly_status = {}
+
+        month_key = self._month_key(year, month)
+        tenant.monthly_status.pop((int(year), int(month)), None)
+        tenant.monthly_status[month_key] = entry
+
+    def get_month_payment_snapshot(self, tenant, year, month, payment_history_override=None):
+        year = int(year)
+        month = int(month)
+
+        try:
+            due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
+        except Exception:
+            due_day_raw = 1
+
+        last_day = calendar.monthrange(year, month)[1]
+        due_day = min(max(due_day_raw, 1), last_day)
+        due_date = date(year, month, due_day)
+        today = date.today()
+        expected_rent = float(self.get_effective_rent(tenant, year, month) or 0.0)
+
+        month_payments = []
+        net_payment_total = 0.0
+        credit_usage_total = 0.0
+        rent_payment_total = 0.0
+        last_payment_date = None
+        last_payment_type = None
+
+        payment_history = payment_history_override if payment_history_override is not None else getattr(tenant, 'payment_history', [])
+
+        for payment in payment_history or []:
+            try:
+                pay_year = int(payment.get('year'))
+                pay_month = int(payment.get('month'))
+            except (TypeError, ValueError):
+                continue
+
+            if pay_year != year or pay_month != month:
+                continue
+
+            amount = float(payment.get('amount', 0.0) or 0.0)
+            payment_type = str(payment.get('type', '') or '')
+            is_credit_usage = bool(payment.get('is_credit_usage', False))
+            parsed_date = self._parse_payment_date(payment.get('date'))
+
+            month_payments.append((parsed_date, amount, payment_type, is_credit_usage))
+
+            if is_credit_usage:
+                credit_usage_total += amount
+            else:
+                net_payment_total += amount
+
+            if not self._is_late_fee_payment_type(payment_type):
+                rent_payment_total += amount
+
+            if parsed_date and (last_payment_date is None or parsed_date >= last_payment_date):
+                last_payment_date = parsed_date
+                last_payment_type = payment_type
+
+        month_payments.sort(key=lambda item: (item[0] or date.max, item[1]))
+
+        paid_in_full_date = None
+        if expected_rent <= 0:
+            paid_in_full_date = due_date
+        elif rent_payment_total >= expected_rent:
+            running_total = 0.0
+            for parsed_date, amount, payment_type, _ in month_payments:
+                if self._is_late_fee_payment_type(payment_type):
+                    continue
+                running_total += amount
+                if running_total + 1e-9 >= expected_rent:
+                    paid_in_full_date = parsed_date
+                    break
+
+        late_fee_charge_total = round(
+            self._sum_late_fee_charges_for_month(
+                tenant,
+                year,
+                month,
+                payment_history_override=payment_history,
+            ),
+            2,
+        )
+        total_applied_to_month = round(net_payment_total + credit_usage_total, 2)
+        remaining_balance = round(expected_rent - total_applied_to_month, 2)
+
+        overpayment_amount = 0.0
+        if total_applied_to_month + 1e-9 >= expected_rent:
+            remaining_due_after_credit = max(0.0, expected_rent - credit_usage_total)
+            overpayment_amount = max(0.0, net_payment_total - remaining_due_after_credit)
+
+        if today > due_date:
+            if remaining_balance > 0.01:
+                status = 'Delinquent'
+            elif overpayment_amount > 0.01:
+                status = 'Overpayment'
+            else:
+                status = 'Paid in Full'
+        else:
+            if total_applied_to_month + 1e-9 >= expected_rent:
+                status = 'Paid in Full'
+            elif total_applied_to_month > 0.01:
+                status = 'Partial Payment'
+            else:
+                status = 'Pending'
+
+        paid_late = bool(paid_in_full_date and paid_in_full_date > due_date)
+        currently_late = bool(today > due_date and rent_payment_total + 1e-9 < expected_rent)
+        was_late = bool(paid_late or currently_late or late_fee_charge_total > 0.0)
+
+        display_status = status
+        if status == 'Paid in Full' and paid_late:
+            display_status = 'Paid Late'
+        elif status == 'Overpayment' and paid_late:
+            display_status = 'Overpayment / Paid Late'
+
+        late_note = ''
+        if paid_late:
+            if late_fee_charge_total > 0.0:
+                late_note = f"Paid late; late fees assessed ${late_fee_charge_total:.2f}"
+            elif paid_in_full_date:
+                late_note = f"Paid after due date on {paid_in_full_date.isoformat()}"
+        elif status == 'Delinquent' and was_late:
+            late_note = f"Late and still owes ${remaining_balance:.2f}"
+        elif late_fee_charge_total > 0.0:
+            late_note = f"Late fee history: ${late_fee_charge_total:.2f}"
+
+        return {
+            'due_date': due_date,
+            'expected_rent': round(expected_rent, 2),
+            'net_payment_total': round(net_payment_total, 2),
+            'credit_usage_total': round(credit_usage_total, 2),
+            'rent_payment_total': round(rent_payment_total, 2),
+            'total_applied_to_month': round(total_applied_to_month, 2),
+            'remaining_balance': round(remaining_balance, 2),
+            'overpayment_amount': round(overpayment_amount, 2),
+            'status': status,
+            'display_status': display_status,
+            'was_late': was_late,
+            'paid_late': paid_late,
+            'late_note': late_note,
+            'late_fee_charge_total': late_fee_charge_total,
+            'paid_in_full_date': paid_in_full_date.isoformat() if paid_in_full_date else None,
+            'last_payment_date': last_payment_date.isoformat() if last_payment_date else None,
+            'last_payment_type': last_payment_type,
+        }
+
     def check_and_update_delinquency(self, target_tenant_id=None):
         import logging
         today = date.today()
@@ -32,6 +233,15 @@ class RentTracker:
                 
                 # Ensure months_to_charge is populated based on rental period
                 self.ensure_months_to_charge(tenant)
+
+                late_fee_config = self._normalize_late_fee_config(tenant)
+                if late_fee_config.get('enabled', False) and float(late_fee_config.get('amount', 0.0) or 0.0) > 0.0:
+                    reconcile_result = self.reconcile_late_fees(tenant.name, through_date=today)
+                    if reconcile_result and (reconcile_result.get('added_count', 0) or reconcile_result.get('removed_count', 0)):
+                        logger.debug(
+                            "Rent Tracker",
+                            f"[DEBUG] Synced late fees for {tenant.name}: +{reconcile_result.get('added_count', 0)} / -{reconcile_result.get('removed_count', 0)}"
+                        )
                 
                 # Get due day (default to 1 if not set)
                 try:
@@ -45,18 +255,7 @@ class RentTracker:
                 # Don't reset overpayment_credit yet - we'll calculate it based on payments
                 total_overpayment = 0.0
                 total_credit_used = 0.0
-                
-                # Clear monthly status for months outside the rental period
-                if hasattr(tenant, 'monthly_status'):
-                    # Only keep monthly status for months within the current rental period
-                    new_monthly_status = {}
-                    for year, month in tenant.months_to_charge:
-                        month_key = f"{year}-{month:02d}"
-                        if month_key in tenant.monthly_status:
-                            new_monthly_status[month_key] = tenant.monthly_status[month_key]
-                    tenant.monthly_status = new_monthly_status
-                else:
-                    tenant.monthly_status = {}
+                tenant.monthly_status = {}
                 
                 logger.debug("Rent Tracker",f"[DEBUG] {tenant.name} months to charge: {tenant.months_to_charge}")
                 
@@ -70,60 +269,48 @@ class RentTracker:
                         logger.warning("Rent Tracker",f"[WARNING] Invalid year/month format: {year}, {month}")
                         continue
                         
-                    due_date = date(year, month, due_day)
-                    month_key = f"{year}-{month:02d}"
-                    
-                    # Calculate total paid for this month
-                    total_paid_this_month = 0.0
-                    credit_usage_this_month = 0.0
-                    if hasattr(tenant, 'payment_history'):
-                        for payment in tenant.payment_history:
-                            if payment['year'] == year and payment['month'] == month:
-                                if payment.get('is_credit_usage', False):
-                                    # Track overpayment credit usage separately (not service credits)
-                                    # Service credits are treated as regular payments
-                                    credit_usage_this_month += payment['amount']
-                                    total_credit_used += payment['amount']
-                                else:
-                                    # Count all actual payments (cash, zelle, service credits, etc.)
-                                    total_paid_this_month += payment['amount']
-                    
-                    # Adjust total for credit usage - if more credit was used than new money available,
-                    # we need to account for overpayment from previous months
-                    adjusted_total_for_this_month = total_paid_this_month - credit_usage_this_month
-                    
-                    expected_rent = self.get_effective_rent(tenant, year, month)
-                    # For unpaid amount, account for both new money and credit usage
-                    total_applied_to_month = total_paid_this_month + credit_usage_this_month
-                    unpaid_amount = expected_rent - total_applied_to_month
-                    
-                    if today > due_date:
-                        # Past due date
-                        if unpaid_amount > 0:
-                            tenant.delinquency_balance += unpaid_amount
-                            tenant.monthly_status[month_key] = 'Delinquent'
-                            if (year, month) not in tenant.delinquent_months:
-                                tenant.delinquent_months.append((year, month))
-                        elif total_applied_to_month >= expected_rent:
-                            # Overpayment should be calculated against the remaining amount
-                            # due after any applied overpayment credit for this month.
-                            remaining_due_after_credit = max(0.0, expected_rent - credit_usage_this_month)
-                            overpayment = max(0.0, total_paid_this_month - remaining_due_after_credit)
-                            if overpayment > 0:
-                                total_overpayment += overpayment
-                                tenant.monthly_status[month_key] = 'Overpayment'
-                            else:
-                                tenant.monthly_status[month_key] = 'Paid in Full'
-                        else:
-                            tenant.monthly_status[month_key] = 'Partial Payment'
+                    snapshot = self.get_month_payment_snapshot(tenant, year, month)
+                    status = snapshot['status']
+                    total_credit_used += snapshot['credit_usage_total']
+
+                    if status == 'Delinquent':
+                        tenant.delinquency_balance += snapshot['remaining_balance']
+                        if (year, month) not in tenant.delinquent_months:
+                            tenant.delinquent_months.append((year, month))
+                    elif snapshot['overpayment_amount'] > 0.01:
+                        total_overpayment += snapshot['overpayment_amount']
+
+                    _, existing_entry = self._get_monthly_status_entry(tenant, year, month)
+                    entry = existing_entry or {}
+                    entry.update({
+                        'status': status,
+                        'display_status': snapshot['display_status'],
+                        'was_late': snapshot['was_late'],
+                        'paid_late': snapshot['paid_late'],
+                        'late_fee_charged': snapshot['late_fee_charge_total'] > 0.0,
+                        'late_fee_amount': snapshot['late_fee_charge_total'],
+                        'due_date': snapshot['due_date'].isoformat(),
+                    })
+
+                    if snapshot['paid_in_full_date']:
+                        entry['paid_in_full_date'] = snapshot['paid_in_full_date']
                     else:
-                        # Future month
-                        if total_applied_to_month >= expected_rent:
-                            tenant.monthly_status[month_key] = 'Paid in Full'
-                        elif total_applied_to_month > 0:
-                            tenant.monthly_status[month_key] = 'Partial Payment'
-                        else:
-                            tenant.monthly_status[month_key] = 'Pending'
+                        entry.pop('paid_in_full_date', None)
+
+                    if snapshot['last_payment_type']:
+                        entry['payment_type'] = snapshot['last_payment_type']
+
+                    if snapshot['last_payment_date']:
+                        entry['payment_date'] = snapshot['last_payment_date']
+                    else:
+                        entry.pop('payment_date', None)
+
+                    if snapshot['late_note']:
+                        entry['late_note'] = snapshot['late_note']
+                    else:
+                        entry.pop('late_note', None)
+
+                    self._set_monthly_status_entry(tenant, year, month, entry)
                             
                 logger.debug("Rent Tracker",f"[DEBUG] {tenant.name} final delinquency balance: ${tenant.delinquency_balance}")
                 logger.debug("Rent Tracker",f"[DEBUG] {tenant.name} delinquent months: {tenant.delinquent_months}")
@@ -534,9 +721,6 @@ class RentTracker:
             payment_year = payment_date.year
             payment_month_num = payment_date.month
         
-        # Add to total rent paid
-        tenant.total_rent_paid += amount
-        
         # Initialize payment history if it doesn't exist
         if not hasattr(tenant, 'payment_history'):
             tenant.payment_history = []
@@ -555,42 +739,9 @@ class RentTracker:
         tenant.payment_history.append(payment_record)
         logger.debug("RentTracker", f"Payment record added: {payment_record}")
         logger.debug("RentTracker", f"Total payment history entries: {len(tenant.payment_history)}")
-        
-        # Update monthly status for the specified month
-        month_key = (payment_year, payment_month_num)
-        current_status = tenant.monthly_status.get(month_key, {})
-        if isinstance(current_status, str):
-            current_status = {'status': current_status}
-        
-        # Calculate if this payment covers the month fully
-        expected_rent = self.get_effective_rent(tenant, payment_year, payment_month_num)
-        
-        # Calculate total paid for this month including this payment
-        total_paid_this_month = amount
-        for existing_payment in tenant.payment_history[:-1]:  # Exclude the current payment we just added
-            if existing_payment['year'] == payment_year and existing_payment['month'] == payment_month_num:
-                total_paid_this_month += existing_payment['amount']
-        
-        if total_paid_this_month >= expected_rent:
-            current_status['status'] = 'Paid in Full'
-            if total_paid_this_month > expected_rent and not is_credit_usage:
-                # Only create overpayment credit if this is NOT a credit usage payment
-                # Credit usage payments consume existing credit; they don't create new credit
-                overpayment = total_paid_this_month - expected_rent
-                tenant.overpayment_credit += overpayment
-        else:
-            current_status['status'] = 'Partial Payment'
-        
-        current_status['payment_type'] = payment_type
-        current_status['payment_date'] = payment_date.isoformat()
-        tenant.monthly_status[month_key] = current_status
-        
-        # Reduce delinquency if applicable
-        if tenant.delinquency_balance > 0:
-            reduction = min(tenant.delinquency_balance, amount)
-            tenant.delinquency_balance -= reduction
-        
-        self.tenant_manager.save()
+
+        self._recompute_total_paid_from_history(tenant)
+        self.check_and_update_delinquency(target_tenant_id=tenant.tenant_id)
         logger.info("RentTracker", f"Payment of ${amount:.2f} added for {tenant_name} for month {payment_year}-{payment_month_num:02d}")
         return True
     
@@ -714,10 +865,9 @@ class RentTracker:
                             payment_year = payment.get('year')
                             payment_month = payment.get('month')
                             if payment_year and payment_month:
-                                month_key = (payment_year, payment_month)
-                                monthly_status = tenant.monthly_status.get(month_key, {})
+                                _, monthly_status = self._get_monthly_status_entry(tenant, payment_year, payment_month)
                                 if isinstance(monthly_status, dict):
-                                    payment['status'] = monthly_status.get('status', '')
+                                    payment['status'] = monthly_status.get('display_status') or monthly_status.get('status', '')
                                 elif isinstance(monthly_status, str):
                                     payment['status'] = monthly_status
                         
@@ -938,9 +1088,7 @@ class RentTracker:
             return False
         
         # Get current payment info
-        current_status = tenant.monthly_status.get((year, month), {})
-        if isinstance(current_status, str):
-            current_status = {'status': current_status}
+        _, current_status = self._get_monthly_status_entry(tenant, year, month)
         
         # Calculate old amount from status
         expected_rent = self.get_effective_rent(tenant, year, month)
@@ -963,11 +1111,12 @@ class RentTracker:
             current_status['status'] = 'Partial Payment'
         else:
             current_status['status'] = 'Not Paid'
+        current_status['display_status'] = current_status['status']
         
         if payment_type:
             current_status['payment_type'] = payment_type
         
-        tenant.monthly_status[(year, month)] = current_status
+        self._set_monthly_status_entry(tenant, year, month, current_status)
         self.tenant_manager.save()
         return True
     
@@ -978,9 +1127,7 @@ class RentTracker:
             return False
         
         # Get current payment info
-        current_status = tenant.monthly_status.get((year, month), {})
-        if isinstance(current_status, str):
-            current_status = {'status': current_status}
+        _, current_status = self._get_monthly_status_entry(tenant, year, month)
         
         # Calculate amount to remove
         expected_rent = self.get_effective_rent(tenant, year, month)
@@ -994,8 +1141,8 @@ class RentTracker:
         tenant.total_rent_paid -= amount_to_remove
         
         # Remove the payment status
-        if (year, month) in tenant.monthly_status:
-            del tenant.monthly_status[(year, month)]
+        tenant.monthly_status.pop(self._month_key(year, month), None)
+        tenant.monthly_status.pop((int(year), int(month)), None)
         
         self.tenant_manager.save()
         return True
@@ -1086,12 +1233,12 @@ class RentTracker:
     def update_monthly_status(self, tenant_id, year, month, status, payment_type=None, other_type=None, overpayment=0.0):
         tenant = self.tenant_manager.get_tenant(tenant_id)
         if tenant:
-            entry = {'status': status}
+            entry = {'status': status, 'display_status': status}
             if payment_type:
                 entry['payment_type'] = payment_type
             if other_type:
                 entry['other_type'] = other_type
-            tenant.monthly_status[(year, month)] = entry
+            self._set_monthly_status_entry(tenant, year, month, entry)
             if status == 'Overpayment':
                 tenant.overpayment_credit += overpayment
             elif status == 'Delinquent':
@@ -1185,7 +1332,8 @@ class RentTracker:
             'mode': 'fixed',
             'grace_period_days': 0,
             'start_date': None,
-            'end_date': None
+            'end_date': None,
+            'waive_if_paid_within_month': False,
         }
         current = getattr(tenant, 'late_fee_config', None)
         if not isinstance(current, dict):
@@ -1203,6 +1351,7 @@ class RentTracker:
         config['grace_period_days'] = max(0, int(config.get('grace_period_days', 0) or 0))
         config['start_date'] = config.get('start_date') or None
         config['end_date'] = config.get('end_date') or None
+        config['waive_if_paid_within_month'] = bool(config.get('waive_if_paid_within_month', False))
         tenant.late_fee_config = config
 
         # Keep legacy attrs in sync for backward compatibility.
@@ -1229,10 +1378,47 @@ class RentTracker:
             return True
         return True
 
-    def _sum_late_fee_charges_for_month(self, tenant, year, month, mode='all'):
+    def _filter_payment_history_through_date(self, payment_history, through_date):
+        if through_date is None:
+            return list(payment_history or [])
+
+        filtered_history = []
+        for payment in payment_history or []:
+            parsed_date = self._parse_payment_date(payment.get('date')) if isinstance(payment, dict) else None
+            if parsed_date and parsed_date > through_date:
+                continue
+            filtered_history.append(payment)
+        return filtered_history
+
+    def _should_waive_late_fee_for_month(self, tenant, config, year, month, through_date=None, payment_history_override=None):
+        if not bool(config.get('waive_if_paid_within_month', False)):
+            return False
+
+        if isinstance(through_date, str):
+            try:
+                through_date = date.fromisoformat(through_date)
+            except Exception:
+                through_date = date.today()
+        elif through_date is None:
+            through_date = date.today()
+
+        payment_history = payment_history_override if payment_history_override is not None else getattr(tenant, 'payment_history', [])
+        history_through_date = self._filter_payment_history_through_date(payment_history, through_date)
+        snapshot = self.get_month_payment_snapshot(tenant, year, month, payment_history_override=history_through_date)
+        paid_in_full_date = self._parse_payment_date(snapshot.get('paid_in_full_date'))
+
+        return bool(
+            paid_in_full_date
+            and paid_in_full_date <= through_date
+            and paid_in_full_date.year == int(year)
+            and paid_in_full_date.month == int(month)
+        )
+
+    def _sum_late_fee_charges_for_month(self, tenant, year, month, mode='all', payment_history_override=None):
         mode_normalized = (mode or 'all').lower()
         total = 0.0
-        for payment in getattr(tenant, 'payment_history', []):
+        payment_history = payment_history_override if payment_history_override is not None else getattr(tenant, 'payment_history', [])
+        for payment in payment_history:
             try:
                 if int(payment.get('year')) == int(year) and int(payment.get('month')) == int(month):
                     payment_type = str(payment.get('type', '')).lower()
@@ -1301,6 +1487,7 @@ class RentTracker:
         due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
         grace_days = int(config.get('grace_period_days', 0) or 0)
         mode = config.get('mode', 'fixed')
+        non_late_payments_through_date = self._filter_payment_history_through_date(non_late_payments, through_date)
 
         month_keys = set()
         for year, month in getattr(tenant, 'months_to_charge', []):
@@ -1335,15 +1522,29 @@ class RentTracker:
             if expected <= 0.01:
                 continue
 
-            total_non_late_paid = 0.0
-            for payment in non_late_payments:
-                try:
-                    if int(payment.get('year')) == year and int(payment.get('month')) == month:
-                        total_non_late_paid += float(payment.get('amount', 0.0) or 0.0)
-                except Exception:
-                    continue
+            if self._should_waive_late_fee_for_month(
+                tenant,
+                config,
+                year,
+                month,
+                through_date=through_date,
+                payment_history_override=non_late_payments_through_date,
+            ):
+                continue
 
-            if (expected - total_non_late_paid) <= 0.01:
+            snapshot = self.get_month_payment_snapshot(
+                tenant,
+                year,
+                month,
+                payment_history_override=non_late_payments_through_date,
+            )
+            paid_in_full_date = self._parse_payment_date(snapshot.get('paid_in_full_date'))
+            assessment_date = through_date
+            if paid_in_full_date and paid_in_full_date <= through_date:
+                assessment_date = paid_in_full_date
+
+            assessment_date = min(assessment_date, date(year, month, month_last_day))
+            if assessment_date <= eligible_date:
                 continue
 
             base_fee = self._resolve_late_fee_amount_for_month(tenant, config, year, month)
@@ -1351,19 +1552,22 @@ class RentTracker:
                 continue
 
             if mode == 'daily':
-                days_late = self._calculate_month_bounded_late_days(through_date, eligible_date, year, month)
+                days_late = self._calculate_month_bounded_late_days(assessment_date, eligible_date, year, month)
                 if days_late <= 0:
                     continue
                 fee_total = round(days_late * base_fee, 2)
                 payment_type = 'Daily Late Fee'
                 note = (
                     f"Reconciled daily late fee ({year:04d}-{month:02d}), grace {grace_days} day(s), "
-                    f"{days_late} day(s) late in-month through {through_date.isoformat()}."
+                    f"{days_late} day(s) late in-month through {assessment_date.isoformat()}."
                 )
             else:
                 fee_total = round(base_fee, 2)
                 payment_type = 'Late Fee'
-                note = f"Reconciled late fee ({year:04d}-{month:02d}), grace {grace_days} day(s)."
+                note = (
+                    f"Reconciled late fee ({year:04d}-{month:02d}), grace {grace_days} day(s), "
+                    f"assessed through {assessment_date.isoformat()}."
+                )
 
             if fee_total <= 0.01:
                 continue
@@ -1371,7 +1575,7 @@ class RentTracker:
             rebuilt_late_entries.append({
                 'amount': -fee_total,
                 'type': payment_type,
-                'date': through_date.isoformat(),
+                'date': assessment_date.isoformat(),
                 'payment_month': f"{year:04d}-{month:02d}",
                 'year': year,
                 'month': month,
@@ -1434,7 +1638,7 @@ class RentTracker:
             return None
         return self._normalize_late_fee_config(tenant).copy()
 
-    def set_late_fee_config(self, tenant_name, enabled, amount=0.0, fee_basis='flat_amount', mode='fixed', grace_period_days=0, start_date=None, end_date=None):
+    def set_late_fee_config(self, tenant_name, enabled, amount=0.0, fee_basis='flat_amount', mode='fixed', grace_period_days=0, start_date=None, end_date=None, waive_if_paid_within_month=False):
         tenant = self.get_tenant_by_name(tenant_name)
         if not tenant:
             return False
@@ -1449,6 +1653,7 @@ class RentTracker:
         config['grace_period_days'] = max(0, int(grace_period_days or 0))
         config['start_date'] = start_date or None
         config['end_date'] = end_date or None
+        config['waive_if_paid_within_month'] = bool(waive_if_paid_within_month)
 
         tenant.late_fee_config = config
         self.tenant_manager.save()
@@ -1519,6 +1724,8 @@ class RentTracker:
         due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
         grace_days = int(config.get('grace_period_days', 0) or 0)
         mode = config.get('mode', 'fixed')
+        payment_history = list(getattr(tenant, 'payment_history', []) or [])
+        non_late_payments = [p for p in payment_history if not self._is_late_fee_payment_type(p.get('type'))]
 
         for year, month in getattr(tenant, 'months_to_charge', []):
             year = int(year)
@@ -1534,8 +1741,18 @@ class RentTracker:
                 continue
 
             expected = float(self.get_effective_rent(tenant, year, month) or 0.0)
+            if self._should_waive_late_fee_for_month(
+                tenant,
+                config,
+                year,
+                month,
+                through_date=through_date,
+                payment_history_override=non_late_payments,
+            ):
+                continue
+
             total_paid = 0.0
-            for payment in getattr(tenant, 'payment_history', []):
+            for payment in non_late_payments:
                 try:
                     if int(payment.get('year')) == year and int(payment.get('month')) == month:
                         total_paid += float(payment.get('amount', 0.0) or 0.0)
@@ -1661,9 +1878,11 @@ class RentTracker:
                 override_amount = yearly_override
                 final_rent = yearly_override
         
+        snapshot = self.get_month_payment_snapshot(tenant, query_date.year, query_date.month)
+
         # Get payment status and calculate totals
-        payment_status = tenant.monthly_status.get(year_month, 'No Payment')
-        total_paid = 0.0
+        payment_status = snapshot.get('display_status') or snapshot.get('status', 'No Payment')
+        total_paid = snapshot.get('total_applied_to_month', 0.0)
         payment_details = []
         overpayment_used = 0.0
         service_credit_used = 0.0
@@ -1726,6 +1945,11 @@ class RentTracker:
             'total_paid': total_paid,
             'balance_due': balance_due,
             'payment_status': payment_status,
+            'display_status': snapshot.get('display_status', payment_status),
+            'was_late': snapshot.get('was_late', False),
+            'paid_late': snapshot.get('paid_late', False),
+            'late_note': snapshot.get('late_note', ''),
+            'late_fee_amount': snapshot.get('late_fee_charge_total', 0.0),
             'payment_details': payment_details,
             'cash_payments': cash_payments,
             'service_credit_info': service_credit_info,
@@ -2035,18 +2259,12 @@ class RentTracker:
             'payment_history': [],
             'status': 'Not Paid'
         }
-        
-        # Check monthly status
-        if hasattr(tenant, 'monthly_status') and tenant.monthly_status:
-            status = tenant.monthly_status.get(month_key, 'Not Paid')
-            payment_info['status'] = status
-            
-            if status == 'Paid in Full':
-                payment_info['total_paid'] = self.get_effective_rent(tenant, year, month)
-            elif status == 'Partial Payment':
-                # Calculate partial payment amount
-                expected_rent = self.get_effective_rent(tenant, year, month)
-                payment_info['total_paid'] = expected_rent - tenant.delinquency_balance
+
+        snapshot = self.get_month_payment_snapshot(tenant, year, month)
+        payment_info['status'] = snapshot.get('display_status') or snapshot.get('status', 'Not Paid')
+        payment_info['total_paid'] = snapshot.get('total_applied_to_month', 0.0)
+        if snapshot.get('late_note'):
+            payment_info['late_note'] = snapshot['late_note']
         
         # Get detailed payment history if available
         if hasattr(tenant, 'payment_history') and tenant.payment_history:
