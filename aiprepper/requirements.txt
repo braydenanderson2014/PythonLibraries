@@ -1,0 +1,5 @@
+PyQt6>=6.7.0
+transformers>=4.30.0
+torch>=2.0.0
+pillow>=9.0.0
+sentencepiece>=0.2.0
