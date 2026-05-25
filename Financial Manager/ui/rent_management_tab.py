@@ -553,10 +553,10 @@ class RentManagementTab(QWidget):
 
     def load_tenant(self, tenant):
         print(f"[DEBUG] load_tenant called for {tenant.name}")
+        self.selected_tenant = tenant
         self.tenant_viewed.emit(True)
         # Update delinquency before displaying
         self.rent_tracker.check_and_update_delinquency()
-        self.selected_tenant = tenant
         
         # Update dropdown to reflect the loaded tenant
         self.update_dropdown_selection(tenant)
@@ -780,6 +780,7 @@ class RentManagementTab(QWidget):
             hover_color='#138496',
             pressed_color='#117a8b'
         ).replace('QPushButton {', 'QPushButton { background-color: #17a2b8;'))
+        self.modify_rent_btn_original_style = self.modify_rent_btn.styleSheet()
         
         self.monthly_override_btn = QPushButton('Monthly Override')
         self.monthly_override_btn.clicked.connect(self.show_monthly_override_dialog)
@@ -787,6 +788,7 @@ class RentManagementTab(QWidget):
             hover_color='#e8690a',
             pressed_color='#dc6308'
         ).replace('QPushButton {', 'QPushButton { background-color: #fd7e14;'))
+        self.monthly_override_btn_original_style = self.monthly_override_btn.styleSheet()
         
         self.yearly_override_btn = QPushButton('Yearly Override')
         self.yearly_override_btn.clicked.connect(self.show_yearly_override_dialog)
@@ -794,6 +796,7 @@ class RentManagementTab(QWidget):
             hover_color='#5d378a',
             pressed_color='#543078'
         ).replace('QPushButton {', 'QPushButton { background-color: #6f42c1;'))
+        self.yearly_override_btn_original_style = self.yearly_override_btn.styleSheet()
         
         self.service_credit_btn = QPushButton('Service Credit')
         self.service_credit_btn.clicked.connect(self.show_service_credit_dialog)
@@ -835,6 +838,7 @@ class RentManagementTab(QWidget):
             hover_color='#545b62',
             pressed_color='#454a4f'
         ).replace('QPushButton {', 'QPushButton { background-color: #6c757d;'))
+        self.scheduled_actions_btn_original_style = self.scheduled_actions_btn.styleSheet()
         
         # Schedule Notification Button
         self.schedule_notification_btn = QPushButton('Schedule Notification')
@@ -843,6 +847,7 @@ class RentManagementTab(QWidget):
             hover_color='#e8680f',
             pressed_color='#d15a00'
         ).replace('QPushButton {', 'QPushButton { background-color: #fd7e14;'))
+        self.schedule_notification_btn_original_style = self.schedule_notification_btn.styleSheet()
 
         # Export CSV Button
         self.export_csv_btn = QPushButton('Export CSV')
@@ -1092,6 +1097,16 @@ class RentManagementTab(QWidget):
         service_buttons = [
             ('service_credit_btn', 'service_credit_btn_original_style')
         ]
+
+        # Tenant maintenance buttons - disabled only for terminated accounts
+        terminated_only_buttons = [
+            ('modify_rent_btn', 'modify_rent_btn_original_style'),
+            ('monthly_override_btn', 'monthly_override_btn_original_style'),
+            ('yearly_override_btn', 'yearly_override_btn_original_style'),
+            ('late_fee_btn', 'late_fee_btn_original_style'),
+            ('scheduled_actions_btn', 'scheduled_actions_btn_original_style'),
+            ('schedule_notification_btn', 'schedule_notification_btn_original_style')
+        ]
         
         # Renew lease button - enabled for active and inactive (to renew expired leases)
         renew_lease_buttons = [
@@ -1149,6 +1164,19 @@ class RentManagementTab(QWidget):
                     button.setStyleSheet(disabled_style)
                 else:
                     # Restore original style when enabling
+                    if hasattr(self, style_attr):
+                        original_style = getattr(self, style_attr)
+                        button.setStyleSheet(original_style)
+
+        # Terminated-only buttons
+        for button_name, style_attr in terminated_only_buttons:
+            if hasattr(self, button_name):
+                button = getattr(self, button_name)
+                is_disabled = account_status == 'terminated'
+                button.setEnabled(not is_disabled)
+                if is_disabled:
+                    button.setStyleSheet(disabled_style)
+                else:
                     if hasattr(self, style_attr):
                         original_style = getattr(self, style_attr)
                         button.setStyleSheet(original_style)
@@ -1264,7 +1292,10 @@ class RentManagementTab(QWidget):
                 value_label = f"{value:.2f}% of rent"
             else:
                 value_label = f"${value:.2f}"
-            self.add_status_row(status_grid, row, "⏱️ Late Fee:", f"{mode_label} | {value_label}", "#cc7000")
+            late_fee_label = f"{mode_label} | {value_label}"
+            if late_fee_cfg.get('waive_if_paid_within_month'):
+                late_fee_label += " | Waive if paid same month"
+            self.add_status_row(status_grid, row, "⏱️ Late Fee:", late_fee_label, "#cc7000")
             row += 1
         
         # Balance information
@@ -1695,7 +1726,7 @@ class RentManagementTab(QWidget):
             self.payment_table.setItem(i, 5, QTableWidgetItem(details))
             
             # Notes
-            notes = payment.get('notes', '')
+            notes = self.get_payment_notes_display(tenant, payment)
             self.payment_table.setItem(i, 6, QTableWidgetItem(notes if notes else ''))
     
     def sort_payment_table(self, column):
@@ -1730,7 +1761,7 @@ class RentManagementTab(QWidget):
                 details = self.get_payment_details(data['tenant'], payment)
                 return details.lower()
             elif column == 6:  # Notes
-                return payment.get('notes', '').lower()
+                return self.get_payment_notes_display(data['tenant'], payment).lower()
             else:
                 return data['index']  # Default to original order
         
@@ -1826,8 +1857,8 @@ class RentManagementTab(QWidget):
         month_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #495057;")
         
         # Status with color coding
-        status_text = summary['status']
-        status_color = self.get_status_color(summary['status'])
+        status_text = summary.get('display_status', summary['status'])
+        status_color = self.get_status_color(status_text)
         status_label = QLabel(status_text)
         status_label.setStyleSheet(f"color: {status_color}; font-weight: bold; font-size: 12px;")
         
@@ -1860,6 +1891,13 @@ class RentManagementTab(QWidget):
         details_layout.addWidget(balance_label)
         
         month_layout.addLayout(details_layout)
+
+        late_note = summary.get('late_note', '')
+        if late_note:
+            late_note_label = QLabel(late_note)
+            late_note_label.setWordWrap(True)
+            late_note_label.setStyleSheet("color: #b35a00; font-size: 10px; font-style: italic;")
+            month_layout.addWidget(late_note_label)
         
         # Check for pending actions in queue for this month
         try:
@@ -1906,22 +1944,8 @@ class RentManagementTab(QWidget):
         try:
             year, month = payment_month.split('-')
             year, month = int(year), int(month)
-            
-            # Get expected rent for that month
-            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-            
-            # Get total paid for that month
-            total_paid = self.get_total_paid_for_month(tenant, year, month)
-            
-            if total_paid >= expected_rent:
-                if total_paid > expected_rent:
-                    return "Overpayment"
-                else:
-                    return "Paid in Full"
-            elif total_paid > 0:
-                return "Partial Payment"
-            else:
-                return "No Payment"
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
+            return snapshot.get('display_status') or snapshot.get('status', 'Unknown')
                 
         except Exception:
             return 'Unknown'
@@ -1929,7 +1953,6 @@ class RentManagementTab(QWidget):
     def get_payment_details(self, tenant, payment):
         """Get detailed information about a payment"""
         payment_month = payment.get('payment_month', '')
-        amount = payment.get('amount', 0.0)
         
         if not payment_month:
             return 'No details available'
@@ -1937,21 +1960,66 @@ class RentManagementTab(QWidget):
         try:
             year, month = payment_month.split('-')
             year, month = int(year), int(month)
-            
-            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-            total_paid = self.get_total_paid_for_month(tenant, year, month)
-            
-            if total_paid > expected_rent:
-                overpayment = total_paid - expected_rent
-                return f"Overpaid by ${overpayment:.2f}"
-            elif total_paid < expected_rent:
-                shortage = expected_rent - total_paid
-                return f"${shortage:.2f} remaining"
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
+
+            if snapshot['status'] == 'Overpayment':
+                detail = f"Overpaid by ${snapshot['overpayment_amount']:.2f}"
+            elif snapshot['remaining_balance'] > 0.01:
+                detail = f"${snapshot['remaining_balance']:.2f} remaining"
             else:
-                return "Fully paid"
+                detail = "Fully paid"
+
+            if snapshot.get('late_note'):
+                detail = f"{detail} | {snapshot['late_note']}"
+
+            return detail
                 
         except Exception:
             return 'Details unavailable'
+
+    def get_payment_notes_display(self, tenant, payment):
+        """Return stored notes plus any automatic late-payment note for the month."""
+        notes = str(payment.get('notes', '') or '').strip()
+        payment_month = payment.get('payment_month', '')
+        payment_type = str(payment.get('type', '') or '')
+
+        if not payment_month or 'late fee' in payment_type.lower():
+            return notes
+
+        try:
+            year, month = payment_month.split('-')
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, int(year), int(month))
+            late_note = str(snapshot.get('late_note', '') or '').strip()
+        except Exception:
+            late_note = ''
+
+        if late_note and late_note.lower() not in notes.lower():
+            return f"{notes} | {late_note}" if notes else late_note
+
+        return notes
+
+    def get_late_fee_entries_for_export(self, tenant, year=None):
+        """Return late-fee payment entries, optionally limited to a payment-month year."""
+        entries = []
+        for payment in getattr(tenant, 'payment_history', []) or []:
+            payment_type = str(payment.get('type', '') or '')
+            if 'late fee' not in payment_type.lower():
+                continue
+
+            payment_month = str(payment.get('payment_month', '') or '')
+            if year is not None and not payment_month.startswith(f"{int(year):04d}-"):
+                continue
+
+            entries.append(payment)
+
+        return sorted(
+            entries,
+            key=lambda payment: (
+                str(payment.get('payment_month', '') or ''),
+                str(payment.get('date', '') or ''),
+                str(payment.get('type', '') or ''),
+            )
+        )
     
     def get_total_paid_for_month(self, tenant, year, month):
         """Calculate total paid for a specific month"""
@@ -2132,6 +2200,8 @@ class RentManagementTab(QWidget):
                     next_month_tuple = (current_month_tuple[0] + 1, 1)
                 else:
                     next_month_tuple = (current_month_tuple[0], current_month_tuple[1] + 1)
+
+                snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
                 
                 if month_tuple > current_month_tuple:
                     # Future month
@@ -2139,21 +2209,20 @@ class RentManagementTab(QWidget):
                         status = "Due Soon"
                     else:
                         status = "Not Due"
-                elif total_paid >= expected_rent:
-                    if total_paid > expected_rent:
-                        status = "Overpayment"
-                    else:
-                        status = "Paid in Full"
-                elif total_paid > 0:
-                    status = "Partial Payment"
                 else:
-                    status = "Not Paid"
+                    status = snapshot.get('status', 'Unknown')
+                display_status = status if month_tuple > current_month_tuple else snapshot.get('display_status', status)
                 
                 summaries[month_key] = {
                     'status': status,
+                    'display_status': display_status,
                     'rent_due': expected_rent,
                     'total_paid': total_paid,
-                    'balance': balance
+                    'balance': balance,
+                    'was_late': snapshot.get('was_late', False),
+                    'paid_late': snapshot.get('paid_late', False),
+                    'late_note': snapshot.get('late_note', ''),
+                    'late_fee_amount': snapshot.get('late_fee_charge_total', 0.0)
                 }
         
         return summaries
@@ -2162,8 +2231,12 @@ class RentManagementTab(QWidget):
         """Get color for status display"""
         colors = {
             'Paid in Full': '#28a745',
+            'Paid Late': '#fd7e14',
             'Overpayment': '#17a2b8',
+            'Overpayment / Paid Late': '#0d6efd',
+            'Overpayment (Late)': '#0d6efd',
             'Partial Payment': '#ffc107',
+            'Delinquent': '#dc3545',
             'Not Paid': '#dc3545',
             'Due Soon': '#ff9800',
             'Not Due': '#6c757d',
@@ -2570,6 +2643,8 @@ class RentManagementTab(QWidget):
                 next_month_tuple = (current_month_tuple[0] + 1, 1)
             else:
                 next_month_tuple = (current_month_tuple[0], current_month_tuple[1] + 1)
+
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
             
             if month_tuple > current_month_tuple:
                 # Future month
@@ -2577,21 +2652,20 @@ class RentManagementTab(QWidget):
                     status = "Due Soon"
                 else:
                     status = "Not Due"
-            elif total_paid >= expected_rent:
-                if total_paid > expected_rent:
-                    status = "Overpayment"
-                else:
-                    status = "Paid in Full"
-            elif total_paid > 0:
-                status = "Partial Payment"
             else:
-                status = "Not Paid"
+                status = snapshot.get('status', 'Unknown')
+            display_status = status if month_tuple > current_month_tuple else snapshot.get('display_status', status)
             
             summaries[month_key] = {
                 'status': status,
+                'display_status': display_status,
                 'rent_due': expected_rent,
                 'total_paid': total_paid,
-                'balance': balance
+                'balance': balance,
+                'was_late': snapshot.get('was_late', False),
+                'paid_late': snapshot.get('paid_late', False),
+                'late_note': snapshot.get('late_note', ''),
+                'late_fee_amount': snapshot.get('late_fee_charge_total', 0.0)
             }
         
         return summaries
@@ -2714,7 +2788,10 @@ class RentManagementTab(QWidget):
             # Color mapping for statuses
             status_colors = {
                 'Paid in Full': "C6EFCE",      # Green
+                'Paid Late': "FCE4D6",         # Orange tint
                 'Overpayment': "92D050",       # Light Green
+                'Overpayment / Paid Late': "9CC2E5",  # Blue tint
+                'Overpayment (Late)': "9CC2E5",       # Backward compatibility
                 'Partial Payment': "FFEB9C",   # Yellow
                 'Not Paid': "FFC7CE",          # Red
                 'Due Soon': "FFD580",          # Orange (not red)
@@ -2888,7 +2965,7 @@ class RentManagementTab(QWidget):
                 pmonth = payment.get('payment_month', '')
                 status = self.get_human_readable_status(tenant, payment)
                 details = self.get_payment_details(tenant, payment)
-                notes = payment.get('notes', '')
+                notes = self.get_payment_notes_display(tenant, payment)
                 is_credit_usage = payment.get('is_credit_usage', False)
                 overpayment_created = self._calculate_overpayment_created(tenant, payment)
 
@@ -2964,11 +3041,42 @@ class RentManagementTab(QWidget):
                 row += 1
             row += 1
 
+            late_fee_entries = self.get_late_fee_entries_for_export(tenant)
+            if late_fee_entries:
+                add_section_header("LATE FEE HISTORY")
+                headers = ['Month', 'Date Assessed', 'Type', 'Amount', 'Notes']
+                for col, header in enumerate(headers, 1):
+                    cell = ws.cell(row=row, column=col)
+                    cell.value = header
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                row += 1
+
+                for payment in late_fee_entries:
+                    ws.cell(row=row, column=1).value = payment.get('payment_month', '')
+                    date_assessed = payment.get('date', '')
+                    ws.cell(row=row, column=2).value = datetime.strptime(date_assessed, '%Y-%m-%d') if date_assessed else None
+                    ws.cell(row=row, column=2).number_format = 'MM/DD/YYYY'
+                    ws.cell(row=row, column=3).value = payment.get('type', '')
+                    ws.cell(row=row, column=4).value = float(payment.get('amount', 0.0) or 0.0)
+                    ws.cell(row=row, column=4).number_format = '$#,##0.00'
+                    ws.cell(row=row, column=5).value = payment.get('notes', '')
+
+                    for col in range(1, 6):
+                        ws.cell(row=row, column=col).border = border
+                        ws.cell(row=row, column=col).alignment = Alignment(wrap_text=True)
+
+                    row += 1
+
+                row += 1
+
             # ===== MONTHLY BALANCE SUMMARY SECTION =====
             add_section_header("MONTHLY BALANCE SUMMARY (Filtered)")
 
             # Add column headers
-            headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance']
+            headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance', 'Late Fees', 'Late Note']
             for col, header in enumerate(headers, 1):
                 cell = ws.cell(row=row, column=col)
                 cell.value = header
@@ -2983,7 +3091,7 @@ class RentManagementTab(QWidget):
             for month_key, summary in sorted(summaries.items()):
                 ws.cell(row=row, column=1).value = month_key
                 
-                status = summary.get('status', '')
+                status = summary.get('display_status', summary.get('status', ''))
                 ws.cell(row=row, column=2).value = status
                 
                 rent_due = float(summary.get('rent_due', 0.0))
@@ -2997,6 +3105,12 @@ class RentManagementTab(QWidget):
                 balance = float(summary.get('balance', 0.0))
                 ws.cell(row=row, column=5).value = balance
                 ws.cell(row=row, column=5).number_format = '$#,##0.00'
+
+                late_fee_amount = float(summary.get('late_fee_amount', 0.0) or 0.0)
+                ws.cell(row=row, column=6).value = late_fee_amount
+                ws.cell(row=row, column=6).number_format = '$#,##0.00'
+
+                ws.cell(row=row, column=7).value = summary.get('late_note', '')
 
                 # Apply status color and balance coloring
                 status_cell = ws.cell(row=row, column=2)
@@ -3032,9 +3146,12 @@ class RentManagementTab(QWidget):
                     balance_cell.fill = PatternFill(start_color=status_colors.get(status, "FFC7CE"), end_color=status_colors.get(status, "FFC7CE"), fill_type="solid")
                 elif balance < 0:
                     balance_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                elif abs(balance) <= 0.01 and status in ["Paid in Full", "Paid Late"]:
+                    balance_fill = status_colors.get(status, "C6EFCE")
+                    balance_cell.fill = PatternFill(start_color=balance_fill, end_color=balance_fill, fill_type="solid")
 
                 # Apply borders
-                for col in range(1, 6):
+                for col in range(1, 8):
                     ws.cell(row=row, column=col).border = border
                     ws.cell(row=row, column=col).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
@@ -3047,7 +3164,7 @@ class RentManagementTab(QWidget):
             ws.column_dimensions['D'].width = 15
             ws.column_dimensions['E'].width = 20
             ws.column_dimensions['F'].width = 25
-            ws.column_dimensions['G'].width = 20
+            ws.column_dimensions['G'].width = 32
             ws.column_dimensions['H'].width = 25
 
             # ===== CONFIGURE PRINT SETTINGS FOR MAIN SHEET =====
@@ -3208,7 +3325,7 @@ class RentManagementTab(QWidget):
             pmonth = payment.get('payment_month', '')
             status = self.get_human_readable_status(tenant, payment)
             details = self.get_payment_details(tenant, payment)
-            notes = payment.get('notes', '')
+            notes = self.get_payment_notes_display(tenant, payment)
             is_credit_usage = payment.get('is_credit_usage', False)
             overpayment_created = self._calculate_overpayment_created(tenant, payment)
             
@@ -3283,6 +3400,37 @@ class RentManagementTab(QWidget):
             
             row += 1
         row += 1
+
+        late_fee_entries = self.get_late_fee_entries_for_export(tenant, year=year)
+        if late_fee_entries:
+            add_section_header(f"LATE FEE HISTORY - {year}")
+            headers = ['Month', 'Date Assessed', 'Type', 'Amount', 'Notes']
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            row += 1
+
+            for payment in late_fee_entries:
+                ws.cell(row=row, column=1).value = payment.get('payment_month', '')
+                date_assessed = payment.get('date', '')
+                ws.cell(row=row, column=2).value = datetime.strptime(date_assessed, '%Y-%m-%d') if date_assessed else None
+                ws.cell(row=row, column=2).number_format = 'MM/DD/YYYY'
+                ws.cell(row=row, column=3).value = payment.get('type', '')
+                ws.cell(row=row, column=4).value = float(payment.get('amount', 0.0) or 0.0)
+                ws.cell(row=row, column=4).number_format = '$#,##0.00'
+                ws.cell(row=row, column=5).value = payment.get('notes', '')
+
+                for col in range(1, 6):
+                    ws.cell(row=row, column=col).border = border
+                    ws.cell(row=row, column=col).alignment = Alignment(wrap_text=True)
+
+                row += 1
+
+            row += 1
         
         # ===== YEAR SUMMARY TOTALS (FOR TAX PURPOSES) =====
         add_section_header(f"YEAR SUMMARY - {year} (Tax Purposes)")
@@ -3336,7 +3484,7 @@ class RentManagementTab(QWidget):
         add_section_header(f"MONTHLY BALANCE SUMMARY - {year}")
         
         # Add column headers
-        headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance']
+        headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance', 'Late Fees', 'Late Note']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col)
             cell.value = header
@@ -3353,7 +3501,7 @@ class RentManagementTab(QWidget):
         for month_key, summary in sorted(year_summaries.items()):
             ws.cell(row=row, column=1).value = month_key
             
-            status = summary.get('status', '')
+            status = summary.get('display_status', summary.get('status', ''))
             ws.cell(row=row, column=2).value = status
             
             rent_due = float(summary.get('rent_due', 0.0))
@@ -3367,6 +3515,12 @@ class RentManagementTab(QWidget):
             balance = float(summary.get('balance', 0.0))
             ws.cell(row=row, column=5).value = balance
             ws.cell(row=row, column=5).number_format = '$#,##0.00'
+
+            late_fee_amount = float(summary.get('late_fee_amount', 0.0) or 0.0)
+            ws.cell(row=row, column=6).value = late_fee_amount
+            ws.cell(row=row, column=6).number_format = '$#,##0.00'
+
+            ws.cell(row=row, column=7).value = summary.get('late_note', '')
             
             # Apply status color
             status_cell = ws.cell(row=row, column=2)
@@ -3397,9 +3551,12 @@ class RentManagementTab(QWidget):
                 balance_cell.fill = PatternFill(start_color=status_colors.get(status, "FFC7CE"), end_color=status_colors.get(status, "FFC7CE"), fill_type="solid")
             elif balance < 0:
                 balance_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            elif abs(balance) <= 0.01 and status in ["Paid in Full", "Paid Late"]:
+                balance_fill = status_colors.get(status, "C6EFCE")
+                balance_cell.fill = PatternFill(start_color=balance_fill, end_color=balance_fill, fill_type="solid")
             
             # Apply borders
-            for col in range(1, 6):
+            for col in range(1, 8):
                 ws.cell(row=row, column=col).border = border
                 ws.cell(row=row, column=col).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             
@@ -3412,7 +3569,7 @@ class RentManagementTab(QWidget):
         ws.column_dimensions['D'].width = 15
         ws.column_dimensions['E'].width = 20
         ws.column_dimensions['F'].width = 25
-        ws.column_dimensions['G'].width = 20
+        ws.column_dimensions['G'].width = 32
         ws.column_dimensions['H'].width = 25
         
         # ===== CONFIGURE PRINT SETTINGS FOR YEAR SHEET =====
@@ -3521,7 +3678,7 @@ class RentManagementTab(QWidget):
                     is_credit_usage = payment.get('is_credit_usage', False)
                     is_credit_row = is_credit_usage or 'Overpayment Credit' in ptype or 'Service Credit' in ptype
                     overpayment_created = self._calculate_overpayment_created(tenant, payment)
-                    notes = payment.get('notes', '')
+                    notes = self.get_payment_notes_display(tenant, payment)
                     writer.writerow([
                         date_received, 
                         amount, 
@@ -3535,17 +3692,33 @@ class RentManagementTab(QWidget):
                     ])
                 writer.writerow([])
 
+                late_fee_entries = self.get_late_fee_entries_for_export(tenant)
+                if late_fee_entries:
+                    writer.writerow(['Section', 'Late Fee History'])
+                    writer.writerow(['Month', 'Date Assessed', 'Type', 'Amount', 'Notes'])
+                    for payment in late_fee_entries:
+                        writer.writerow([
+                            payment.get('payment_month', ''),
+                            payment.get('date', ''),
+                            payment.get('type', ''),
+                            f"{float(payment.get('amount', 0.0) or 0.0):.2f}",
+                            payment.get('notes', ''),
+                        ])
+                    writer.writerow([])
+
                 # Section: Monthly Balance Summary (respect current filter)
                 writer.writerow(['Section', 'Monthly Balance Summary (Filtered)'])
-                writer.writerow(['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance'])
+                writer.writerow(['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance', 'Late Fees', 'Late Note'])
                 summaries = self.get_filtered_monthly_summaries(tenant)
                 for month_key, summary in sorted(summaries.items()):
                     writer.writerow([
                         month_key,
-                        summary.get('status', ''),
+                        summary.get('display_status', summary.get('status', '')),
                         f"{summary.get('rent_due', 0.0):.2f}",
                         f"{summary.get('total_paid', 0.0):.2f}",
-                        f"{summary.get('balance', 0.0):.2f}"
+                        f"{summary.get('balance', 0.0):.2f}",
+                        f"{summary.get('late_fee_amount', 0.0):.2f}",
+                        summary.get('late_note', '')
                     ])
 
             QMessageBox.information(self, 'Export CSV', f'Exported to:\n{path}')
@@ -4624,6 +4797,7 @@ class RentManagementTab(QWidget):
             'grace_period_days': 0,
             'start_date': None,
             'end_date': None,
+            'waive_if_paid_within_month': False,
         }
 
         dialog = LateFeeDialog(self, tenant_name=self.selected_tenant.name, config=config)
@@ -4641,6 +4815,7 @@ class RentManagementTab(QWidget):
             fee_basis = str(payload.get('fee_basis', 'flat_amount') or 'flat_amount').lower()
             mode = str(payload.get('mode', 'fixed') or 'fixed').lower()
             grace_period_days = int(payload.get('grace_period_days', 0) or 0)
+            waive_if_paid_within_month = bool(payload.get('waive_if_paid_within_month', False))
             start_date = payload.get('start_date') or None
             end_date = payload.get('end_date') or None
             action = (payload.get('action') or 'save_config').strip().lower()
@@ -4661,6 +4836,7 @@ class RentManagementTab(QWidget):
                 grace_period_days=grace_period_days,
                 start_date=start_date,
                 end_date=end_date,
+                waive_if_paid_within_month=waive_if_paid_within_month,
             )
 
             if not config_saved:

@@ -57,6 +57,10 @@ class LateFeeDialog(QDialog):
         self.grace_days_input.setValue(int(cfg.get("grace_period_days", 0) or 0))
         config_form.addRow("Grace period days:", self.grace_days_input)
 
+        self.waive_same_month_checkbox = QCheckBox("Remove late fees if rent is paid in full by month end")
+        self.waive_same_month_checkbox.setChecked(bool(cfg.get("waive_if_paid_within_month", False)))
+        config_form.addRow("Waive if paid same month:", self.waive_same_month_checkbox)
+
         self.use_start_date = QCheckBox("Use start date")
         self.start_date_input = QDateEdit()
         self.start_date_input.setCalendarPopup(True)
@@ -119,6 +123,7 @@ class LateFeeDialog(QDialog):
         self.help_label = QLabel(
             "save_config: only saves settings | auto_apply_through_date: applies to overdue unpaid months | "
             "daily mode charges (days late after grace) x amount and records as Daily Late Fee | "
+            "same-month waiver removes/skips late fees when that month is fully paid before month end | "
             "percent_of_rent basis treats value as percent of that month's effective rent | "
             "manual_apply_month/manual_remove_month: use YYYY-MM | remove_all_late_fees: removes all late fee entries"
         )
@@ -145,6 +150,7 @@ class LateFeeDialog(QDialog):
             "fee_basis": self.basis_select.currentText().strip().lower(),
             "mode": self.mode_select.currentText().strip().lower(),
             "grace_period_days": int(self.grace_days_input.value()),
+            "waive_if_paid_within_month": self.waive_same_month_checkbox.isChecked(),
             "start_date": start_date,
             "end_date": end_date,
             "action": self.action_select.currentText(),

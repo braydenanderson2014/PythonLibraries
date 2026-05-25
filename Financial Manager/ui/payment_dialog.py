@@ -30,9 +30,11 @@ class PaymentDialog(QDialog):
             title = 'Add Payment'
         else:
             title = 'Modify Payment'
+
+        self.original_payment_data = dict(payment_data) if isinstance(payment_data, dict) else None
         
         self.setWindowTitle(title)
-        self.setFixedSize(500, 400)
+        self.setFixedSize(520, 520)
         self.init_ui()
         
         if mode == 'modify' and payment_data:
@@ -172,6 +174,20 @@ class PaymentDialog(QDialog):
         month_layout.addWidget(month_label)
         month_layout.addWidget(self.month_combo)
         layout.addLayout(month_layout)
+
+        self.month_summary_label = QLabel()
+        self.month_summary_label.setWordWrap(True)
+        self.month_summary_label.setStyleSheet("""
+            QLabel {
+                color: #1f2933;
+                background-color: #eef4ff;
+                border: 1px solid #b6c8eb;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 12px;
+            }
+        """)
+        layout.addWidget(self.month_summary_label)
         
         # Payment received date
         date_layout = QHBoxLayout()
@@ -300,6 +316,12 @@ class PaymentDialog(QDialog):
         layout.addLayout(buttons_layout)
         
         self.setLayout(layout)
+
+        self.month_combo.currentIndexChanged.connect(self.update_month_summary)
+        self.amount_input.valueChanged.connect(self.update_month_summary)
+        self.date_received.dateChanged.connect(self.update_month_summary)
+
+        self.update_month_summary()
     
     def on_type_changed(self, text):
         """Show/hide appropriate input fields based on payment type"""
@@ -367,6 +389,161 @@ class PaymentDialog(QDialog):
             self.credit_info_label.hide()
             # Reset amount input maximum for other payment types
             self.amount_input.setMaximum(999999.99)
+
+        self.update_month_summary()
+
+    def _get_rent_tracker(self):
+        parent = self.parent()
+        if parent and hasattr(parent, 'rent_tracker'):
+            return parent.rent_tracker
+        return None
+
+    def _payments_match(self, left, right):
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+
+        fields_to_match = ['date', 'payment_month', 'type', 'year', 'month', 'is_credit_usage']
+        for field in fields_to_match:
+            if left.get(field) != right.get(field):
+                return False
+
+        try:
+            left_amount = round(float(left.get('amount', 0.0) or 0.0), 2)
+            right_amount = round(float(right.get('amount', 0.0) or 0.0), 2)
+        except Exception:
+            return False
+
+        return left_amount == right_amount
+
+    def _get_payment_type_for_projection(self):
+        payment_type = self.type_combo.currentText()
+        if payment_type == 'Other':
+            other_type = self.other_input.text().strip()
+            return f"Other: {other_type}" if other_type else 'Other'
+        return payment_type
+
+    def _build_projection_payment(self):
+        payment_month = self.month_combo.currentData()
+        if not payment_month:
+            return None
+
+        try:
+            year, month = map(int, str(payment_month).split('-'))
+        except Exception:
+            return None
+
+        amount = float(self.amount_input.value() or 0.0)
+        if self.mode == 'refund':
+            amount = -abs(amount)
+
+        payment_type = self._get_payment_type_for_projection()
+        return {
+            'amount': amount,
+            'type': payment_type,
+            'date': self.date_received.date().toString('yyyy-MM-dd'),
+            'payment_month': payment_month,
+            'year': year,
+            'month': month,
+            'is_credit_usage': payment_type.startswith('Overpayment Credit'),
+            'notes': self.notes_input.toPlainText().strip() if hasattr(self, 'notes_input') else ''
+        }
+
+    def _get_history_without_original_payment(self):
+        history = [dict(payment) for payment in (getattr(self.tenant, 'payment_history', []) or []) if isinstance(payment, dict)]
+
+        if self.mode != 'modify' or not self.original_payment_data:
+            return history
+
+        for index, payment in enumerate(history):
+            if self._payments_match(payment, self.original_payment_data):
+                del history[index]
+                break
+
+        return history
+
+    def _format_needed_amount(self, snapshot):
+        remaining_balance = float(snapshot.get('remaining_balance', 0.0) or 0.0)
+        return max(0.0, round(remaining_balance, 2))
+
+    def _format_projection_result(self, snapshot):
+        needed_amount = self._format_needed_amount(snapshot)
+        display_status = snapshot.get('display_status') or snapshot.get('status', 'Unknown')
+
+        if needed_amount > 0.01:
+            return f"{display_status} | ${needed_amount:.2f} still needed"
+
+        remaining_balance = float(snapshot.get('remaining_balance', 0.0) or 0.0)
+        if remaining_balance < -0.01:
+            return f"{display_status} | ${abs(remaining_balance):.2f} credit"
+
+        return f"{display_status} | Month fully covered"
+
+    def update_month_summary(self):
+        if not hasattr(self, 'month_summary_label') or self.month_summary_label is None:
+            return
+
+        tracker = self._get_rent_tracker()
+        payment_month = self.month_combo.currentData() if hasattr(self, 'month_combo') else None
+        if not tracker or not self.tenant or not payment_month:
+            self.month_summary_label.hide()
+            return
+
+        try:
+            year, month = map(int, str(payment_month).split('-'))
+        except Exception:
+            self.month_summary_label.hide()
+            return
+
+        current_snapshot = tracker.get_month_payment_snapshot(self.tenant, year, month)
+        baseline_history = self._get_history_without_original_payment()
+        projected_history = [dict(payment) for payment in baseline_history]
+        projection_payment = self._build_projection_payment()
+
+        if projection_payment is not None and (self.mode != 'modify' or abs(float(projection_payment.get('amount', 0.0) or 0.0)) > 0.0):
+            projected_history.append(projection_payment)
+
+        projected_snapshot = tracker.get_month_payment_snapshot(
+            self.tenant,
+            year,
+            month,
+            payment_history_override=projected_history
+        )
+
+        current_needed = self._format_needed_amount(current_snapshot)
+        late_fee_amount = float(current_snapshot.get('late_fee_charge_total', 0.0) or 0.0)
+
+        lines = [
+            "<b>Selected Month Summary</b>",
+            f"Current status: <b>{current_snapshot.get('display_status') or current_snapshot.get('status', 'Unknown')}</b>",
+            f"Late fees for this month: <b>${late_fee_amount:.2f}</b>",
+            f"Needed to complete month now: <b>${current_needed:.2f}</b>",
+            f"After this payment: <b>{self._format_projection_result(projected_snapshot)}</b>",
+        ]
+
+        if current_snapshot.get('late_note'):
+            lines.append(current_snapshot['late_note'])
+
+        if self.mode == 'modify' and self.original_payment_data:
+            original_month = self.original_payment_data.get('payment_month', '')
+            if original_month:
+                try:
+                    delete_year, delete_month = map(int, str(original_month).split('-'))
+                    delete_snapshot = tracker.get_month_payment_snapshot(
+                        self.tenant,
+                        delete_year,
+                        delete_month,
+                        payment_history_override=baseline_history
+                    )
+                    delete_needed = self._format_needed_amount(delete_snapshot)
+                    delete_label = QDate(delete_year, delete_month, 1).toString('MMMM yyyy')
+                    lines.append(
+                        f"If this payment is deleted from <b>{delete_label}</b>: <b>${delete_needed:.2f}</b> would be needed"
+                    )
+                except Exception:
+                    pass
+
+        self.month_summary_label.setText('<br>'.join(lines))
+        self.month_summary_label.show()
     
     def _get_payment_types(self):
         """Load payment types from settings, fall back to defaults."""
@@ -544,7 +721,20 @@ class PaymentDialog(QDialog):
                     self.other_input.setText(payment_type[7:].strip())  # Remove "Other: " prefix
                     self.other_input.show()
                 else:
-                    self.type_combo.setCurrentText(payment_type)
+                    normalized_type = payment_type
+                    if payment_type.startswith('Overpayment Credit'):
+                        normalized_type = 'Overpayment Credit'
+                    elif payment_type.startswith('Service Credit'):
+                        normalized_type = 'Service Credit'
+                    elif payment_type.endswith(' (Refund)'):
+                        normalized_type = payment_type[:-9]
+
+                    if self.type_combo.findText(normalized_type) >= 0:
+                        self.type_combo.setCurrentText(normalized_type)
+                    else:
+                        self.type_combo.setCurrentText('Other')
+                        self.other_input.setText(payment_type)
+                        self.other_input.show()
                 
                 # Set payment month if available
                 payment_month = self.payment_data.get('payment_month', '')
@@ -569,6 +759,7 @@ class PaymentDialog(QDialog):
                 
                 # Set date range restrictions based on rental period
                 self.set_date_range_from_rental_period()
+                self.update_month_summary()
             else:
                 # Fallback for old format
                 self.amount_input.setValue(1600.0)  # Default rent amount

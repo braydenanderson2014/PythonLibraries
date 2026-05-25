@@ -72,6 +72,8 @@ class RentalSummaries:
                 logger.debug("RentalSummaries", f"Using base rent for {month_key}: ${expected_rent}")
             
             logger.debug("RentalSummaries", f"Monthly summary for {tenant.name}: {month_key}, expected_rent=${expected_rent}")
+
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
             
             # Calculate payments for this month
             total_paid = 0.0
@@ -99,6 +101,8 @@ class RentalSummaries:
                             'type': payment.get('type', 'Unknown'),
                             'is_credit_usage': payment.get('is_credit_usage', False)
                         })
+
+            total_paid = snapshot.get('total_applied_to_month', total_paid)
             
             # Get monthly status
             monthly_status = 'Unknown'
@@ -110,7 +114,8 @@ class RentalSummaries:
                 else:
                     monthly_status = str(status_value) if status_value else 'Unknown'
             
-            balance = expected_rent - total_paid
+            monthly_status = snapshot.get('status', monthly_status)
+            balance = snapshot.get('remaining_balance', expected_rent - total_paid)
             
             summary = {
                 'tenant_id': tenant_id,
@@ -124,8 +129,13 @@ class RentalSummaries:
                 'payment_count': len(payments),
                 'payments': payments,
                 'status': monthly_status,
+                'display_status': snapshot.get('display_status', monthly_status),
+                'was_late': snapshot.get('was_late', False),
+                'paid_late': snapshot.get('paid_late', False),
+                'late_note': snapshot.get('late_note', ''),
+                'late_fee_amount': snapshot.get('late_fee_charge_total', 0.0),
                 'due_date': f"{year}-{month:02d}-{int(tenant.rent_due_date) if tenant.rent_due_date else 1:02d}",
-                'is_delinquent': balance > 0 and date(year, month, 1) < date.today()
+                'is_delinquent': monthly_status == 'Delinquent' or (balance > 0 and date(year, month, 1) < date.today())
             }
             
             logger.info("RentalSummaries", f"Monthly summary generated for {tenant.name}: {month_key}")

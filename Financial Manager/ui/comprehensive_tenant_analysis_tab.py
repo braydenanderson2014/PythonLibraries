@@ -254,12 +254,14 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         
         # Summary table for each tenant
         self.summary_table = QTableWidget()
-        self.summary_table.setColumnCount(8)
+        self.summary_table.setColumnCount(10)
         self.summary_table.setHorizontalHeaderLabels([
             'Tenant Name',
-            'Status',
+            'Account Status',
+            'Current Month Status',
             'Rent Amount',
             'Delinquency',
+            'Late Fees',
             'Overpayment',
             'Service Credit',
             'This Month: Expected',
@@ -282,7 +284,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         
         # Monthly detail table
         self.monthly_table = QTableWidget()
-        self.monthly_table.setColumnCount(7)
+        self.monthly_table.setColumnCount(8)
         self.monthly_table.setHorizontalHeaderLabels([
             'Tenant Name',
             'Year-Month',
@@ -290,6 +292,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             'Amount Paid',
             'Balance',
             'Status',
+            'Late Fees',
             'Notes'
         ])
         self.monthly_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -344,39 +347,185 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             self.update_payment_history_charts(tenants)
         except Exception as e:
             logger.error("ComprehensiveTenantAnalysisTab", f"Error refreshing charts: {e}")
+
+    def _get_relevant_month_keys(self, tenant):
+        """Return tracked year/month pairs for a tenant from charge months and payment history."""
+        month_keys = set()
+
+        try:
+            self.rent_tracker.ensure_months_to_charge(tenant)
+        except Exception:
+            pass
+
+        for month_entry in getattr(tenant, 'months_to_charge', []) or []:
+            try:
+                month_keys.add((int(month_entry[0]), int(month_entry[1])))
+            except Exception:
+                continue
+
+        for payment in getattr(tenant, 'payment_history', []) or []:
+            payment_month = str(payment.get('payment_month', '') or '')
+            if payment_month:
+                try:
+                    year, month = map(int, payment_month.split('-'))
+                    month_keys.add((year, month))
+                    continue
+                except Exception:
+                    pass
+
+            try:
+                month_keys.add((int(payment.get('year')), int(payment.get('month'))))
+            except Exception:
+                continue
+
+        return sorted(month_keys)
+
+    def _build_month_summary(self, tenant, year, month, today=None):
+        """Build a single month summary using tracker snapshot data plus due-soon/not-due labeling."""
+        if today is None:
+            today = datetime.date.today()
+
+        month_key = f"{int(year):04d}-{int(month):02d}"
+        current_month_tuple = (today.year, today.month)
+        month_tuple = (int(year), int(month))
+        if current_month_tuple[1] == 12:
+            next_month_tuple = (current_month_tuple[0] + 1, 1)
+        else:
+            next_month_tuple = (current_month_tuple[0], current_month_tuple[1] + 1)
+
+        snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
+        expected_rent = float(snapshot.get('expected_rent', 0.0) or 0.0)
+        total_paid = float(snapshot.get('total_applied_to_month', 0.0) or 0.0)
+        balance = float(snapshot.get('remaining_balance', 0.0) or 0.0)
+
+        if month_tuple > current_month_tuple:
+            status = 'Due Soon' if month_tuple == next_month_tuple else 'Not Due'
+            display_status = status
+        else:
+            status = snapshot.get('status', 'Unknown')
+            display_status = snapshot.get('display_status', status)
+
+        return {
+            'month_key': month_key,
+            'status': status,
+            'display_status': display_status,
+            'rent_due': expected_rent,
+            'total_paid': total_paid,
+            'balance': balance,
+            'late_fee_amount': float(snapshot.get('late_fee_charge_total', 0.0) or 0.0),
+            'late_note': snapshot.get('late_note', ''),
+            'was_late': bool(snapshot.get('was_late', False)),
+            'paid_late': bool(snapshot.get('paid_late', False)),
+        }
+
+    def _get_tenant_monthly_summaries(self, tenant, today=None):
+        """Return tracker-backed summaries for each relevant tenant month."""
+        summaries = {}
+        for year, month in self._get_relevant_month_keys(tenant):
+            summary = self._build_month_summary(tenant, year, month, today=today)
+            summaries[summary['month_key']] = summary
+        return summaries
+
+    def _get_status_bucket(self, summary):
+        """Group month summaries into user-facing status buckets for aggregated charts."""
+        status = summary.get('status', '')
+        display_status = summary.get('display_status', status)
+        balance = float(summary.get('balance', 0.0) or 0.0)
+
+        if display_status in ('Paid Late', 'Overpayment / Paid Late'):
+            return 'Paid Late'
+        if status == 'Delinquent':
+            return 'Late'
+        if status in ('Due Soon', 'Not Due'):
+            return 'Upcoming'
+        if display_status == 'Overpayment':
+            return 'Overpayment'
+        if display_status == 'Paid in Full':
+            return 'Paid in Full'
+        if status in ('Partial Payment', 'Pending') or balance > 0.01:
+            return 'Outstanding'
+        return display_status or status or 'Other'
+
+    def _build_comprehensive_metrics(self, tenants):
+        """Compute shared chart/stat aggregates from tracker-backed month summaries."""
+        active_tenants = [t for t in tenants if getattr(t, 'account_status', 'active').lower() == 'active']
+        today = datetime.date.today()
+        current_month_key = f"{today.year:04d}-{today.month:02d}"
+        if today.month == 12:
+            next_month_key = f"{today.year + 1:04d}-01"
+        else:
+            next_month_key = f"{today.year:04d}-{today.month + 1:02d}"
+
+        status_order = ['Outstanding', 'Late', 'Paid Late', 'Paid in Full', 'Overpayment', 'Upcoming', 'Other']
+        status_counts = {label: 0 for label in status_order}
+        tenant_summaries = {}
+        total_expected_due = 0.0
+        total_delinquency = sum(max(float(getattr(t, 'delinquency_balance', 0.0) or 0.0), 0.0) for t in active_tenants)
+        total_late_fees = 0.0
+        total_current_expected = 0.0
+        total_current_paid = 0.0
+
+        for tenant in active_tenants:
+            summaries = self._get_tenant_monthly_summaries(tenant, today=today)
+            tenant_summaries[getattr(tenant, 'tenant_id', tenant.name)] = summaries
+
+            total_late_fees += sum(float(summary.get('late_fee_amount', 0.0) or 0.0) for summary in summaries.values())
+
+            current_summary = summaries.get(current_month_key)
+            if current_summary:
+                total_current_expected += float(current_summary.get('rent_due', 0.0) or 0.0)
+                total_current_paid += min(
+                    max(float(current_summary.get('total_paid', 0.0) or 0.0), 0.0),
+                    float(current_summary.get('rent_due', 0.0) or 0.0),
+                )
+
+            for month_key, summary in summaries.items():
+                if month_key <= current_month_key and summary.get('status') not in ('Due Soon', 'Not Due'):
+                    total_expected_due += float(summary.get('rent_due', 0.0) or 0.0)
+
+                if month_key <= current_month_key or month_key == next_month_key:
+                    bucket = self._get_status_bucket(summary)
+                    status_counts[bucket] = status_counts.get(bucket, 0) + 1
+
+        return {
+            'active_tenants': active_tenants,
+            'tenant_summaries': tenant_summaries,
+            'total_expected_due': total_expected_due,
+            'total_delinquency': total_delinquency,
+            'total_late_fees': total_late_fees,
+            'total_current_expected': total_current_expected,
+            'total_current_paid': total_current_paid,
+            'status_counts': status_counts,
+            'current_month_key': current_month_key,
+        }
+
+    def _get_status_color(self, status):
+        """Return a display color for a month status."""
+        colors = {
+            'Paid in Full': '#ccffcc',
+            'Paid Late': '#ffe0cc',
+            'Overpayment': '#cce5ff',
+            'Overpayment / Paid Late': '#d9e8ff',
+            'Partial Payment': '#fff7cc',
+            'Pending': '#fff7cc',
+            'Delinquent': '#ffcccc',
+            'Due Soon': '#ffe5b4',
+            'Not Due': '#f0f0f0',
+        }
+        return QColor(colors.get(status, '#f5f5f5'))
     
     def update_aggregated_charts(self, tenants):
         """Update the aggregated charts showing all tenant data combined"""
         logger.debug("ComprehensiveTenantAnalysisTab", f"Updating aggregated charts for {len(tenants)} tenants")
-        active_tenants = [t for t in tenants if getattr(t, 'account_status', 'active').lower() == 'active']
-        
+        metrics = self._build_comprehensive_metrics(tenants)
+        active_tenants = metrics['active_tenants']
+
         if not active_tenants:
             return
-        
-        now = datetime.date.today()
-        
-        # Calculate aggregated delinquency data
-        total_expected_due = 0
-        total_delinq = sum(t.delinquency_balance for t in active_tenants)
-        future_payment_credits = 0
-        
-        for tenant in active_tenants:
-            if hasattr(tenant, 'months_to_charge') and tenant.months_to_charge:
-                for year, month in tenant.months_to_charge:
-                    month_date = datetime.date(year, month, 1)
-                    if month_date <= now:
-                        effective_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-                        total_expected_due += effective_rent
-                    elif month_date > now and hasattr(tenant, 'payment_history'):
-                        month_key = f"{year}-{month:02d}"
-                        future_payments = sum(p.get('amount', 0) for p in tenant.payment_history 
-                                            if p.get('payment_month') == month_key)
-                        if future_payments > 0:
-                            effective_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-                            future_payment_credits += min(future_payments, effective_rent)
-        
-        adjusted_delinq = max(total_delinq - future_payment_credits, 0)
-        delinq_data = [max(adjusted_delinq, 0), max(total_expected_due - adjusted_delinq, 0)]
+
+        total_expected_due = float(metrics['total_expected_due'] or 0.0)
+        total_delinq = float(metrics['total_delinquency'] or 0.0)
+        delinq_data = [max(total_delinq, 0.0), max(total_expected_due - total_delinq, 0.0)]
         
         # Update delinquency chart
         try:
@@ -399,12 +548,12 @@ class ComprehensiveTenantAnalysisTab(QWidget):
                     autotext.set_weight('bold')
                 
                 # Create legend with better positioning
-                ax1.legend(['Delinquency', 'Paid/Expected'], 
+                ax1.legend(['Delinquency', 'Expected Covered'], 
                           loc='upper right',
                           fontsize=10,
                           framealpha=0.95)
                 
-                ax1.set_title(f'All Tenants: Delinquency vs Expected\n${adjusted_delinq:.0f} / ${total_expected_due:.0f}',
+                ax1.set_title(f'All Tenants: Delinquency vs Expected\n${total_delinq:.0f} / ${total_expected_due:.0f}',
                              fontsize=12, pad=20)
             
             self.delinq_fig.tight_layout(pad=1.5)
@@ -412,32 +561,8 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         except Exception as e:
             logger.error("ComprehensiveTenantAnalysisTab", f"Error updating delinquency chart: {e}")
         
-        # Calculate current month data
-        month_expected = 0
-        month_paid = 0
-        
-        for tenant in active_tenants:
-            should_charge = False
-            if hasattr(tenant, 'months_to_charge'):
-                for month_entry in tenant.months_to_charge:
-                    if len(month_entry) >= 2 and month_entry[0] == now.year and month_entry[1] == now.month:
-                        should_charge = True
-                        break
-            
-            if should_charge:
-                effective_rent = self.rent_tracker.get_effective_rent(tenant, now.year, now.month)
-                month_expected += effective_rent
-                
-                actual_paid = 0
-                if hasattr(tenant, 'payment_history'):
-                    month_key = f"{now.year}-{now.month:02d}"
-                    for payment in tenant.payment_history:
-                        if payment.get('payment_month') == month_key:
-                            actual_paid += payment.get('amount', 0)
-                
-                paid_toward_expected = min(actual_paid, effective_rent)
-                month_paid += paid_toward_expected
-        
+        month_expected = float(metrics['total_current_expected'] or 0.0)
+        month_paid = float(metrics['total_current_paid'] or 0.0)
         month_data = [max(month_paid, 0), max(month_expected - month_paid, 0)]
         
         # Update monthly chart
@@ -474,10 +599,18 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         except Exception as e:
             logger.error("ComprehensiveTenantAnalysisTab", f"Error updating monthly chart: {e}")
         
-        # Account status chart
-        active_count = len([t for t in tenants if getattr(t, 'account_status', 'active').lower() == 'active'])
-        inactive_count = len([t for t in tenants if getattr(t, 'account_status', 'active').lower() != 'active'])
-        status_data = [active_count, inactive_count]
+        # Month status breakdown chart
+        status_colors = {
+            'Outstanding': '#ffb300',
+            'Late': '#ff5050',
+            'Paid Late': '#fd7e14',
+            'Paid in Full': '#4caf50',
+            'Overpayment': '#0078d4',
+            'Upcoming': '#9e9e9e',
+            'Other': '#7e57c2',
+        }
+        status_labels = [label for label, count in metrics['status_counts'].items() if count > 0]
+        status_data = [metrics['status_counts'][label] for label in status_labels]
         
         try:
             self.status_fig.clear()
@@ -485,9 +618,9 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             
             if sum(status_data) == 0:
                 ax3.text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14)
-                ax3.set_title('Account Status Distribution', fontsize=12, pad=20)
+                ax3.set_title('Observed Month Status Breakdown', fontsize=12, pad=20)
             else:
-                colors = ['#4caf50', '#999999']
+                colors = [status_colors.get(label, '#999999') for label in status_labels]
                 wedges, texts, autotexts = ax3.pie(status_data,
                                             autopct='%1.1f%%',
                                             colors=colors,
@@ -499,12 +632,12 @@ class ComprehensiveTenantAnalysisTab(QWidget):
                     autotext.set_weight('bold')
                 
                 # Create legend with better positioning
-                ax3.legend(['Active', 'Inactive'],
+                ax3.legend(status_labels,
                           loc='upper right',
                           fontsize=10,
                           framealpha=0.95)
                 
-                ax3.set_title(f'Account Status\n{active_count} Active / {inactive_count} Inactive',
+                ax3.set_title(f'Observed Month Status Breakdown\n{sum(status_data)} tenant-months',
                              fontsize=12, pad=20)
             
             self.status_fig.tight_layout(pad=1.5)
@@ -518,34 +651,32 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         self.summary_table.setRowCount(0)
         
         now = datetime.date.today()
+        current_month_key = f"{now.year:04d}-{now.month:02d}"
         
         for tenant in sorted(tenants, key=lambda t: t.name):
             row = self.summary_table.rowCount()
             self.summary_table.insertRow(row)
-            
-            # Calculate this month's expected and paid
-            month_expected = 0
-            month_paid = 0
-            
-            if hasattr(tenant, 'months_to_charge'):
-                for month_entry in tenant.months_to_charge:
-                    if len(month_entry) >= 2 and month_entry[0] == now.year and month_entry[1] == now.month:
-                        month_expected = self.rent_tracker.get_effective_rent(tenant, now.year, now.month)
-                        break
-            
-            if hasattr(tenant, 'payment_history'):
-                for payment in tenant.payment_history:
-                    if payment.get('year') == now.year and payment.get('month') == now.month:
-                        month_paid += payment.get('amount', 0)
+
+            summaries = self._get_tenant_monthly_summaries(tenant, today=now)
+            current_summary = summaries.get(current_month_key)
+            month_expected = float(current_summary.get('rent_due', 0.0) or 0.0) if current_summary else 0.0
+            month_paid = float(current_summary.get('total_paid', 0.0) or 0.0) if current_summary else 0.0
+            current_status = current_summary.get('display_status', current_summary.get('status', 'N/A')) if current_summary else 'N/A'
+            total_late_fees = sum(float(summary.get('late_fee_amount', 0.0) or 0.0) for summary in summaries.values())
+            delinquency_balance = float(getattr(tenant, 'delinquency_balance', 0.0) or 0.0)
+            overpayment_credit = float(getattr(tenant, 'overpayment_credit', 0.0) or 0.0)
+            service_credit = float(getattr(tenant, 'service_credit', 0.0) or 0.0)
             
             # Add cells
             cells = [
                 tenant.name,
-                getattr(tenant, 'account_status', 'Active'),
+                str(getattr(tenant, 'account_status', 'Active')).title(),
+                current_status,
                 f"${tenant.rent_amount:.2f}",
-                f"${tenant.delinquency_balance:.2f}",
-                f"${getattr(tenant, 'overpayment_credit', 0.0):.2f}",
-                f"${getattr(tenant, 'service_credit', 0.0):.2f}",
+                f"${delinquency_balance:.2f}",
+                f"${total_late_fees:.2f}",
+                f"${overpayment_credit:.2f}",
+                f"${service_credit:.2f}",
                 f"${month_expected:.2f}",
                 f"${month_paid:.2f}"
             ]
@@ -554,10 +685,13 @@ class ComprehensiveTenantAnalysisTab(QWidget):
                 item = QTableWidgetItem(cell_text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 
-                # Color code delinquency
-                if col == 3 and tenant.delinquency_balance > 0:
+                if col == 2 and current_status != 'N/A':
+                    item.setBackground(self._get_status_color(current_status))
+                elif col == 4 and delinquency_balance > 0:
                     item.setBackground(QColor('#ffcccc'))
-                elif col == 4 and getattr(tenant, 'overpayment_credit', 0.0) > 0:
+                elif col == 5 and total_late_fees > 0:
+                    item.setBackground(QColor('#ffe0b2'))
+                elif col == 6 and overpayment_credit > 0:
                     item.setBackground(QColor('#ccffcc'))
                 
                 self.summary_table.setItem(row, col, item)
@@ -568,60 +702,44 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         self.monthly_table.setRowCount(0)
         
         now = datetime.date.today()
+        current_month_key = f"{now.year:04d}-{now.month:02d}"
+        if now.month == 12:
+            next_month_key = f"{now.year + 1:04d}-01"
+        else:
+            next_month_key = f"{now.year:04d}-{now.month + 1:02d}"
         
         for tenant in sorted(tenants, key=lambda t: t.name):
-            if hasattr(tenant, 'months_to_charge') and tenant.months_to_charge:
-                for month_entry in tenant.months_to_charge:
-                    if len(month_entry) >= 2:
-                        year, month = month_entry[0], month_entry[1]
-                        month_date = datetime.date(year, month, 1)
-                        
-                        # Only show months that are due or recently due
-                        if month_date <= now:
-                            row = self.monthly_table.rowCount()
-                            self.monthly_table.insertRow(row)
-                            
-                            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-                            
-                            # Calculate paid for this month
-                            amount_paid = 0
-                            if hasattr(tenant, 'payment_history'):
-                                month_key = f"{year}-{month:02d}"
-                                for payment in tenant.payment_history:
-                                    if payment.get('payment_month') == month_key:
-                                        amount_paid += payment.get('amount', 0)
-                            
-                            balance = expected_rent - amount_paid
-                            
-                            # Determine status
-                            if amount_paid >= expected_rent:
-                                status = "Paid"
-                                status_color = QColor('#ccffcc')
-                            elif amount_paid > 0:
-                                status = "Partial"
-                                status_color = QColor('#ffffcc')
-                            else:
-                                status = "Unpaid"
-                                status_color = QColor('#ffcccc')
-                            
-                            cells = [
-                                tenant.name,
-                                f"{year}-{month:02d}",
-                                f"${expected_rent:.2f}",
-                                f"${amount_paid:.2f}",
-                                f"${balance:.2f}",
-                                status,
-                                ""
-                            ]
-                            
-                            for col, cell_text in enumerate(cells):
-                                item = QTableWidgetItem(cell_text)
-                                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                                
-                                if col == 5:  # Status column
-                                    item.setBackground(status_color)
-                                
-                                self.monthly_table.setItem(row, col, item)
+            summaries = self._get_tenant_monthly_summaries(tenant, today=now)
+            for month_key, summary in sorted(summaries.items()):
+                if month_key > current_month_key and month_key != next_month_key:
+                    continue
+
+                row = self.monthly_table.rowCount()
+                self.monthly_table.insertRow(row)
+
+                display_status = summary.get('display_status', summary.get('status', 'Unknown'))
+                late_fee_amount = float(summary.get('late_fee_amount', 0.0) or 0.0)
+                cells = [
+                    tenant.name,
+                    month_key,
+                    f"${float(summary.get('rent_due', 0.0) or 0.0):.2f}",
+                    f"${float(summary.get('total_paid', 0.0) or 0.0):.2f}",
+                    f"${float(summary.get('balance', 0.0) or 0.0):.2f}",
+                    display_status,
+                    f"${late_fee_amount:.2f}",
+                    summary.get('late_note', '') or ''
+                ]
+
+                for col, cell_text in enumerate(cells):
+                    item = QTableWidgetItem(cell_text)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+                    if col == 5:
+                        item.setBackground(self._get_status_color(display_status))
+                    elif col == 6 and late_fee_amount > 0:
+                        item.setBackground(QColor('#ffe0b2'))
+
+                    self.monthly_table.setItem(row, col, item)
     
     def update_statistics(self, tenants):
         logger.debug("ComprehensiveTenantAnalysisTab", "Updating statistics")
@@ -640,6 +758,10 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         total_delinq = sum(t.delinquency_balance for t in tenants)
         total_overpay = sum(getattr(t, 'overpayment_credit', 0.0) for t in tenants)
         total_service = sum(getattr(t, 'service_credit', 0.0) for t in tenants)
+        total_late_fees = 0.0
+        for tenant in tenants:
+            summaries = self._get_tenant_monthly_summaries(tenant)
+            total_late_fees += sum(float(summary.get('late_fee_amount', 0.0) or 0.0) for summary in summaries.values())
         active_tenants = len([t for t in tenants if getattr(t, 'account_status', 'active').lower() == 'active'])
         
         stats = [
@@ -647,6 +769,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             ('Active Tenants', str(active_tenants)),
             ('Total Monthly Rent', f"${total_rent:.2f}"),
             ('Total Delinquency', f"${total_delinq:.2f}"),
+            ('Total Late Fees', f"${total_late_fees:.2f}"),
             ('Total Overpayment', f"${total_overpay:.2f}"),
             ('Total Service Credit', f"${total_service:.2f}")
         ]
@@ -1314,6 +1437,332 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             logger.error("ComprehensiveTenantAnalysisTab", f"Error creating charts: {e}")
             import traceback
             traceback.print_exc()
+
+    def _create_tenant_sheet(self, wb, tenant):
+        """Create the per-tenant Excel sheet used by the comprehensive export."""
+        ws = wb.create_sheet(self._sanitize_sheet_name(tenant.name))
+
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        section_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+        section_font = Font(bold=True, size=11)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        credit_usage_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+        status_colors = {
+            'Paid in Full': "C6EFCE",
+            'Paid Late': "FCE4D6",
+            'Overpayment': "92D050",
+            'Overpayment / Paid Late': "9CC2E5",
+            'Overpayment (Late)': "9CC2E5",
+            'Partial Payment': "FFEB9C",
+            'Not Paid': "FFC7CE",
+            'Due Soon': "FFD580",
+            'Not Due': "D3D3D3",
+            'Delinquent': "FF0000",
+            'N/A': "CCCCCC",
+        }
+        details_colors = {
+            'Overpaid': "92D050",
+            'remaining': "FFD580",
+            'Fully paid': "C6EFCE",
+        }
+
+        row = 1
+
+        ws.merge_cells(f'A{row}:H{row}')
+        date_cell = ws[f'A{row}']
+        date_cell.value = f"Report Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        date_cell.font = Font(bold=True, size=11)
+        date_cell.alignment = Alignment(horizontal='left')
+        row += 1
+
+        disclaimer_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
+        ws.merge_cells(f'A{row}:H{row}')
+        disclaimer_cell = ws[f'A{row}']
+        disclaimer_cell.value = "NOTE: Rows highlighted in light yellow are Overpayment Credit or Service Credit usage. These do not represent new rent payments and are not included in total payment calculations."
+        disclaimer_cell.fill = disclaimer_fill
+        disclaimer_cell.font = Font(italic=True, size=9)
+        disclaimer_cell.alignment = Alignment(wrap_text=True, vertical='center')
+        ws.row_dimensions[row].height = 40
+        row += 2
+
+        def add_section_header(title):
+            nonlocal row
+            ws.merge_cells(f'A{row}:H{row}')
+            cell = ws[f'A{row}']
+            cell.value = title
+            cell.fill = section_fill
+            cell.font = section_font
+            row += 1
+
+        def add_row(label, value):
+            nonlocal row
+            ws[f'A{row}'] = label
+            ws[f'B{row}'] = value
+            ws[f'A{row}'].font = Font(bold=True)
+            ws[f'A{row}'].border = border
+            ws[f'B{row}'].border = border
+            row += 1
+
+        add_section_header("TENANT INFORMATION")
+        add_row("Name", tenant.name)
+        add_row("Tenant ID", getattr(tenant, 'tenant_id', 'N/A'))
+
+        rental_period = getattr(tenant, 'rental_period', {})
+        if isinstance(rental_period, dict):
+            start_date = rental_period.get('start_date', 'N/A')
+            end_date = rental_period.get('end_date', 'N/A')
+            period_str = f"{start_date} - {end_date}"
+        else:
+            period_str = str(rental_period)
+        add_row("Rental Period", period_str)
+
+        add_row("Rent Amount", getattr(tenant, 'rent_amount', 0.0))
+        ws[f'B{row-1}'].number_format = '$#,##0.00'
+        add_row("Deposit Amount", getattr(tenant, 'deposit_amount', 0.0))
+        ws[f'B{row-1}'].number_format = '$#,##0.00'
+        add_row("Due Day", getattr(tenant, 'rent_due_date', 'N/A'))
+
+        contact_info = getattr(tenant, 'contact_info', {})
+        if isinstance(contact_info, dict):
+            contact_parts = []
+            if contact_info.get('phone'):
+                contact_parts.append(f"Phone: {contact_info.get('phone')}")
+            if contact_info.get('email'):
+                contact_parts.append(f"Email: {contact_info.get('email')}")
+            contact_str = ' | '.join(contact_parts) if contact_parts else 'Not provided'
+        else:
+            contact_str = str(contact_info) if contact_info else 'Not provided'
+        add_row("Contact", contact_str)
+
+        notes = getattr(tenant, 'notes', '')
+        if isinstance(getattr(tenant, '_notes_list', None), list):
+            notes = '; '.join(tenant._notes_list)
+        add_row("Notes", notes or '')
+        row += 1
+
+        add_section_header("CURRENT STATUS & CALCULATIONS")
+        today = datetime.date.today()
+        current_month_key = f"{today.year}-{today.month:02d}"
+        effective_rent = self.rent_tracker.get_effective_rent(tenant, today.year, today.month)
+
+        monthly_override = None
+        yearly_override = None
+        if hasattr(tenant, 'monthly_exceptions') and tenant.monthly_exceptions:
+            monthly_override = tenant.monthly_exceptions.get(current_month_key)
+            if monthly_override is None:
+                yearly_override = tenant.monthly_exceptions.get(str(today.year))
+
+        delinquency_balance = float(getattr(tenant, 'delinquency_balance', 0.0) or 0.0)
+        overpayment_credit = float(getattr(tenant, 'overpayment_credit', 0.0) or 0.0)
+        service_credit = float(getattr(tenant, 'service_credit', 0.0) or 0.0)
+        net_due = delinquency_balance - overpayment_credit
+
+        add_row("Current Month", today.strftime('%B %Y'))
+        add_row("Base Rent", getattr(tenant, 'rent_amount', 0.0))
+        ws[f'B{row-1}'].number_format = '$#,##0.00'
+
+        override_val = f"{monthly_override:.2f}" if monthly_override is not None else (f"{yearly_override:.2f}" if yearly_override is not None else "None")
+        add_row("Active Override", override_val)
+        if monthly_override is not None or yearly_override is not None:
+            ws[f'B{row-1}'].number_format = '$#,##0.00'
+
+        add_row("Effective Rent", effective_rent)
+        ws[f'B{row-1}'].number_format = '$#,##0.00'
+
+        add_row("Delinquency Balance", delinquency_balance)
+        delinq_cell = ws[f'B{row-1}']
+        delinq_cell.number_format = '$#,##0.00'
+        if delinquency_balance > 0:
+            delinq_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+        add_row("Overpayment Credit", overpayment_credit)
+        overpay_cell = ws[f'B{row-1}']
+        overpay_cell.number_format = '$#,##0.00'
+        if overpayment_credit > 0:
+            overpay_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+
+        add_row("Service Credit", service_credit)
+        ws[f'B{row-1}'].number_format = '$#,##0.00'
+
+        add_row("Net Amount Due", abs(net_due) if net_due != 0 else 0.00)
+        net_cell = ws[f'B{row-1}']
+        net_cell.number_format = '$#,##0.00'
+        if net_due > 0:
+            net_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        elif net_due < 0:
+            net_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        row += 1
+
+        add_section_header("PAYMENT HISTORY (Sorted by Date Received)")
+        payments = sorted(
+            getattr(tenant, 'payment_history', []) or [],
+            key=lambda payment: dt_datetime.strptime(payment.get('date', '1970-01-01'), '%Y-%m-%d')
+        )
+
+        headers = ['Date Received', 'Amount', 'Type', 'For Month', 'Status', 'Details', 'Overpayment Created', 'Notes']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        row += 1
+
+        for payment in payments:
+            date_received = payment.get('date', '')
+            amount = float(payment.get('amount', 0.0))
+            payment_type = payment.get('type', '')
+            payment_month = payment.get('payment_month', '')
+            status = self._get_payment_status(tenant, payment)
+            details = self._get_payment_details(tenant, payment)
+            notes = self._get_payment_notes_display(tenant, payment)
+            is_credit_usage = payment.get('is_credit_usage', False)
+            is_credit_row = is_credit_usage or 'Overpayment Credit' in payment_type or 'Service Credit' in payment_type
+            overpayment_created = self._calculate_overpayment_created(tenant, payment)
+
+            ws.cell(row=row, column=1).value = dt_datetime.strptime(date_received, '%Y-%m-%d') if date_received else None
+            ws.cell(row=row, column=1).number_format = 'MM/DD/YYYY'
+            ws.cell(row=row, column=2).value = amount
+            ws.cell(row=row, column=2).number_format = '$#,##0.00'
+            ws.cell(row=row, column=3).value = payment_type
+            ws.cell(row=row, column=4).value = payment_month
+            ws.cell(row=row, column=5).value = status
+            ws.cell(row=row, column=6).value = details
+            ws.cell(row=row, column=7).value = overpayment_created if overpayment_created > 0 else ''
+            ws.cell(row=row, column=7).number_format = '$#,##0.00'
+            ws.cell(row=row, column=8).value = notes
+
+            if is_credit_row:
+                for col in range(1, 9):
+                    ws.cell(row=row, column=col).fill = credit_usage_fill
+            else:
+                status_cell = ws.cell(row=row, column=5)
+                if status in status_colors:
+                    status_cell.fill = PatternFill(start_color=status_colors[status], end_color=status_colors[status], fill_type="solid")
+                    if status in ['Delinquent', 'Not Paid']:
+                        status_cell.font = Font(bold=True, color="FFFFFF")
+
+                details_cell = ws.cell(row=row, column=6)
+                if 'Overpaid' in details:
+                    details_cell.fill = PatternFill(start_color=details_colors['Overpaid'], end_color=details_colors['Overpaid'], fill_type="solid")
+                elif 'remaining' in details:
+                    details_cell.fill = PatternFill(start_color=details_colors['remaining'], end_color=details_colors['remaining'], fill_type="solid")
+                elif 'Fully paid' in details:
+                    details_cell.fill = PatternFill(start_color=details_colors['Fully paid'], end_color=details_colors['Fully paid'], fill_type="solid")
+
+            for col in range(1, 9):
+                ws.cell(row=row, column=col).border = border
+                ws.cell(row=row, column=col).alignment = Alignment(wrap_text=True)
+
+            row += 1
+        row += 1
+
+        late_fee_entries = self._get_late_fee_entries_for_export(tenant)
+        if late_fee_entries:
+            add_section_header("LATE FEE HISTORY")
+            headers = ['Month', 'Date Assessed', 'Type', 'Amount', 'Notes']
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            row += 1
+
+            for payment in late_fee_entries:
+                ws.cell(row=row, column=1).value = payment.get('payment_month', '')
+                date_assessed = payment.get('date', '')
+                ws.cell(row=row, column=2).value = dt_datetime.strptime(date_assessed, '%Y-%m-%d') if date_assessed else None
+                ws.cell(row=row, column=2).number_format = 'MM/DD/YYYY'
+                ws.cell(row=row, column=3).value = payment.get('type', '')
+                ws.cell(row=row, column=4).value = float(payment.get('amount', 0.0) or 0.0)
+                ws.cell(row=row, column=4).number_format = '$#,##0.00'
+                ws.cell(row=row, column=5).value = payment.get('notes', '')
+
+                for col in range(1, 6):
+                    ws.cell(row=row, column=col).border = border
+                    ws.cell(row=row, column=col).alignment = Alignment(wrap_text=True)
+
+                row += 1
+            row += 1
+
+        add_section_header("MONTHLY BALANCE SUMMARY")
+        headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance', 'Late Fees', 'Late Note']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        row += 1
+
+        summaries = self._get_monthly_summaries_for_export(tenant)
+        for month_key in sorted(summaries.keys()):
+            summary = summaries[month_key]
+            status = summary.get('display_status', summary.get('status', ''))
+            balance = float(summary.get('balance', 0.0))
+
+            ws.cell(row=row, column=1).value = month_key
+            ws.cell(row=row, column=2).value = status
+            ws.cell(row=row, column=3).value = float(summary.get('rent_due', 0.0))
+            ws.cell(row=row, column=3).number_format = '$#,##0.00'
+            ws.cell(row=row, column=4).value = float(summary.get('total_paid', 0.0))
+            ws.cell(row=row, column=4).number_format = '$#,##0.00'
+            ws.cell(row=row, column=5).value = balance
+            ws.cell(row=row, column=5).number_format = '$#,##0.00'
+            ws.cell(row=row, column=6).value = float(summary.get('late_fee_amount', 0.0) or 0.0)
+            ws.cell(row=row, column=6).number_format = '$#,##0.00'
+            ws.cell(row=row, column=7).value = summary.get('late_note', '')
+
+            status_cell = ws.cell(row=row, column=2)
+            if status in status_colors:
+                status_cell.fill = PatternFill(start_color=status_colors[status], end_color=status_colors[status], fill_type="solid")
+                if status in ['Delinquent', 'Not Paid']:
+                    status_cell.font = Font(bold=True, color="FFFFFF")
+
+            balance_cell = ws.cell(row=row, column=5)
+            if status == 'Not Due':
+                balance_cell.value = 0.00
+            if status == 'Due Soon':
+                balance_cell.fill = PatternFill(start_color=status_colors.get(status, 'FFD580'), end_color=status_colors.get(status, 'FFD580'), fill_type="solid")
+            elif status == 'Not Due':
+                balance_cell.fill = PatternFill(start_color=status_colors.get(status, 'D3D3D3'), end_color=status_colors.get(status, 'D3D3D3'), fill_type="solid")
+            elif balance > 0:
+                balance_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            elif balance < 0:
+                balance_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            elif abs(balance) <= 0.01 and status in ('Paid in Full', 'Paid Late'):
+                balance_fill = status_colors.get(status, 'C6EFCE')
+                balance_cell.fill = PatternFill(start_color=balance_fill, end_color=balance_fill, fill_type="solid")
+
+            for col in range(1, 8):
+                ws.cell(row=row, column=col).border = border
+                ws.cell(row=row, column=col).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            row += 1
+
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 20
+        ws.column_dimensions['F'].width = 25
+        ws.column_dimensions['G'].width = 32
+        ws.column_dimensions['H'].width = 25
+        ws.print_area = f'A1:H{row-1}'
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
     
     def _sanitize_sheet_name(self, name):
         """Sanitize sheet name by removing invalid Excel characters: : [ ] * ? / \\"""
@@ -1377,8 +1826,9 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         
         # Status color mapping
         status_colors = {
-            'Paid in Full': "C6EFCE", 'Overpayment': "92D050", 'Partial Payment': "FFEB9C",
-            'Not Paid': "FFC7CE", 'Due Soon': "FFD580", 'Not Due': "D3D3D3",
+            'Paid in Full': "C6EFCE", 'Paid Late': "FCE4D6", 'Overpayment': "92D050",
+            'Overpayment / Paid Late': "9CC2E5", 'Overpayment (Late)': "9CC2E5",
+            'Partial Payment': "FFEB9C", 'Not Paid': "FFC7CE", 'Due Soon': "FFD580", 'Not Due': "D3D3D3",
             'Delinquent': "FF0000", 'N/A': "CCCCCC"
         }
         
@@ -1561,7 +2011,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             # Get status and details
             status = self._get_payment_status(tenant, payment)
             details = self._get_payment_details(tenant, payment)
-            notes = payment.get('notes', '')
+            notes = self._get_payment_notes_display(tenant, payment)
             is_credit_usage = payment.get('is_credit_usage', False)
             is_credit_row = is_credit_usage or 'Overpayment Credit' in ptype or 'Service Credit' in ptype
             overpayment_created = self._calculate_overpayment_created(tenant, payment)
@@ -1614,12 +2064,43 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             
             row += 1
         row += 1
+
+        late_fee_entries = self._get_late_fee_entries_for_export(tenant)
+        if late_fee_entries:
+            add_section_header("LATE FEE HISTORY")
+            headers = ['Month', 'Date Assessed', 'Type', 'Amount', 'Notes']
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            row += 1
+
+            for payment in late_fee_entries:
+                ws.cell(row=row, column=1).value = payment.get('payment_month', '')
+                date_assessed = payment.get('date', '')
+                ws.cell(row=row, column=2).value = dt_datetime.strptime(date_assessed, '%Y-%m-%d') if date_assessed else None
+                ws.cell(row=row, column=2).number_format = 'MM/DD/YYYY'
+                ws.cell(row=row, column=3).value = payment.get('type', '')
+                ws.cell(row=row, column=4).value = float(payment.get('amount', 0.0) or 0.0)
+                ws.cell(row=row, column=4).number_format = '$#,##0.00'
+                ws.cell(row=row, column=5).value = payment.get('notes', '')
+
+                for col in range(1, 6):
+                    ws.cell(row=row, column=col).border = border
+                    ws.cell(row=row, column=col).alignment = Alignment(wrap_text=True)
+
+                row += 1
+
+            row += 1
         
         # ===== MONTHLY BALANCE SUMMARY =====
         add_section_header("MONTHLY BALANCE SUMMARY")
         
         # Column headers
-        headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance']
+        headers = ['Month', 'Status', 'Rent Due', 'Total Paid', 'Balance', 'Late Fees', 'Late Note']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col)
             cell.value = header
@@ -1636,7 +2117,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             
             ws.cell(row=row, column=1).value = month_key
             
-            status = summary.get('status', '')
+            status = summary.get('display_status', summary.get('status', ''))
             ws.cell(row=row, column=2).value = status
             
             rent_due = float(summary.get('rent_due', 0.0))
@@ -1650,6 +2131,12 @@ class ComprehensiveTenantAnalysisTab(QWidget):
             balance = float(summary.get('balance', 0.0))
             ws.cell(row=row, column=5).value = balance
             ws.cell(row=row, column=5).number_format = '$#,##0.00'
+
+            late_fee_amount = float(summary.get('late_fee_amount', 0.0) or 0.0)
+            ws.cell(row=row, column=6).value = late_fee_amount
+            ws.cell(row=row, column=6).number_format = '$#,##0.00'
+
+            ws.cell(row=row, column=7).value = summary.get('late_note', '')
             
             # Apply status color
             status_cell = ws.cell(row=row, column=2)
@@ -1666,7 +2153,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
                 balance_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
             
             # Apply borders
-            for col in range(1, 6):
+            for col in range(1, 8):
                 ws.cell(row=row, column=col).border = border
                 ws.cell(row=row, column=col).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             
@@ -1679,7 +2166,7 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         ws.column_dimensions['D'].width = 15
         ws.column_dimensions['E'].width = 20
         ws.column_dimensions['F'].width = 25
-        ws.column_dimensions['G'].width = 20
+        ws.column_dimensions['G'].width = 32
         ws.column_dimensions['H'].width = 25
     
     def _get_payment_status(self, tenant, payment):
@@ -1690,27 +2177,12 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         
         try:
             year, month = payment_month.split('-')
-            year, month = int(year), int(month)
-            
-            # Get expected rent for that month
-            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-            
-            # Get total paid for that month
-            total_paid = self._get_total_paid_for_month(tenant, year, month)
-            
-            if total_paid >= expected_rent:
-                if total_paid > expected_rent:
-                    return "Overpayment"
-                else:
-                    return "Paid in Full"
-            elif total_paid > 0:
-                return "Partial Payment"
-            else:
-                return "No Payment"
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, int(year), int(month))
+            return snapshot.get('display_status') or snapshot.get('status', 'Unknown')
                 
         except Exception:
             return 'Unknown'
-    
+
     def _get_payment_details(self, tenant, payment):
         """Get detailed information about a payment"""
         payment_month = payment.get('payment_month', '')
@@ -1720,22 +2192,66 @@ class ComprehensiveTenantAnalysisTab(QWidget):
         
         try:
             year, month = payment_month.split('-')
-            year, month = int(year), int(month)
-            
-            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-            total_paid = self._get_total_paid_for_month(tenant, year, month)
-            
-            if total_paid > expected_rent:
-                overpayment = total_paid - expected_rent
-                return f"Overpaid by ${overpayment:.2f}"
-            elif total_paid < expected_rent:
-                shortage = expected_rent - total_paid
-                return f"${shortage:.2f} remaining"
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, int(year), int(month))
+
+            if snapshot['status'] == 'Overpayment':
+                detail = f"Overpaid by ${snapshot['overpayment_amount']:.2f}"
+            elif snapshot['remaining_balance'] > 0.01:
+                detail = f"${snapshot['remaining_balance']:.2f} remaining"
             else:
-                return "Fully paid"
+                detail = "Fully paid"
+
+            if snapshot.get('late_note'):
+                detail = f"{detail} | {snapshot['late_note']}"
+
+            return detail
                 
         except Exception:
             return 'Details unavailable'
+
+    def _get_payment_notes_display(self, tenant, payment):
+        """Return stored notes plus any automatic late-payment note for the month."""
+        notes = str(payment.get('notes', '') or '').strip()
+        payment_month = payment.get('payment_month', '')
+        payment_type = str(payment.get('type', '') or '')
+
+        if not payment_month or 'late fee' in payment_type.lower():
+            return notes
+
+        try:
+            year, month = payment_month.split('-')
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, int(year), int(month))
+            late_note = str(snapshot.get('late_note', '') or '').strip()
+        except Exception:
+            late_note = ''
+
+        if late_note and late_note.lower() not in notes.lower():
+            return f"{notes} | {late_note}" if notes else late_note
+
+        return notes
+
+    def _get_late_fee_entries_for_export(self, tenant, year=None):
+        """Return late-fee payment entries, optionally limited to a payment-month year."""
+        entries = []
+        for payment in getattr(tenant, 'payment_history', []) or []:
+            payment_type = str(payment.get('type', '') or '')
+            if 'late fee' not in payment_type.lower():
+                continue
+
+            payment_month = str(payment.get('payment_month', '') or '')
+            if year is not None and not payment_month.startswith(f"{int(year):04d}-"):
+                continue
+
+            entries.append(payment)
+
+        return sorted(
+            entries,
+            key=lambda payment: (
+                str(payment.get('payment_month', '') or ''),
+                str(payment.get('date', '') or ''),
+                str(payment.get('type', '') or ''),
+            )
+        )
     
     def _get_total_paid_for_month(self, tenant, year, month):
         """Calculate total paid for a specific month"""
@@ -1801,27 +2317,19 @@ class ComprehensiveTenantAnalysisTab(QWidget):
                 year, month = map(int, month_key.split('-'))
             except:
                 continue
-            
-            expected_rent = self.rent_tracker.get_effective_rent(tenant, year, month)
-            total_paid = self._get_total_paid_for_month(tenant, year, month)
-            balance = expected_rent - total_paid
-            
-            # Determine status
-            month_date = date(year, month, 1)
-            if month_date <= today and balance > 0:
-                status = "Delinquent" if month_date < today.replace(day=1) else "Due Soon"
-            elif total_paid >= expected_rent:
-                status = "Paid in Full" if total_paid == expected_rent else "Overpayment"
-            elif month_date > today:
-                status = "Not Due"
-            else:
-                status = "Not Paid"
-            
+
+            snapshot = self.rent_tracker.get_month_payment_snapshot(tenant, year, month)
+
             summaries[month_key] = {
-                'rent_due': expected_rent,
-                'total_paid': total_paid,
-                'balance': balance,
-                'status': status
+                'rent_due': snapshot.get('expected_rent', 0.0),
+                'total_paid': snapshot.get('total_applied_to_month', 0.0),
+                'balance': snapshot.get('remaining_balance', 0.0),
+                'status': snapshot.get('status', ''),
+                'display_status': snapshot.get('display_status', snapshot.get('status', '')),
+                'late_note': snapshot.get('late_note', ''),
+                'late_fee_amount': snapshot.get('late_fee_charge_total', 0.0),
+                'paid_late': snapshot.get('paid_late', False),
+                'was_late': snapshot.get('was_late', False),
             }
         
         return summaries
