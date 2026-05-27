@@ -40,3 +40,4 @@ __pypackages__/
 *.tmp
 *.mp4
 *.mkv
+config.json
