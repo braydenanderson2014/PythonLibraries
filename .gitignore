@@ -40,3 +40,6 @@ __pypackages__/
 *.tmp
 *.mp4
 *.mkv
+
+aiprepper/.aiprepper_hf_cache/
+**/aiprepper/.aiprepper_hf_cache/
