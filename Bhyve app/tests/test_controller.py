@@ -113,6 +113,23 @@ class EvaluateRuleTests(unittest.TestCase):
         self.assertEqual(decision.action, "stop")
         self.assertEqual(decision.reason, "temperature_below_stop_threshold")
 
+    def test_does_not_block_on_stale_watering_status_without_current_station(self) -> None:
+        # Bhyve API can return a non-null watering_status dict with no current_station
+        # when a previous cycle ended but the field wasn't cleared. The rule should
+        # proceed normally rather than waiting for the device to finish watering.
+        decision = evaluate_rule(
+            self.rule,
+            build_device(watering_status={"status": "idle"}),
+            temperature=92,
+            now=self.now,
+            active_run=None,
+            last_run_started_at=None,
+            runs_today=0,
+            controller=self.controller,
+        )
+        self.assertNotEqual(decision.reason, "device_busy_with_existing_watering")
+        self.assertEqual(decision.action, "start")
+
     def test_respects_cooldown(self) -> None:
         decision = evaluate_rule(
             self.rule,

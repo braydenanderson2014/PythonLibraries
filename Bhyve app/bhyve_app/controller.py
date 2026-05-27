@@ -78,8 +78,7 @@ def current_station(device: dict[str, Any]) -> str | None:
 
 
 def is_device_watering(device: dict[str, Any]) -> bool:
-    watering_status = (device.get("status") or {}).get("watering_status")
-    return bool(watering_status)
+    return current_station(device) is not None
 
 
 def zone_is_watering(device: dict[str, Any], station: int) -> bool:
