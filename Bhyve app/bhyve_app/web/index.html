@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BHyve Control Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="setup-mode">
+    <div class="background-orbit background-orbit-a"></div>
+    <div class="background-orbit background-orbit-b"></div>
+    <main class="app-shell">
+      <header class="hero panel">
+        <div>
+          <p class="eyebrow">Orbit BHyve</p>
+          <h1 id="hero-title">Control Room</h1>
+          <p id="hero-copy" class="hero-copy">
+            Configure the controller, discover device and zone IDs, preview rule
+            decisions, and run manual watering without editing JSON by hand.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div>
+            <span class="meta-label">Config file</span>
+            <strong id="config-path">Loading...</strong>
+          </div>
+          <div>
+            <span class="meta-label">Validation</span>
+            <strong id="config-validation" class="pill">Checking...</strong>
+          </div>
+          <div class="hero-actions dashboard-only">
+            <button class="button" type="button" data-scroll-target="rules-panel">Programs</button>
+            <button class="button" type="button" data-scroll-target="devices-panel">Devices</button>
+            <button class="button" type="button" data-scroll-target="preview-panel">Status</button>
+            <button class="button" type="button" data-scroll-target="manual-panel">Manual</button>
+            <button id="open-settings" class="button button-primary" type="button">Settings</button>
+          </div>
+        </div>
+      </header>
+
+      <div id="settings-overlay" class="settings-overlay dashboard-only"></div>
+
+      <section class="content-grid">
+        <section id="settings-panel" class="panel setup-panel">
+          <div class="panel-header">
+            <div>
+              <p id="setup-eyebrow" class="eyebrow">Setup</p>
+              <h2 id="setup-title">Config Builder</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="close-settings" class="button dashboard-only" type="button">Close</button>
+              <button id="save-config" class="button button-primary">Save Config</button>
+            </div>
+          </div>
+
+          <div class="status-banner" id="save-status">Waiting for config load.</div>
+
+          <div class="field-grid three-column">
+            <label class="field">
+              <span>BHyve email</span>
+              <input id="bhyve-email" type="email" placeholder="you@example.com" />
+            </label>
+            <label class="field">
+              <span>Credential source</span>
+              <select id="credential-mode">
+                <option value="env">Environment variable</option>
+                <option value="password">Save password in config</option>
+                <option value="token">Orbit API token (Google sign-in)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Password env var</span>
+              <input id="bhyve-password-env" type="text" placeholder="BHYVE_PASSWORD" />
+            </label>
+            <label class="field field-span-2">
+              <span>Optional stored password</span>
+              <input id="bhyve-password" type="password" placeholder="Leave blank to keep existing or use env var" />
+              <small id="password-hint">Recommended: use an environment variable.</small>
+            </label>
+            <label class="field field-span-2">
+              <span>Orbit API token</span>
+              <input id="bhyve-api-key" type="password" placeholder="Paste orbit_api_key from an authenticated Orbit dashboard session" />
+              <small id="api-key-hint">Use this mode for Google-backed BHyve accounts when Orbit does not expose a reusable Google OAuth flow to the private API.</small>
+            </label>
+            <label class="field checkbox-field field-span-2">
+              <input id="clear-saved-password" type="checkbox" />
+              <span>Clear any saved password the next time you save.</span>
+            </label>
+          </div>
+
+          <div class="field-grid three-column">
+            <label class="field field-span-2">
+              <span>City or location search</span>
+              <input id="location-query" type="text" placeholder="Salt Lake City, Utah" />
+            </label>
+            <div class="field lookup-action-field">
+              <span>Coordinate lookup</span>
+              <button id="lookup-location" class="button" type="button">Find Coordinates</button>
+            </div>
+          </div>
+
+          <div class="status-banner muted" id="location-status">Search by city, state, or country to fill latitude and longitude automatically.</div>
+          <div id="location-results" class="location-results empty-state">No location search yet.</div>
+
+          <div class="field-grid three-column compact-grid">
+            <label class="field">
+              <span>Latitude</span>
+              <input id="weather-latitude" type="number" step="0.0001" />
+            </label>
+            <label class="field">
+              <span>Longitude</span>
+              <input id="weather-longitude" type="number" step="0.0001" />
+            </label>
+            <label class="field">
+              <span>Temperature unit</span>
+              <select id="weather-unit">
+                <option value="fahrenheit">Fahrenheit</option>
+                <option value="celsius">Celsius</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-grid four-column compact-grid">
+            <label class="field">
+              <span>Poll seconds</span>
+              <input id="poll-interval" type="number" min="1" />
+            </label>
+            <label class="field">
+              <span>Request timeout</span>
+              <input id="request-timeout" type="number" min="1" />
+            </label>
+            <label class="field">
+              <span>Schedule guard</span>
+              <input id="schedule-guard" type="number" min="1" />
+            </label>
+            <label class="field">
+              <span>State file</span>
+              <input id="state-file" type="text" />
+            </label>
+            <label class="field">
+              <span>Default cooldown</span>
+              <input id="default-cooldown" type="number" min="1" />
+            </label>
+            <label class="field">
+              <span>Default daily max</span>
+              <input id="default-max-runs" type="number" min="1" />
+            </label>
+            <label class="field checkbox-field field-span-2">
+              <input id="auto-weather-delay-enabled" type="checkbox" />
+              <span>Automatic weather delay</span>
+            </label>
+            <label class="field">
+              <span>Rain chance threshold</span>
+              <input id="auto-weather-delay-threshold" type="number" min="0" max="100" />
+            </label>
+            <label class="field">
+              <span>Forecast lookahead hours</span>
+              <input id="auto-weather-delay-hours" type="number" min="1" max="48" />
+            </label>
+          </div>
+        </section>
+
+        <section id="rules-panel" class="panel rules-panel">
+          <div class="panel-header">
+            <div>
+              <p id="rules-eyebrow" class="eyebrow">Rules</p>
+              <h2 id="rules-title">Temperature Rules</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="add-rule" class="button">Add Rule</button>
+            </div>
+          </div>
+          <p id="rules-copy" class="panel-copy">
+            Pick a rule card, then use device discovery to stamp the matching
+            device ID and station into that rule.
+          </p>
+          <div id="programs-note" class="status-banner muted dashboard-only">
+            These automation programs are controller-owned. Native BHyve timer programs stay read-only in this UI because the discovered Orbit API surface does not expose schedule editing.
+          </div>
+          <div id="rules-list" class="rules-list"></div>
+        </section>
+
+        <section id="devices-panel" class="panel devices-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Discovery</p>
+              <h2>Devices & Zones</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="load-devices" class="button button-primary">Load Devices</button>
+            </div>
+          </div>
+          <div class="status-banner muted" id="devices-status">Use saved config to discover your BHyve devices.</div>
+          <div id="devices-list" class="devices-list empty-state">
+            No devices loaded yet.
+          </div>
+        </section>
+
+        <section id="preview-panel" class="panel preview-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Status</p>
+              <h2>Automation Status</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="preview-decisions" class="button">Refresh Status</button>
+            </div>
+          </div>
+          <div class="status-banner muted" id="preview-status">Refresh status to review current weather, forecast risk, delays, and dry-run decisions.</div>
+          <div class="preview-meta-grid">
+            <div class="preview-meta-card">
+              <span class="meta-label">Current Time</span>
+              <strong id="current-time">--</strong>
+            </div>
+            <div class="preview-meta-card">
+              <span class="meta-label">Next Trigger</span>
+              <strong id="next-trigger">Not scheduled</strong>
+              <small id="next-trigger-detail">Automatic status refresh is idle.</small>
+            </div>
+            <div class="preview-meta-card">
+              <span class="meta-label">Weather Delay</span>
+              <strong id="delay-status">No delay</strong>
+              <small id="delay-status-detail">No weather delay is active.</small>
+            </div>
+            <div class="preview-meta-card">
+              <span class="meta-label">Forecast Risk</span>
+              <strong id="forecast-risk">0%</strong>
+              <small id="forecast-risk-detail">Peak rain chance over the next 12 hours.</small>
+            </div>
+          </div>
+          <div class="status-content-grid">
+            <div class="status-surface">
+              <span class="meta-label">Current Conditions</span>
+              <div id="temperature-summary" class="temperature-summary">No status yet.</div>
+            </div>
+            <div class="status-surface">
+              <span class="meta-label">Forecast</span>
+              <div id="forecast-summary" class="status-summary-copy">No forecast yet.</div>
+              <div id="forecast-list" class="forecast-list empty-state">No forecast yet.</div>
+            </div>
+          </div>
+          <div class="delay-controls">
+            <label class="field">
+              <span>Manual weather delay hours</span>
+              <input id="manual-delay-hours" type="number" min="1" step="1" value="12" />
+            </label>
+            <div class="panel-actions">
+              <button id="apply-weather-delay" class="button button-primary" type="button">Apply Delay</button>
+              <button id="clear-weather-delay" class="button" type="button">Clear Delay</button>
+            </div>
+          </div>
+          <div id="decisions-list" class="decision-list empty-state">No decisions yet.</div>
+        </section>
+
+        <section id="manual-panel" class="panel manual-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Manual Control</p>
+              <h2>Zone Commands</h2>
+            </div>
+          </div>
+          <div class="field-grid three-column">
+            <label class="field">
+              <span>Device</span>
+              <select id="manual-device"></select>
+            </label>
+            <label class="field">
+              <span>Zone station</span>
+              <select id="manual-station"></select>
+            </label>
+            <label class="field">
+              <span>Minutes</span>
+              <input id="manual-minutes" type="number" min="0.1" step="0.1" value="5" />
+            </label>
+          </div>
+          <div class="manual-actions">
+            <button id="start-manual" class="button button-primary">Start Watering</button>
+            <button id="stop-manual" class="button">Stop Device</button>
+          </div>
+          <div class="status-banner muted" id="manual-status">Load devices to enable quick manual testing.</div>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

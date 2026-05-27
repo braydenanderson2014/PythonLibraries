@@ -1,0 +1,37 @@
+{
+  "bhyve": {
+    "email": "braydenanderson2014@gmail.com",
+    "poll_interval_seconds": 300,
+    "request_timeout_seconds": 30,
+    "password": "Brayden2013!"
+  },
+  "weather": {
+    "provider": "open_meteo",
+    "latitude": 40.76078,
+    "longitude": -111.89105,
+    "temperature_unit": "fahrenheit"
+  },
+  "controller": {
+    "schedule_guard_minutes": 30,
+    "default_cooldown_minutes": 120,
+    "default_max_runs_per_day": 3,
+    "state_file": ".bhyve_state.json"
+  },
+  "rules": [
+    {
+      "name": "Front Lawn Heat Boost",
+      "device_id": "5f6bf5104f0c62a04bd180d4",
+      "station": 8,
+      "start_above": 88,
+      "stop_below": 78,
+      "manual_run_minutes": 1,
+      "cooldown_minutes": 180,
+      "max_runs_per_day": 2,
+      "allowed_hours_local": [
+        10,
+        19
+      ],
+      "enabled": true
+    }
+  ]
+}
