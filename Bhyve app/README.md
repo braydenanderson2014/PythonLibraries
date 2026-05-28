@@ -51,7 +51,7 @@ If you would rather not edit JSON by hand, launch the web UI and do the same set
 Launch the local web UI:
 
 ```powershell
-python main.py --config config.json web --open-browser
+python main.py --config config.json web --host 0.0.0.0 --open-browser
 ```
 
 Or use the helper batch file:
@@ -70,6 +70,21 @@ The web UI helps with:
 - previewing dry-run decisions before enabling live control
 - applying or clearing a manual weather delay directly from the dashboard
 - sending manual start and stop commands to a zone for testing
+
+Sensor ingest supports three paths that all use the same JSON schema:
+
+- HTTP: `POST /api/sensors`
+- Serial bus: newline-delimited JSON frames (for example from ESP32 over USB serial)
+- Bluetooth LE: notification payloads containing UTF-8 JSON
+
+Enable serial and/or BLE ingest in `config.json` under `ingest.serial` and `ingest.bluetooth`.
+Each frame/payload should be a JSON object using the same fields as `/api/sensors`, for example:
+
+```json
+{"device_id":"device-123","station":1,"soil_moisture_percent":32,"motion_detected":false}
+```
+
+When the web UI server is running, it also runs the live temperature controller loop in the background using your configured poll interval. You do not need to run `run.bat` or `python main.py run` at the same time.
 
 ## Google Sign-In Accounts
 
@@ -104,8 +119,10 @@ python main.py run --config config.json
 Run the local web UI:
 
 ```powershell
-python main.py --config config.json web --host 127.0.0.1 --port 8787 --open-browser
+python main.py --config config.json web --host 0.0.0.0 --port 8787 --open-browser
 ```
+
+To open the dashboard from your phone, connect the phone to the same local network and browse to the LAN URL printed in the app logs, for example `http://192.168.1.42:8787`.
 
 Manually start a zone for testing:
 

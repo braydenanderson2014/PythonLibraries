@@ -5,12 +5,15 @@ const state = {
   dashboardMode: false,
   autoPreviewTimeoutId: null,
   clockIntervalId: null,
+  autoSaveInFlight: false,
+  autoSaveQueued: false,
   nextTriggerAt: null,
   nextTriggerMessage: "Run a status refresh to calculate the next trigger.",
   nextPreviewAt: null,
   autoRefreshEnabled: false,
   autoRefreshInFlight: false,
   autoRefreshMessage: "Automatic status refresh is idle.",
+  activeWatering: [],
 };
 
 const elements = {};
@@ -28,6 +31,7 @@ function cacheElements() {
   elements.configPath = document.getElementById("config-path");
   elements.configValidation = document.getElementById("config-validation");
   elements.settingsPanel = document.getElementById("settings-panel");
+  elements.rulesPanel = document.getElementById("rules-panel");
   elements.settingsOverlay = document.getElementById("settings-overlay");
   elements.openSettings = document.getElementById("open-settings");
   elements.closeSettings = document.getElementById("close-settings");
@@ -48,7 +52,9 @@ function cacheElements() {
   elements.temperatureSummary = document.getElementById("temperature-summary");
   elements.forecastSummary = document.getElementById("forecast-summary");
   elements.forecastList = document.getElementById("forecast-list");
+  elements.activeWateringList = document.getElementById("active-watering-list");
   elements.decisionsList = document.getElementById("decisions-list");
+  elements.historyList = document.getElementById("history-list");
   elements.currentTime = document.getElementById("current-time");
   elements.nextTrigger = document.getElementById("next-trigger");
   elements.nextTriggerDetail = document.getElementById("next-trigger-detail");
@@ -119,6 +125,10 @@ function bindEvents() {
       lookupLocation();
     }
   });
+
+  // Persist config edits when a field loses focus or a selection changes.
+  elements.settingsPanel.addEventListener("change", handleConfigFieldChange);
+  elements.rulesPanel.addEventListener("change", handleConfigFieldChange);
 }
 
 function openSettingsDrawer() {
@@ -199,7 +209,9 @@ async function apiRequest(url, options = {}) {
 }
 
 function getPollIntervalSeconds() {
-  return Math.max(1, Number(state.config?.bhyve?.poll_interval_seconds || 300));
+  // UI display always refreshes quickly (reads the backend's cached result — no BHyve API calls).
+  // The backend automation cycle runs at its own configured poll_interval_seconds.
+  return 30;
 }
 
 function hasConfiguredAuth(payload) {
@@ -255,6 +267,8 @@ function startClock() {
 function renderClock() {
   const now = new Date();
   elements.currentTime.textContent = now.toLocaleString();
+  updateActiveWateringCountdowns(now);
+  updateDecisionCooldownCountdowns(now);
 
   if (!state.nextTriggerAt) {
     elements.nextTrigger.textContent = "Not scheduled";
@@ -441,16 +455,39 @@ function renderRules() {
   const rules = state.config?.rules || [];
   const itemLabel = state.dashboardMode ? "Program" : "Rule";
   if (!rules.length) {
-    elements.rulesList.innerHTML = `<div class="empty-state">No ${itemLabel.toLowerCase()}s yet. Add one to start driving temperature-based watering.</div>`;
+    elements.rulesList.innerHTML = `<div class="empty-state">No ${itemLabel.toLowerCase()}s yet. Add one to start driving watering.</div>`;
     return;
   }
+
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   elements.rulesList.innerHTML = rules
     .map((rule, index) => {
       const selected = index === state.selectedRuleIndex;
+      const ruleType = rule.type || "temperature";
+      const isSchedule = ruleType === "schedule";
       const [startHour, endHour] = Array.isArray(rule.allowed_hours_local)
         ? rule.allowed_hours_local
         : ["", ""];
+      const [cooldownMin, cooldownMax] = Array.isArray(rule.cooldown_minutes_range)
+        ? rule.cooldown_minutes_range
+        : ["", ""];
+
+      // Schedule-specific: times and days.
+      const scheduleTimesStr = (rule.schedule_times || [])
+        .map((t) => {
+          const h = typeof t === "object" ? t.hour : 0;
+          const m = typeof t === "object" ? t.minute : 0;
+          return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        })
+        .join(", ");
+      const activeDays = new Set(Array.isArray(rule.schedule_days) ? rule.schedule_days : []);
+      const dayCheckboxes = DAY_NAMES.map((day, i) =>
+        `<label class="day-checkbox">
+          <input type="checkbox" data-field="schedule_day" data-day-index="${i}" data-rule-index="${index}" ${activeDays.has(i) ? "checked" : ""} />
+          <span>${day}</span>
+        </label>`
+      ).join("");
 
       return `
         <article class="rule-card ${selected ? "selected" : ""}" data-rule-index="${index}">
@@ -478,6 +515,32 @@ function renderRules() {
               <input type="number" min="1" data-field="station" data-rule-index="${index}" value="${escapeAttribute(rule.station ?? 1)}" />
             </label>
             <label>
+              <span>Rule type</span>
+              <select data-field="rule_type" data-rule-index="${index}">
+                <option value="temperature" ${!isSchedule ? "selected" : ""}>Temperature trigger</option>
+                <option value="schedule" ${isSchedule ? "selected" : ""}>Scheduled time</option>
+              </select>
+            </label>
+            <label>
+              <span>Run minutes</span>
+              <input type="number" min="0.1" step="0.1" data-field="manual_run_minutes" data-rule-index="${index}" value="${escapeAttribute(rule.manual_run_minutes ?? 10)}" />
+            </label>
+
+            ${isSchedule ? `
+            <div class="field full schedule-times-field">
+              <span>Run times <small>(comma-separated HH:MM, e.g. 06:00, 18:00)</small></span>
+              <input type="text" data-field="schedule_times_str" data-rule-index="${index}" value="${escapeAttribute(scheduleTimesStr)}" placeholder="06:00" />
+            </div>
+            <div class="field full">
+              <span>Run days <small>(leave all unchecked to run every day)</small></span>
+              <div class="day-picker">${dayCheckboxes}</div>
+            </div>
+            <label>
+              <span>Min temperature (skip below)</span>
+              <input type="number" step="0.1" data-field="min_temperature" data-rule-index="${index}" value="${escapeAttribute(rule.min_temperature ?? "")}" placeholder="optional" />
+            </label>
+            ` : `
+            <label>
               <span>Start above</span>
               <input type="number" step="0.1" data-field="start_above" data-rule-index="${index}" value="${escapeAttribute(rule.start_above ?? 88)}" />
             </label>
@@ -486,24 +549,42 @@ function renderRules() {
               <input type="number" step="0.1" data-field="stop_below" data-rule-index="${index}" value="${escapeAttribute(rule.stop_below ?? 78)}" />
             </label>
             <label>
-              <span>Manual run minutes</span>
-              <input type="number" min="0.1" step="0.1" data-field="manual_run_minutes" data-rule-index="${index}" value="${escapeAttribute(rule.manual_run_minutes ?? 10)}" />
-            </label>
-            <label>
-              <span>Cooldown minutes</span>
-              <input type="number" min="1" data-field="cooldown_minutes" data-rule-index="${index}" value="${escapeAttribute(rule.cooldown_minutes ?? "")}" />
-            </label>
-            <label>
-              <span>Max runs per day</span>
-              <input type="number" min="1" data-field="max_runs_per_day" data-rule-index="${index}" value="${escapeAttribute(rule.max_runs_per_day ?? "")}" />
-            </label>
-            <label>
               <span>Allowed hour start</span>
               <input type="number" min="0" max="23" data-field="allowed_hours_start" data-rule-index="${index}" value="${escapeAttribute(startHour)}" />
             </label>
             <label>
               <span>Allowed hour end</span>
               <input type="number" min="0" max="23" data-field="allowed_hours_end" data-rule-index="${index}" value="${escapeAttribute(endHour)}" />
+            </label>
+            <label>
+              <span>Cooldown min</span>
+              <input type="number" min="1" data-field="cooldown_minutes_min" data-rule-index="${index}" value="${escapeAttribute(cooldownMin)}" />
+            </label>
+            <label>
+              <span>Cooldown max</span>
+              <input type="number" min="1" data-field="cooldown_minutes_max" data-rule-index="${index}" value="${escapeAttribute(cooldownMax)}" />
+            </label>
+            `}
+
+            <label>
+              <span>Cooldown (minutes)</span>
+              <input type="number" min="1" data-field="cooldown_minutes" data-rule-index="${index}" value="${escapeAttribute(rule.cooldown_minutes ?? "")}" />
+            </label>
+            <label>
+              <span>Max runs per day</span>
+              <input type="number" min="1" data-field="max_runs_per_day" data-rule-index="${index}" value="${escapeAttribute(rule.max_runs_per_day ?? "")}" />
+            </label>
+            <label class="checkbox-field full">
+              <input type="checkbox" data-field="stop_external_watering" data-rule-index="${index}" ${rule.stop_external_watering ? "checked" : ""} />
+              <span>Immediately stop watering that was not started by this program.</span>
+            </label>
+            <label class="checkbox-field full">
+              <input type="checkbox" data-field="pause_on_motion" data-rule-index="${index}" ${rule.pause_on_motion ? "checked" : ""} />
+              <span>Pause watering when motion is detected nearby.</span>
+            </label>
+            <label>
+              <span>Motion pause minutes</span>
+              <input type="number" min="1" data-field="motion_pause_minutes" data-rule-index="${index}" value="${escapeAttribute(rule.motion_pause_minutes ?? 15)}" />
             </label>
             <label class="checkbox-field full">
               <input type="checkbox" data-field="enabled" data-rule-index="${index}" ${rule.enabled !== false ? "checked" : ""} />
@@ -533,6 +614,14 @@ function renderRules() {
       renderRules();
     });
   });
+
+  // Re-render when rule type changes so the correct fields appear.
+  elements.rulesList.querySelectorAll("[data-field='rule_type']").forEach((select) => {
+    select.addEventListener("change", () => {
+      collectConfigFromForm();
+      renderRules();
+    });
+  });
 }
 
 function collectConfigFromForm() {
@@ -540,25 +629,66 @@ function collectConfigFromForm() {
     return null;
   }
 
-  const rules = Array.from(elements.rulesList.querySelectorAll(".rule-card")).map((card, index) => {
+  const rules = Array.from(elements.rulesList.querySelectorAll(".rule-card")).map((card) => {
     const find = (field) => card.querySelector(`[data-field="${field}"]`);
-    const allowedStart = find("allowed_hours_start").value;
-    const allowedEnd = find("allowed_hours_end").value;
-    const allowedHours = allowedStart !== "" && allowedEnd !== ""
-      ? [Number(allowedStart), Number(allowedEnd)]
-      : null;
+    const ruleTypeEl = find("rule_type");
+    const ruleType = ruleTypeEl ? ruleTypeEl.value : "temperature";
 
-    return {
+    const base = {
+      type: ruleType,
       name: find("name").value.trim(),
       device_id: find("device_id").value.trim(),
       station: Number(find("station").value || 1),
-      start_above: Number(find("start_above").value || 0),
-      stop_below: Number(find("stop_below").value || 0),
       manual_run_minutes: Number(find("manual_run_minutes").value || 1),
-      cooldown_minutes: optionalNumber(find("cooldown_minutes").value),
-      max_runs_per_day: optionalNumber(find("max_runs_per_day").value),
-      allowed_hours_local: allowedHours,
+      cooldown_minutes: optionalNumber(find("cooldown_minutes")?.value),
+      max_runs_per_day: optionalNumber(find("max_runs_per_day")?.value),
+      stop_external_watering: find("stop_external_watering").checked,
+      pause_on_motion: find("pause_on_motion").checked,
+      motion_pause_minutes: optionalNumber(find("motion_pause_minutes")?.value),
       enabled: find("enabled").checked,
+    };
+
+    if (ruleType === "schedule") {
+      // Parse comma-separated HH:MM times.
+      const timesRaw = (find("schedule_times_str")?.value || "").trim();
+      const scheduleTimes = timesRaw
+        ? timesRaw.split(",").map((s) => {
+            const [h, m] = s.trim().split(":").map(Number);
+            return { hour: isNaN(h) ? 0 : h, minute: isNaN(m) ? 0 : m };
+          })
+        : [];
+      // Collect checked day checkboxes.
+      const scheduleDays = [];
+      card.querySelectorAll("[data-field='schedule_day']:checked").forEach((cb) => {
+        scheduleDays.push(Number(cb.dataset.dayIndex));
+      });
+      scheduleDays.sort((a, b) => a - b);
+      const minTempEl = find("min_temperature");
+      return {
+        ...base,
+        schedule_times: scheduleTimes,
+        schedule_days: scheduleDays,
+        min_temperature: optionalNumber(minTempEl?.value),
+      };
+    }
+
+    // Temperature rule fields.
+    const allowedStart = find("allowed_hours_start")?.value;
+    const allowedEnd = find("allowed_hours_end")?.value;
+    const cooldownMinEl = find("cooldown_minutes_min");
+    const cooldownMaxEl = find("cooldown_minutes_max");
+    const cooldownMin = optionalNumber(cooldownMinEl?.value);
+    const cooldownMax = optionalNumber(cooldownMaxEl?.value);
+    const allowedHours = allowedStart != null && allowedStart !== "" && allowedEnd != null && allowedEnd !== ""
+      ? [Number(allowedStart), Number(allowedEnd)]
+      : null;
+    const cooldownRange = cooldownMin != null && cooldownMax != null ? [cooldownMin, cooldownMax] : null;
+    return {
+      ...base,
+      start_above: Number(find("start_above")?.value || 0),
+      stop_below: Number(find("stop_below")?.value || 0),
+      allowed_hours_local: allowedHours,
+      cooldown_minutes_range: cooldownRange,
     };
   });
 
@@ -590,6 +720,7 @@ function collectConfigFromForm() {
       state_file: elements.stateFile.value.trim() || ".bhyve_state.json",
     },
     rules,
+    devices: state.config?.devices || [],
   };
   return state.config;
 }
@@ -607,33 +738,145 @@ async function saveConfig({ runImmediateAutomation = true } = {}) {
   try {
     const config = collectConfigFromForm();
     const payload = await persistConfig(config, { runImmediateAutomation });
-    setBanner(
-      elements.saveStatus,
+    setSaveFeedback(
       payload.validation.valid
         ? "Config saved successfully."
         : `Config saved, but validation still needs attention: ${payload.validation.error}`,
       payload.validation.valid ? "success" : "error",
     );
   } catch (error) {
-    setBanner(elements.saveStatus, error.message, "error");
+    setSaveFeedback(error.message, "error");
+  }
+}
+
+function setSaveFeedback(message, tone = "success") {
+  setBanner(elements.saveStatus, message, tone);
+  if (state.dashboardMode && elements.previewStatus) {
+    setBanner(elements.previewStatus, message, tone);
+  }
+}
+
+function handleConfigFieldChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.closest("#location-query")) {
+    return;
+  }
+  if (!isFieldReadyForAutoSave(target)) {
+    setSaveFeedback("Finish both paired values before auto-save runs.", "muted");
+    return;
+  }
+  requestAutoSave();
+}
+
+function isFieldReadyForAutoSave(target) {
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+    return true;
+  }
+
+  const field = target.dataset.field;
+  if (!field) {
+    return true;
+  }
+
+  const card = target.closest(".rule-card");
+  if (!card) {
+    return true;
+  }
+
+  if (field === "cooldown_minutes_min" || field === "cooldown_minutes_max") {
+    const minField = card.querySelector('[data-field="cooldown_minutes_min"]');
+    const maxField = card.querySelector('[data-field="cooldown_minutes_max"]');
+    const minValue = minField instanceof HTMLInputElement ? minField.value.trim() : "";
+    const maxValue = maxField instanceof HTMLInputElement ? maxField.value.trim() : "";
+    return (minValue === "" && maxValue === "") || (minValue !== "" && maxValue !== "");
+  }
+
+  if (field === "allowed_hours_start" || field === "allowed_hours_end") {
+    const startField = card.querySelector('[data-field="allowed_hours_start"]');
+    const endField = card.querySelector('[data-field="allowed_hours_end"]');
+    const startValue = startField instanceof HTMLInputElement ? startField.value.trim() : "";
+    const endValue = endField instanceof HTMLInputElement ? endField.value.trim() : "";
+    return (startValue === "" && endValue === "") || (startValue !== "" && endValue !== "");
+  }
+
+  return true;
+}
+
+function requestAutoSave() {
+  if (state.autoSaveInFlight) {
+    state.autoSaveQueued = true;
+    return;
+  }
+  void runAutoSave();
+}
+
+async function runAutoSave() {
+  if (state.autoSaveInFlight) {
+    state.autoSaveQueued = true;
+    return;
+  }
+  state.autoSaveInFlight = true;
+  try {
+    do {
+      state.autoSaveQueued = false;
+      const config = collectConfigFromForm();
+      const payload = await persistConfig(config, { runImmediateAutomation: false });
+      setSaveFeedback(
+        payload.validation.valid
+          ? "Changes saved automatically."
+          : `Changes saved, but validation still needs attention: ${payload.validation.error}`,
+        payload.validation.valid ? "success" : "error",
+      );
+    } while (state.autoSaveQueued);
+  } catch (error) {
+    setSaveFeedback(`Auto-save failed: ${error.message}`, "error");
+  } finally {
+    state.autoSaveInFlight = false;
   }
 }
 
 function addRule() {
   collectConfigFromForm();
-  const itemLabel = state.dashboardMode ? "Program" : "Rule";
-  state.config.rules.push({
-    name: `${itemLabel} ${state.config.rules.length + 1}`,
-    device_id: "",
-    station: 1,
-    start_above: 88,
-    stop_below: 78,
-    manual_run_minutes: 10,
-    cooldown_minutes: null,
-    max_runs_per_day: null,
-    allowed_hours_local: [10, 19],
-    enabled: true,
-  });
+  const n = state.config.rules.length + 1;
+  if (state.dashboardMode) {
+    state.config.rules.push({
+      type: "schedule",
+      name: `Program ${n}`,
+      device_id: "",
+      station: 1,
+      manual_run_minutes: 10,
+      schedule_times: [{ hour: 6, minute: 0 }],
+      schedule_days: [],
+      min_temperature: null,
+      cooldown_minutes: null,
+      max_runs_per_day: null,
+      stop_external_watering: false,
+      pause_on_motion: false,
+      motion_pause_minutes: 15,
+      enabled: true,
+    });
+  } else {
+    state.config.rules.push({
+      type: "temperature",
+      name: `Rule ${n}`,
+      device_id: "",
+      station: 1,
+      start_above: 88,
+      stop_below: 78,
+      manual_run_minutes: 10,
+      cooldown_minutes: null,
+      cooldown_minutes_range: null,
+      max_runs_per_day: null,
+      allowed_hours_local: [10, 19],
+      stop_external_watering: false,
+      pause_on_motion: false,
+      motion_pause_minutes: 15,
+      enabled: true,
+    });
+  }
   state.selectedRuleIndex = state.config.rules.length - 1;
   renderRules();
 }
@@ -679,6 +922,9 @@ function renderDevices() {
         )
         .join("");
 
+      const isBlocked = (state.config?.devices || [])
+        .some((d) => d.device_id === device.id && d.block_unlisted_stations);
+
       return `
         <article class="device-card">
           <div class="device-card-header">
@@ -688,6 +934,11 @@ function renderDevices() {
           <div class="device-meta mono">id=${escapeHtml(device.id)} • type=${escapeHtml(device.type)}</div>
           <div class="device-meta">Next start: ${escapeHtml(device.next_start_time || "not scheduled")}</div>
           <div class="device-meta">Watering: ${escapeHtml(JSON.stringify(device.watering_status || null))}</div>
+          <label class="device-restriction checkbox-field">
+            <input type="checkbox" class="device-block-toggle" data-device-id="${escapeAttribute(device.id)}"${isBlocked ? " checked" : ""} />
+            <span>Block unlisted stations</span>
+          </label>
+          <small class="device-restriction-hint">When on, any station the BHyve timer starts that has no rule here is stopped automatically.</small>
           <div class="zones-list">${zones || `<div class="zone-meta">No zones reported for this device.</div>`}</div>
         </article>
       `;
@@ -697,6 +948,20 @@ function renderDevices() {
   elements.devicesList.querySelectorAll("[data-device-id][data-station]").forEach((button) => {
     button.addEventListener("click", () => {
       applyDiscoveredZone(button.dataset.deviceId, Number(button.dataset.station));
+    });
+  });
+
+  elements.devicesList.querySelectorAll(".device-block-toggle").forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const deviceId = toggle.dataset.deviceId;
+      const blocked = toggle.checked;
+      const devices = (state.config?.devices || []).filter((d) => d.device_id !== deviceId);
+      if (blocked) {
+        devices.push({ device_id: deviceId, block_unlisted_stations: true });
+      }
+      if (!state.config) state.config = {};
+      state.config.devices = devices;
+      requestAutoSave();
     });
   });
 }
@@ -733,11 +998,12 @@ async function previewDecisions({ saveConfigFirst = true, automatic = false } = 
     }
     const payload = await apiRequest("/api/status");
     renderPreview(payload);
+    const automationDetail = describeAutomationStatus(payload.automation_status || null);
     setBanner(
       elements.previewStatus,
       automatic
-        ? "Status refreshed automatically without sending any BHyve commands."
-        : "Status refreshed without sending any BHyve commands.",
+        ? `Status refreshed automatically. ${automationDetail}`
+        : `Status refreshed. ${automationDetail}`,
       "success"
     );
     if (!automatic && state.autoRefreshEnabled) {
@@ -753,6 +1019,8 @@ function renderPreview(payload) {
 
   const forecast = payload.forecast || { entries: [], max_precipitation_probability: 0, total_precipitation: 0, lookahead_hours: 0 };
   const delayStatus = payload.delay_status || { active: false, manual_active: false, automatic_active: false, detail: "No weather delay is active." };
+  state.activeWatering = payload.active_watering || [];
+  renderActiveWatering();
 
   const observedAt = new Date(payload.temperature.observed_at).toLocaleString();
   elements.temperatureSummary.innerHTML = `
@@ -788,23 +1056,54 @@ function renderPreview(payload) {
 
   if (!payload.decisions.length) {
     elements.decisionsList.innerHTML = `<div class="empty-state">No rules are configured yet.</div>`;
-    return;
+  } else {
+    elements.decisionsList.innerHTML = payload.decisions
+      .map((decision) => {
+        const cooldownRemaining = Number(decision.cooldown_remaining_seconds);
+        const isCooldown = decision.reason === "cooldown_active" && Number.isFinite(cooldownRemaining);
+        const cooldownSuffix = isCooldown
+          ? ` <span class="decision-cooldown" data-remaining-seconds="${escapeAttribute(cooldownRemaining)}" data-captured-at-ms="${escapeAttribute(Date.now())}">(${formatRemaining(cooldownRemaining)} remaining)</span>`
+          : "";
+        return `
+          <article class="decision-card">
+            <div class="decision-card-header">
+              <div class="decision-title">${escapeHtml(decision.rule_name)}</div>
+              <span class="pill ${decision.action === "start" ? "valid" : decision.action === "stop" ? "invalid" : ""}">${escapeHtml(decision.action)}</span>
+            </div>
+            <div class="decision-reason">${escapeHtml(decision.reason)}${cooldownSuffix}</div>
+            <div class="device-meta mono">device=${escapeHtml(decision.device_id)} • station=${escapeHtml(String(decision.station))}</div>
+          </article>
+        `;
+      })
+      .join("");
   }
 
-  elements.decisionsList.innerHTML = payload.decisions
-    .map(
-      (decision) => `
-        <article class="decision-card">
-          <div class="decision-card-header">
-            <div class="decision-title">${escapeHtml(decision.rule_name)}</div>
-            <span class="pill ${decision.action === "start" ? "valid" : decision.action === "stop" ? "invalid" : ""}">${escapeHtml(decision.action)}</span>
-          </div>
-          <div class="decision-reason">${escapeHtml(decision.reason)}</div>
-          <div class="device-meta mono">device=${escapeHtml(decision.device_id)} • station=${escapeHtml(String(decision.station))}</div>
-        </article>
-      `
-    )
-    .join("");
+  const history = payload.recent_history || [];
+  if (!history.length) {
+    elements.historyList.className = "history-list empty-state";
+    elements.historyList.textContent = "No watering runs recorded yet.";
+  } else {
+    elements.historyList.className = "history-list";
+    elements.historyList.innerHTML = history
+      .map((entry) => {
+        const isProgram = entry.source === "program";
+        const label = isProgram
+          ? (entry.rule_name ? escapeHtml(entry.rule_name) : "Program")
+          : "Controller";
+        const sourceTag = isProgram ? "program" : "controller";
+        const time = entry.started_at ? new Date(entry.started_at).toLocaleString() : "Unknown time";
+        return `
+          <article class="history-card">
+            <div class="history-card-header">
+              <div class="history-label">${label}</div>
+              <span class="pill history-source-${sourceTag}">${isProgram ? "Program" : "Controller"}</span>
+            </div>
+            <div class="history-meta mono">station ${escapeHtml(String(entry.station))} • ${escapeHtml(time)}</div>
+          </article>
+        `;
+      })
+      .join("");
+  }
 }
 
 function describeDelayStatus(delayStatus) {
@@ -820,12 +1119,90 @@ function describeDelayStatus(delayStatus) {
   return "No delay";
 }
 
+function describeAutomationStatus(status) {
+  if (!status || !status.running) {
+    return "Live automation is not running.";
+  }
+  if (status.last_cycle_error) {
+    return `Live automation is running, but the last cycle failed: ${status.last_cycle_error}`;
+  }
+  const interval = Number(status.poll_interval_seconds || 0);
+  if (interval > 0) {
+    return `Live automation is active and checks rules every ${interval} seconds.`;
+  }
+  return "Live automation is active while this web UI is open.";
+}
+
 function formatForecastTime(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return "Unknown time";
   }
   return parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function renderActiveWatering() {
+  if (!state.activeWatering.length) {
+    elements.activeWateringList.className = "active-watering-list empty-state";
+    elements.activeWateringList.textContent = "No active stations right now.";
+    return;
+  }
+
+  elements.activeWateringList.className = "active-watering-list";
+  elements.activeWateringList.innerHTML = state.activeWatering
+    .map((entry) => {
+      const isProgram = entry.source === "program";
+      const isTimer = entry.source === "timer";
+      const title = `${escapeHtml(entry.device_name)} • station ${escapeHtml(String(entry.station))}`;
+      const tag = isProgram ? "Program" : isTimer ? "Timer" : "Controller";
+      const secondary = isProgram
+        ? (entry.rule_name ? `Rule: ${escapeHtml(entry.rule_name)}` : "Program initiated")
+        : isTimer ? "BHyve timer-initiated run" : "Controller-initiated run";
+      const sourceTag = isProgram ? "history-source-program" : isTimer ? "history-source-timer" : "history-source-controller";
+
+      const remaining = isProgram && entry.ends_at
+        ? `<div class="active-remaining mono" data-end-at="${escapeAttribute(entry.ends_at)}"></div>`
+        : `<div class="active-remaining mono">Time remaining unavailable</div>`;
+
+      return `
+        <article class="active-watering-card ${isProgram ? "active-program" : isTimer ? "active-timer" : "active-controller"}">
+          <div class="active-watering-header">
+            <div class="active-watering-title"><span class="active-dot"></span>${title}</div>
+            <span class="pill ${sourceTag}">${tag}</span>
+          </div>
+          <div class="active-watering-meta">${secondary}</div>
+          ${remaining}
+        </article>
+      `;
+    })
+    .join("");
+
+  updateActiveWateringCountdowns(new Date());
+}
+
+function updateActiveWateringCountdowns(now = new Date()) {
+  if (!elements.activeWateringList) {
+    return;
+  }
+  elements.activeWateringList.querySelectorAll("[data-end-at]").forEach((node) => {
+    const value = node.getAttribute("data-end-at");
+    const parsed = value ? new Date(value) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) {
+      node.textContent = "Time remaining unavailable";
+      return;
+    }
+
+    const seconds = Math.max(0, Math.ceil((parsed.getTime() - now.getTime()) / 1000));
+    node.textContent = seconds > 0
+      ? `Program time remaining: ${formatRemaining(seconds)}`
+      : "Program run is ending now";
+  });
+}
+
+function formatRemaining(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function renderManualDeviceOptions() {
@@ -867,6 +1244,7 @@ async function startManualWatering() {
       body: JSON.stringify({ device_id: deviceId, station, minutes }),
     });
     setBanner(elements.manualStatus, payload.message, "success");
+    await previewDecisions({ saveConfigFirst: false, automatic: false });
   } catch (error) {
     setBanner(elements.manualStatus, error.message, "error");
   }
@@ -880,6 +1258,7 @@ async function stopManualWatering() {
       body: JSON.stringify({ device_id: deviceId }),
     });
     setBanner(elements.manualStatus, payload.message, "success");
+    await previewDecisions({ saveConfigFirst: false, automatic: false });
   } catch (error) {
     setBanner(elements.manualStatus, error.message, "error");
   }
@@ -1000,4 +1379,24 @@ async function clearManualWeatherDelay() {
   } catch (error) {
     setBanner(elements.previewStatus, error.message, "error");
   }
+}
+
+function updateDecisionCooldownCountdowns(now = new Date()) {
+  if (!elements.decisionsList) {
+    return;
+  }
+
+  elements.decisionsList.querySelectorAll(".decision-cooldown").forEach((node) => {
+    const baseValue = Number(node.getAttribute("data-remaining-seconds"));
+    const capturedAtMs = Number(node.getAttribute("data-captured-at-ms"));
+    if (!Number.isFinite(baseValue) || !Number.isFinite(capturedAtMs)) {
+      return;
+    }
+
+    const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - capturedAtMs) / 1000));
+    const remainingSeconds = Math.max(0, baseValue - elapsedSeconds);
+    node.textContent = remainingSeconds > 0
+      ? `(${formatRemaining(remainingSeconds)} remaining)`
+      : "(ending now)";
+  });
 }

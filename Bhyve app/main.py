@@ -74,8 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     web_parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="Host interface for the local web server.",
+        default="0.0.0.0",
+        help="Host interface for the web server (use 0.0.0.0 for LAN access).",
     )
     web_parser.add_argument(
         "--port",

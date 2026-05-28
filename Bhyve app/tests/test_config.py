@@ -115,6 +115,78 @@ class ConfigHelpersTests(unittest.TestCase):
             datetime(2026, 5, 27, 12, 0, tzinfo=timezone.utc),
         )
 
+    def test_parse_raw_config_supports_cooldown_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config = default_config_template()
+            config["bhyve"]["email"] = "user@example.com"
+            config["bhyve"]["password"] = "secret"
+            config["bhyve"].pop("password_env", None)
+            config["rules"][0]["cooldown_minutes"] = None
+            config["rules"][0]["cooldown_minutes_range"] = [60, 180]
+
+            parsed = parse_app_config(config, config_path)
+
+        self.assertEqual(parsed.rules[0].cooldown_minutes_range, (60, 180))
+
+    def test_parse_raw_config_supports_stop_external_watering(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config = default_config_template()
+            config["bhyve"]["email"] = "user@example.com"
+            config["bhyve"]["password"] = "secret"
+            config["bhyve"].pop("password_env", None)
+            config["rules"][0]["stop_external_watering"] = True
+            config["rules"][0]["pause_on_motion"] = True
+            config["rules"][0]["motion_pause_minutes"] = 12
+
+            parsed = parse_app_config(config, config_path)
+
+        self.assertTrue(parsed.rules[0].stop_external_watering)
+        self.assertTrue(parsed.rules[0].pause_on_motion)
+        self.assertEqual(parsed.rules[0].motion_pause_minutes, 12)
+
+    def test_parse_raw_config_rejects_invalid_cooldown_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config = default_config_template()
+            config["bhyve"]["email"] = "user@example.com"
+            config["bhyve"]["password"] = "secret"
+            config["bhyve"].pop("password_env", None)
+            config["rules"][0]["cooldown_minutes_range"] = [180, 60]
+
+            with self.assertRaises(ValueError):
+                parse_app_config(config, config_path)
+
+    def test_parse_raw_config_supports_ingest_transports(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config = default_config_template()
+            config["bhyve"]["email"] = "user@example.com"
+            config["bhyve"]["password"] = "secret"
+            config["bhyve"].pop("password_env", None)
+            config["ingest"]["serial"] = {
+                "enabled": True,
+                "port": "COM7",
+                "baudrate": 57600,
+                "read_timeout_seconds": 2,
+                "reconnect_seconds": 9,
+            }
+            config["ingest"]["bluetooth"] = {
+                "enabled": True,
+                "address": "AA:BB:CC:DD:EE:FF",
+                "characteristic_uuid": "12345678-1234-5678-1234-56789abcdef0",
+                "reconnect_seconds": 7,
+            }
+
+            parsed = parse_app_config(config, config_path)
+
+        self.assertTrue(parsed.ingest.serial.enabled)
+        self.assertEqual(parsed.ingest.serial.port, "COM7")
+        self.assertEqual(parsed.ingest.serial.baudrate, 57600)
+        self.assertTrue(parsed.ingest.bluetooth.enabled)
+        self.assertEqual(parsed.ingest.bluetooth.address, "AA:BB:CC:DD:EE:FF")
+
 
 if __name__ == "__main__":
     unittest.main()

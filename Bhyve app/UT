@@ -1,0 +1,33 @@
+{
+  "active_runs": {},
+  "history": {
+    "5f6bf5104f0c62a04bd180d4:8": [
+      {
+        "started_at": "2026-05-27T19:30:00+00:00",
+        "source": "program",
+        "rule_name": "Front Lawn Heat Boost"
+      },
+      {
+        "started_at": "2026-05-27T21:15:00+00:00",
+        "source": "program",
+        "rule_name": "Front Lawn Heat Boost"
+      },
+      {
+        "started_at": "2026-05-27T22:45:00+00:00",
+        "source": "program",
+        "rule_name": "Front Lawn Heat Boost"
+      },
+      {
+        "started_at": "2026-05-28T00:08:28.599933+00:00",
+        "source": "controller"
+      },
+      {
+        "started_at": "2026-05-28T03:54:00.419558+00:00",
+        "source": "timer"
+      }
+    ]
+  },
+  "active_external_waterings": {},
+  "sensor_readings": {},
+  "motion_pauses": {}
+}

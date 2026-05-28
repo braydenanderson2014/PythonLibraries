@@ -4,7 +4,14 @@ import unittest
 from datetime import datetime, timezone
 
 from bhyve_app.config import default_config_template
-from bhyve_app.web_ui import _json_safe, merge_ui_config, sanitize_config_for_ui
+from bhyve_app.web_ui import (
+    _json_safe,
+    _parse_sensor_bool,
+    _parse_sensor_message,
+    _parse_sensor_number,
+    merge_ui_config,
+    sanitize_config_for_ui,
+)
 
 
 class WebUiConfigHelpersTests(unittest.TestCase):
@@ -108,6 +115,25 @@ class WebUiConfigHelpersTests(unittest.TestCase):
 
         self.assertEqual(merged["bhyve"]["password"], "secret!not_an_env_var")
         self.assertNotIn("password_env", merged["bhyve"])
+
+    def test_parse_sensor_number_accepts_formatted_values(self) -> None:
+        self.assertEqual(_parse_sensor_number("82* F"), 82.0)
+        self.assertEqual(_parse_sensor_number("62%"), 62.0)
+        self.assertEqual(_parse_sensor_number("15 mph"), 15.0)
+
+    def test_parse_sensor_bool_accepts_motion_values(self) -> None:
+        self.assertTrue(_parse_sensor_bool("motion detected"))
+        self.assertTrue(_parse_sensor_bool("yes"))
+        self.assertFalse(_parse_sensor_bool("clear"))
+
+    def test_parse_sensor_message_accepts_json_object(self) -> None:
+        payload = _parse_sensor_message('{"temperature": 78, "humidity": 41}')
+        self.assertEqual(payload["temperature"], 78)
+        self.assertEqual(payload["humidity"], 41)
+
+    def test_parse_sensor_message_rejects_non_object(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_sensor_message('[1, 2, 3]')
 
 
 if __name__ == "__main__":

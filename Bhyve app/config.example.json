@@ -2,7 +2,7 @@
   "bhyve": {
     "email": "Email@email.com",
     "password_env": "BHYVE_PASSWORD",
-    "poll_interval_seconds": 300,
+    "poll_interval_seconds": 10,
     "request_timeout_seconds": 30
   },
   "weather": {
@@ -17,6 +17,31 @@
     "default_max_runs_per_day": 3,
     "state_file": ".bhyve_state.json"
   },
+  "ingest": {
+    "serial": {
+      "enabled": false,
+      "port": "COM3",
+      "baudrate": 115200,
+      "read_timeout_seconds": 1,
+      "reconnect_seconds": 5
+    },
+    "bluetooth": {
+      "enabled": false,
+      "address": "",
+      "characteristic_uuid": "",
+      "reconnect_seconds": 5
+    }
+  },
+  "devices": [
+    {
+      "device_id": "replace-with-device-id-1",
+      "block_unlisted_stations": false
+    },
+    {
+      "device_id": "replace-with-broken-pipes-device-id",
+      "block_unlisted_stations": true
+    }
+  ],
   "rules": [
     {
       "name": "Front Lawn Heat Boost",

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,21 @@ DEFAULT_CONFIG_TEMPLATE: dict[str, Any] = {
         "manual_weather_delay_until": None,
         "state_file": ".bhyve_state.json",
     },
+    "ingest": {
+        "serial": {
+            "enabled": False,
+            "port": "COM3",
+            "baudrate": 115200,
+            "read_timeout_seconds": 1,
+            "reconnect_seconds": 5,
+        },
+        "bluetooth": {
+            "enabled": False,
+            "address": "",
+            "characteristic_uuid": "",
+            "reconnect_seconds": 5,
+        },
+    },
     "rules": [
         {
             "name": "Front Lawn Heat Boost",
@@ -47,6 +62,9 @@ DEFAULT_CONFIG_TEMPLATE: dict[str, Any] = {
             "cooldown_minutes": 180,
             "max_runs_per_day": 2,
             "allowed_hours_local": [10, 19],
+            "stop_external_watering": False,
+            "pause_on_motion": False,
+            "motion_pause_minutes": 15,
             "enabled": True,
         }
     ],
@@ -84,6 +102,53 @@ class ControllerSettings:
 
 
 @dataclass(slots=True)
+class SerialIngestSettings:
+    enabled: bool
+    port: str
+    baudrate: int
+    read_timeout_seconds: int
+    reconnect_seconds: int
+
+
+@dataclass(slots=True)
+class BluetoothIngestSettings:
+    enabled: bool
+    address: str
+    characteristic_uuid: str
+    reconnect_seconds: int
+
+
+@dataclass(slots=True)
+class IngestSettings:
+    serial: SerialIngestSettings
+    bluetooth: BluetoothIngestSettings
+
+
+def _default_ingest_settings() -> IngestSettings:
+    return IngestSettings(
+        serial=SerialIngestSettings(
+            enabled=False,
+            port="COM3",
+            baudrate=115200,
+            read_timeout_seconds=1,
+            reconnect_seconds=5,
+        ),
+        bluetooth=BluetoothIngestSettings(
+            enabled=False,
+            address="",
+            characteristic_uuid="",
+            reconnect_seconds=5,
+        ),
+    )
+
+
+@dataclass(slots=True)
+class DevicePolicy:
+    device_id: str
+    block_unlisted_stations: bool = False
+
+
+@dataclass(slots=True)
 class TemperatureRule:
     name: str
     device_id: str
@@ -95,6 +160,31 @@ class TemperatureRule:
     max_runs_per_day: int | None
     cooldown_minutes: int | None
     allowed_hours_local: tuple[int, int] | None
+    stop_external_watering: bool = False
+    pause_on_motion: bool = False
+    motion_pause_minutes: int | None = None
+    cooldown_minutes_range: tuple[int, int] | None = None
+
+
+@dataclass(slots=True)
+class ScheduleRule:
+    """A rule that fires at fixed clock times on specific days of the week."""
+
+    name: str
+    device_id: str
+    station: int
+    manual_run_minutes: float
+    # Each entry is (hour, minute) in 24-hour local time.
+    schedule_times: list[tuple[int, int]]
+    # Weekday numbers: 0=Monday … 6=Sunday.  Empty list means every day.
+    schedule_days: list[int]
+    enabled: bool
+    min_temperature: float | None = None
+    max_runs_per_day: int | None = None
+    cooldown_minutes: int | None = None
+    stop_external_watering: bool = False
+    pause_on_motion: bool = False
+    motion_pause_minutes: int | None = None
 
 
 @dataclass(slots=True)
@@ -103,7 +193,9 @@ class AppConfig:
     bhyve: BhyveSettings
     weather: WeatherSettings
     controller: ControllerSettings
-    rules: list[TemperatureRule]
+    rules: list[TemperatureRule | ScheduleRule]
+    ingest: IngestSettings = field(default_factory=_default_ingest_settings)
+    device_policies: list[DevicePolicy] = field(default_factory=list)
 
 
 def looks_like_env_var_name(value: object) -> bool:
@@ -177,6 +269,72 @@ def _parse_allowed_hours(value: object) -> tuple[int, int] | None:
     return (start_hour, end_hour)
 
 
+def _parse_cooldown_range(value: object) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError("cooldown_minutes_range must be a two-item list")
+    min_minutes, max_minutes = value
+    if not all(isinstance(minutes, int) and minutes > 0 for minutes in value):
+        raise ValueError("cooldown_minutes_range values must be positive integers")
+    if min_minutes > max_minutes:
+        raise ValueError("cooldown_minutes_range min must be <= max")
+    return (min_minutes, max_minutes)
+
+
+_DAY_NAME_MAP: dict[str, int] = {
+    "mon": 0, "monday": 0,
+    "tue": 1, "tuesday": 1,
+    "wed": 2, "wednesday": 2,
+    "thu": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+}
+
+
+def _parse_schedule_times(value: object, rule_label: str) -> list[tuple[int, int]]:
+    """Accept [{"hour": 6, "minute": 0}, ...] or ["06:00", ...] formats."""
+    if not isinstance(value, list) or len(value) == 0:
+        raise ValueError(f"{rule_label}.schedule_times must be a non-empty list")
+    result: list[tuple[int, int]] = []
+    for item in value:
+        if isinstance(item, dict):
+            h = int(item.get("hour", 0))
+            m = int(item.get("minute", 0))
+        elif isinstance(item, str) and ":" in item:
+            parts = item.strip().split(":")
+            h, m = int(parts[0]), int(parts[1])
+        else:
+            raise ValueError(f"{rule_label}.schedule_times entries must be {{hour, minute}} objects or 'HH:MM' strings")
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"{rule_label}.schedule_times contains invalid time {h:02d}:{m:02d}")
+        result.append((h, m))
+    return result
+
+
+def _parse_schedule_days(value: object, rule_label: str) -> list[int]:
+    """Accept [] (all days), [0,2,4] (int weekdays), or ["mon","wed","fri"] strings."""
+    if value is None or value == []:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{rule_label}.schedule_days must be a list")
+    result: list[int] = []
+    for item in value:
+        if isinstance(item, int):
+            if not 0 <= item <= 6:
+                raise ValueError(f"{rule_label}.schedule_days integers must be 0–6 (Mon–Sun)")
+            result.append(item)
+        elif isinstance(item, str):
+            key = item.strip().lower()
+            if key not in _DAY_NAME_MAP:
+                raise ValueError(f"{rule_label}.schedule_days unrecognised day '{item}'")
+            result.append(_DAY_NAME_MAP[key])
+        else:
+            raise ValueError(f"{rule_label}.schedule_days entries must be integers or day-name strings")
+    return sorted(set(result))
+
+
 def _resolve_secret(raw: dict, literal_key: str, env_key: str) -> str:
     literal = raw.get(literal_key)
     if literal:
@@ -214,6 +372,9 @@ def parse_app_config(data: dict[str, Any], config_path: Path) -> AppConfig:
     bhyve_data = data.get("bhyve") or {}
     weather_data = data.get("weather") or {}
     controller_data = data.get("controller") or {}
+    ingest_data = data.get("ingest") or {}
+    serial_data = ingest_data.get("serial") if isinstance(ingest_data.get("serial"), dict) else {}
+    bluetooth_data = ingest_data.get("bluetooth") if isinstance(ingest_data.get("bluetooth"), dict) else {}
     rules_data = data.get("rules") or []
 
     if not isinstance(rules_data, list):
@@ -300,52 +461,139 @@ def parse_app_config(data: dict[str, Any], config_path: Path) -> AppConfig:
         state_file=state_path,
     )
 
-    rules: list[TemperatureRule] = []
-    for index, raw_rule in enumerate(rules_data, start=1):
-        name = str(raw_rule.get("name") or f"Rule {index}")
-        start_above = float(raw_rule["start_above"])
-        stop_below = float(raw_rule["stop_below"])
-        if stop_below >= start_above:
-            raise ValueError(f"Rule '{name}' must have stop_below < start_above")
-        manual_run_minutes = _require_positive_number(
-            raw_rule["manual_run_minutes"],
-            f"rules[{index}].manual_run_minutes",
-        )
+    ingest = IngestSettings(
+        serial=SerialIngestSettings(
+            enabled=bool(serial_data.get("enabled", False)),
+            port=str(serial_data.get("port", "COM3")).strip(),
+            baudrate=_require_positive_int(serial_data.get("baudrate", 115200), "ingest.serial.baudrate"),
+            read_timeout_seconds=_require_positive_int(
+                serial_data.get("read_timeout_seconds", 1),
+                "ingest.serial.read_timeout_seconds",
+            ),
+            reconnect_seconds=_require_positive_int(
+                serial_data.get("reconnect_seconds", 5),
+                "ingest.serial.reconnect_seconds",
+            ),
+        ),
+        bluetooth=BluetoothIngestSettings(
+            enabled=bool(bluetooth_data.get("enabled", False)),
+            address=str(bluetooth_data.get("address", "")).strip(),
+            characteristic_uuid=str(bluetooth_data.get("characteristic_uuid", "")).strip(),
+            reconnect_seconds=_require_positive_int(
+                bluetooth_data.get("reconnect_seconds", 5),
+                "ingest.bluetooth.reconnect_seconds",
+            ),
+        ),
+    )
 
-        max_runs = raw_rule.get("max_runs_per_day")
-        cooldown = raw_rule.get("cooldown_minutes")
+    devices_data = data.get("devices") or []
+    if not isinstance(devices_data, list):
+        raise ValueError("devices must be a list")
 
-        rules.append(
-            TemperatureRule(
-                name=name,
-                device_id=str(raw_rule["device_id"]),
-                station=int(raw_rule["station"]),
-                start_above=start_above,
-                stop_below=stop_below,
-                manual_run_minutes=manual_run_minutes,
-                enabled=bool(raw_rule.get("enabled", True)),
-                max_runs_per_day=(
-                    _require_positive_int(max_runs, f"rules[{index}].max_runs_per_day")
-                    if max_runs is not None
-                    else None
-                ),
-                cooldown_minutes=(
-                    _require_positive_int(cooldown, f"rules[{index}].cooldown_minutes")
-                    if cooldown is not None
-                    else None
-                ),
-                allowed_hours_local=_parse_allowed_hours(
-                    raw_rule.get("allowed_hours_local")
-                ),
+    device_policies: list[DevicePolicy] = []
+    for raw_device in devices_data:
+        device_policies.append(
+            DevicePolicy(
+                device_id=str(raw_device["device_id"]),
+                block_unlisted_stations=bool(raw_device.get("block_unlisted_stations", False)),
             )
         )
+
+    rules: list[TemperatureRule | ScheduleRule] = []
+    for index, raw_rule in enumerate(rules_data, start=1):
+        name = str(raw_rule.get("name") or f"Rule {index}")
+        rule_label = f"rules[{index}] '{name}'"
+        rule_type = str(raw_rule.get("type", "temperature")).lower().strip()
+
+        if rule_type == "schedule":
+            manual_run_minutes = _require_positive_number(
+                raw_rule["manual_run_minutes"],
+                f"{rule_label}.manual_run_minutes",
+            )
+            max_runs = raw_rule.get("max_runs_per_day")
+            cooldown = raw_rule.get("cooldown_minutes")
+            min_temp_raw = raw_rule.get("min_temperature")
+            rules.append(
+                ScheduleRule(
+                    name=name,
+                    device_id=str(raw_rule["device_id"]),
+                    station=int(raw_rule["station"]),
+                    manual_run_minutes=manual_run_minutes,
+                    schedule_times=_parse_schedule_times(raw_rule.get("schedule_times"), rule_label),
+                    schedule_days=_parse_schedule_days(raw_rule.get("schedule_days"), rule_label),
+                    enabled=bool(raw_rule.get("enabled", True)),
+                    min_temperature=float(min_temp_raw) if min_temp_raw is not None else None,
+                    max_runs_per_day=(
+                        _require_positive_int(max_runs, f"{rule_label}.max_runs_per_day")
+                        if max_runs is not None else None
+                    ),
+                    cooldown_minutes=(
+                        _require_positive_int(cooldown, f"{rule_label}.cooldown_minutes")
+                        if cooldown is not None else None
+                    ),
+                    stop_external_watering=bool(raw_rule.get("stop_external_watering", False)),
+                    pause_on_motion=bool(raw_rule.get("pause_on_motion", False)),
+                    motion_pause_minutes=(
+                        _require_positive_int(raw_rule.get("motion_pause_minutes"), f"{rule_label}.motion_pause_minutes")
+                        if raw_rule.get("motion_pause_minutes") is not None else None
+                    ),
+                )
+            )
+        else:
+            start_above = float(raw_rule["start_above"])
+            stop_below = float(raw_rule["stop_below"])
+            if stop_below >= start_above:
+                raise ValueError(f"Rule '{name}' must have stop_below < start_above")
+            manual_run_minutes = _require_positive_number(
+                raw_rule["manual_run_minutes"],
+                f"{rule_label}.manual_run_minutes",
+            )
+
+            max_runs = raw_rule.get("max_runs_per_day")
+            cooldown = raw_rule.get("cooldown_minutes")
+            cooldown_range = _parse_cooldown_range(raw_rule.get("cooldown_minutes_range"))
+
+            rules.append(
+                TemperatureRule(
+                    name=name,
+                    device_id=str(raw_rule["device_id"]),
+                    station=int(raw_rule["station"]),
+                    start_above=start_above,
+                    stop_below=stop_below,
+                    manual_run_minutes=manual_run_minutes,
+                    enabled=bool(raw_rule.get("enabled", True)),
+                    max_runs_per_day=(
+                        _require_positive_int(max_runs, f"{rule_label}.max_runs_per_day")
+                        if max_runs is not None
+                        else None
+                    ),
+                    cooldown_minutes=(
+                        _require_positive_int(cooldown, f"{rule_label}.cooldown_minutes")
+                        if cooldown is not None
+                        else None
+                    ),
+                    cooldown_minutes_range=cooldown_range,
+                    allowed_hours_local=_parse_allowed_hours(
+                        raw_rule.get("allowed_hours_local")
+                    ),
+                    stop_external_watering=bool(raw_rule.get("stop_external_watering", False)),
+                    pause_on_motion=bool(raw_rule.get("pause_on_motion", False)),
+                    motion_pause_minutes=(
+                        _require_positive_int(raw_rule.get("motion_pause_minutes"), f"{rule_label}.motion_pause_minutes")
+                        if raw_rule.get("motion_pause_minutes") is not None
+                        else None
+                    ),
+                )
+            )
 
     return AppConfig(
         path=config_path,
         bhyve=bhyve,
         weather=weather,
         controller=controller,
+        ingest=ingest,
         rules=rules,
+        device_policies=device_policies,
     )
 
 

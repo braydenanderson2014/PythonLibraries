@@ -38,6 +38,7 @@
             <button class="button" type="button" data-scroll-target="rules-panel">Programs</button>
             <button class="button" type="button" data-scroll-target="devices-panel">Devices</button>
             <button class="button" type="button" data-scroll-target="preview-panel">Status</button>
+            <button class="button" type="button" data-scroll-target="history-list">History</button>
             <button class="button" type="button" data-scroll-target="manual-panel">Manual</button>
             <button id="open-settings" class="button button-primary" type="button">Settings</button>
           </div>
@@ -245,6 +246,10 @@
               <div id="forecast-list" class="forecast-list empty-state">No forecast yet.</div>
             </div>
           </div>
+          <div class="status-surface active-watering-surface">
+            <span class="meta-label">Active Watering</span>
+            <div id="active-watering-list" class="active-watering-list empty-state">No active stations right now.</div>
+          </div>
           <div class="delay-controls">
             <label class="field">
               <span>Manual weather delay hours</span>
@@ -256,6 +261,14 @@
             </div>
           </div>
           <div id="decisions-list" class="decision-list empty-state">No decisions yet.</div>
+
+          <div class="panel-header history-subheader">
+            <div>
+              <p class="eyebrow">History</p>
+              <h3>Recent Watering Runs</h3>
+            </div>
+          </div>
+          <div id="history-list" class="history-list empty-state">Refresh status to load history.</div>
         </section>
 
         <section id="manual-panel" class="panel manual-panel">
