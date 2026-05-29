@@ -92,6 +92,7 @@ async def _automation_loop(app: web.Application) -> None:
                         "delay_status": asdict(report.delay_status),
                         "decisions": [asdict(decision) for decision in report.decisions],
                         "next_trigger": asdict(report.next_trigger),
+                        "trigger_forecasts": [asdict(f) for f in report.trigger_forecasts],
                         "active_watering": [asdict(active) for active in report.active_watering],
                         "recent_history": service.get_recent_history(30),
                     }
@@ -548,6 +549,7 @@ async def handle_preview(request: web.Request) -> web.Response:
                 "delay_status": asdict(report.delay_status),
                 "decisions": [asdict(decision) for decision in report.decisions],
                 "next_trigger": asdict(report.next_trigger),
+                "trigger_forecasts": [asdict(f) for f in report.trigger_forecasts],
                 "active_watering": [asdict(status) for status in report.active_watering],
                 "recent_history": service.get_recent_history(30),
                 "automation_status": automation_status,
@@ -580,7 +582,7 @@ async def handle_manual_water(request: web.Request) -> web.Response:
         station = int(payload["station"])
         minutes = float(payload["minutes"])
         service = await _build_service(config_path)
-        await service.start_manual_watering(device_id, station, minutes)
+        await service.start_manual_ui_watering(device_id, station, minutes)
     except Exception as exc:  # noqa: BLE001
         raise web.HTTPBadRequest(text=str(exc)) from exc
 

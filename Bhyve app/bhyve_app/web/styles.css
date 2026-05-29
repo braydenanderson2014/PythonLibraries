@@ -671,6 +671,44 @@ select {
   margin-bottom: 4px;
 }
 
+.trigger-forecasts-list {
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trigger-forecast-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.trigger-forecast-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.trigger-forecast-time {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.trigger-forecast-empty {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.trigger-forecast-waiting .trigger-forecast-name {
+  opacity: 0.65;
+}
+
+.trigger-forecast-waiting .trigger-forecast-time {
+  font-style: italic;
+}
+
 .preview-meta-card small {
   color: var(--muted);
   line-height: 1.4;

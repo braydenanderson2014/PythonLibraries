@@ -62,6 +62,7 @@ class CycleReport:
     delay_status: WeatherDelayStatus
     decisions: list[Decision]
     next_trigger: TriggerForecast
+    trigger_forecasts: list[TriggerForecast]
     active_watering: list["ActiveWateringStatus"]
 
 
@@ -421,12 +422,24 @@ def forecast_rule_trigger(
             detail=f"{rule.name} is outside its allowed hours and can trigger again when the window reopens.",
         )
 
+    if decision.reason == "temperature_below_start_threshold":
+        assert isinstance(rule, TemperatureRule)
+        # Temp not reached yet — schedule a re-check after one cooldown period so
+        # the rule stays visible in the Upcoming Programs list with a real time.
+        cooldown_minutes = effective_cooldown_minutes(rule, controller, temperature)
+        at = next_allowed_time(rule, now + timedelta(minutes=cooldown_minutes))
+        return TriggerForecast(
+            at=at,
+            rule_name=rule.name,
+            detail=f"{rule.name} will re-check in {cooldown_minutes} min — waiting for temperature to reach {rule.start_above:g}°.",
+        )
+
     if decision.reason == "cooldown_active" and last_run_started_at is not None:
         cooldown_minutes = effective_cooldown_minutes(rule, controller, temperature)
         return TriggerForecast(
             at=next_allowed_time(rule, last_run_started_at + timedelta(minutes=cooldown_minutes)),
             rule_name=rule.name,
-            detail=f"{rule.name} is cooling down before it can trigger again.",
+            detail=f"{rule.name} is cooling down — will check conditions again after the cooldown ends.",
         )
 
     if decision.reason == "motion_pause_active" and motion_pause_until is not None:
@@ -472,8 +485,9 @@ def select_next_trigger(
     forecasts: list[TriggerForecast],
     blocking_details: list[str],
 ) -> TriggerForecast:
-    if forecasts:
-        return min(forecasts, key=lambda forecast: forecast.at)
+    timed = [f for f in forecasts if f.at is not None]
+    if timed:
+        return min(timed, key=lambda forecast: forecast.at)  # type: ignore[arg-type]
 
     if blocking_details:
         return TriggerForecast(at=None, rule_name=None, detail=blocking_details[0])
@@ -850,6 +864,18 @@ class BhyveTemperatureService:
         )
         self._track_scheduled_stop(device_id, task)
 
+    async def start_manual_ui_watering(
+        self,
+        device_id: str,
+        station: int,
+        minutes: float,
+    ) -> None:
+        """Start a station from the web UI and mark it so the automation loop won't stop it."""
+        now = datetime.now().astimezone()
+        await self.start_manual_watering(device_id, station, minutes)
+        self._state.set_active_external_watering(device_id, station, now, source="manual_ui")
+        self._state.save()
+
     async def stop_manual_watering(self, device_id: str) -> None:
         self._cancel_scheduled_stop(device_id)
         await self._send_stop_manual_watering(device_id)
@@ -947,8 +973,11 @@ class BhyveTemperatureService:
                 if station_str is None:
                     continue
                 station_num = int(station_str)
-                # Only stop if this is NOT a controller-owned active run.
+                # Only stop if this is NOT a controller-owned run or a UI-initiated run.
                 if self._state.get_active_run(device_id, station_num) is not None:
+                    continue
+                _ext = self._state.get_active_external_watering(device_id)
+                if _ext and _ext.get("source") == "manual_ui":
                     continue
                 LOGGER.warning(
                     "Device %s station %s is running but has no rule and block_unlisted_stations is on — stopping",
@@ -1069,6 +1098,7 @@ class BhyveTemperatureService:
                     blocker = describe_trigger_blocker(rule, decision)
                     if blocker:
                         blocking_details.append(blocker)
+                        trigger_forecasts.append(TriggerForecast(at=None, rule_name=rule.name, detail=blocker))
                 if decision.action == "start" and rule.device_id in busy_devices:
                     decision.action = "noop"
                     decision.reason = "device_already_handled_this_cycle"
@@ -1085,28 +1115,30 @@ class BhyveTemperatureService:
                 if current_station_text is not None:
                     current_station_value = int(current_station_text)
                     if self._state.get_active_run(rule.device_id, current_station_value) is None:
-                        await self.stop_manual_watering(rule.device_id)
-                        self._state.clear_active_external_watering(rule.device_id)
-                        device.setdefault("status", {})["watering_status"] = None
-                        force_stopped_devices.add(rule.device_id)
-                        busy_devices.add(rule.device_id)
-                        decisions.append(
-                            Decision(
-                                rule.name,
-                                rule.device_id,
-                                rule.station,
-                                "stop",
-                                "external_watering_auto_stopped",
-                                applied=True,
+                        _ext = self._state.get_active_external_watering(rule.device_id)
+                        if not (_ext and _ext.get("source") == "manual_ui"):
+                            await self.stop_manual_watering(rule.device_id)
+                            self._state.clear_active_external_watering(rule.device_id)
+                            device.setdefault("status", {})["watering_status"] = None
+                            force_stopped_devices.add(rule.device_id)
+                            busy_devices.add(rule.device_id)
+                            decisions.append(
+                                Decision(
+                                    rule.name,
+                                    rule.device_id,
+                                    rule.station,
+                                    "stop",
+                                    "external_watering_auto_stopped",
+                                    applied=True,
+                                )
                             )
-                        )
-                        state_changed = True
-                        LOGGER.info(
-                            "Stopped non-program watering on %s because rule %s is configured to enforce controller-owned runs only",
-                            rule.device_id,
-                            rule.name,
-                        )
-                        continue
+                            state_changed = True
+                            LOGGER.info(
+                                "Stopped non-program watering on %s because rule %s is configured to enforce controller-owned runs only",
+                                rule.device_id,
+                                rule.name,
+                            )
+                            continue
 
             delay_decision = evaluate_weather_delay(
                 rule,
@@ -1163,6 +1195,7 @@ class BhyveTemperatureService:
                 blocker = describe_trigger_blocker(rule, decision)
                 if blocker:
                     blocking_details.append(blocker)
+                    trigger_forecasts.append(TriggerForecast(at=None, rule_name=rule.name, detail=blocker))
 
             if apply_changes and decision.action == "start":
                 await self.start_manual_watering(
@@ -1222,12 +1255,19 @@ class BhyveTemperatureService:
 
         active_watering = self._collect_active_watering(devices_by_id, now)
 
+        sorted_forecasts = sorted(
+            (f for f in trigger_forecasts if f.at is not None),
+            key=lambda f: f.at,  # type: ignore[arg-type]
+        )
+        waiting_forecasts = [f for f in trigger_forecasts if f.at is None and f.rule_name is not None]
+
         return CycleReport(
             temperature=temperature,
             forecast=forecast,
             delay_status=delay_status,
             decisions=decisions,
             next_trigger=select_next_trigger(trigger_forecasts, blocking_details),
+            trigger_forecasts=sorted_forecasts + waiting_forecasts,
             active_watering=active_watering,
         )
 

@@ -9,6 +9,7 @@ const state = {
   autoSaveQueued: false,
   nextTriggerAt: null,
   nextTriggerMessage: "Run a status refresh to calculate the next trigger.",
+  triggerForecasts: [],
   nextPreviewAt: null,
   autoRefreshEnabled: false,
   autoRefreshInFlight: false,
@@ -245,12 +246,13 @@ function setNextPreviewAt(date) {
   renderClock();
 }
 
-function setNextRuleTrigger(trigger = null, fallbackMessage = "Run a status refresh to calculate the next trigger.") {
+function setNextRuleTrigger(trigger = null, fallbackMessage = "Run a status refresh to calculate the next trigger.", forecasts = []) {
+  state.triggerForecasts = (forecasts || []).filter((f) => f.at != null);
   if (trigger?.at) {
     const parsedDate = new Date(trigger.at);
     state.nextTriggerAt = Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
   } else {
-    state.nextTriggerAt = null;
+    state.nextTriggerAt = state.triggerForecasts.length > 0 ? new Date(state.triggerForecasts[0].at) : null;
   }
   state.nextTriggerMessage = trigger?.detail || fallbackMessage;
   renderClock();
@@ -270,10 +272,34 @@ function renderClock() {
   updateActiveWateringCountdowns(now);
   updateDecisionCooldownCountdowns(now);
 
-  if (!state.nextTriggerAt) {
-    elements.nextTrigger.textContent = "Not scheduled";
+  // Render all upcoming triggers as a list.
+  if (!state.triggerForecasts.length) {
+    elements.nextTrigger.innerHTML = "<span class='trigger-forecast-empty'>Not scheduled</span>";
   } else {
-    elements.nextTrigger.textContent = state.nextTriggerAt.toLocaleString();
+    elements.nextTrigger.innerHTML = state.triggerForecasts
+      .map((f) => {
+        if (!f.at) {
+          // Blocked rule — no predictable trigger time.
+          return `<div class="trigger-forecast-item trigger-forecast-waiting"><span class="trigger-forecast-name">${escapeHtml(f.rule_name || "")}:</span><span class="trigger-forecast-time">${escapeHtml(f.detail || "Waiting")}</span></div>`;
+        }
+        const d = new Date(f.at);
+        const isToday = d.toDateString() === now.toDateString();
+        const isTomorrow =
+          d.toDateString() === new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toDateString();
+        const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const dayLabel = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+        const remaining = d.getTime() - now.getTime();
+        let countdownStr = "";
+        if (remaining > 0 && remaining < 24 * 60 * 60 * 1000) {
+          const totalSeconds = Math.ceil(remaining / 1000);
+          const h = Math.floor(totalSeconds / 3600);
+          const m = Math.floor((totalSeconds % 3600) / 60);
+          const s = totalSeconds % 60;
+          countdownStr = h > 0 ? ` (in ${h}h ${m}m)` : m > 0 ? ` (in ${m}m ${s}s)` : ` (in ${s}s)`;
+        }
+        return `<div class="trigger-forecast-item"><span class="trigger-forecast-name">${escapeHtml(f.rule_name || "")}:</span><span class="trigger-forecast-time">${dayLabel} at ${timeStr}${countdownStr}</span></div>`;
+      })
+      .join("");
   }
 
   let previewRefreshDetail = "";
@@ -1015,7 +1041,7 @@ async function previewDecisions({ saveConfigFirst = true, automatic = false } = 
 }
 
 function renderPreview(payload) {
-  setNextRuleTrigger(payload.next_trigger, "Run a status refresh to calculate the next trigger.");
+  setNextRuleTrigger(payload.next_trigger, "Run a status refresh to calculate the next trigger.", payload.trigger_forecasts);
 
   const forecast = payload.forecast || { entries: [], max_precipitation_probability: 0, total_precipitation: 0, lookahead_hours: 0 };
   const delayStatus = payload.delay_status || { active: false, manual_active: false, automatic_active: false, detail: "No weather delay is active." };

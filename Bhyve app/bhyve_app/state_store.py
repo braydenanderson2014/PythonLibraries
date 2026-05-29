@@ -84,11 +84,12 @@ class StateStore:
         return self._data.get("active_external_waterings", {}).get(device_id)
 
     def set_active_external_watering(
-        self, device_id: str, station: int, started_at: datetime
+        self, device_id: str, station: int, started_at: datetime, *, source: str = "timer"
     ) -> None:
         self._data.setdefault("active_external_waterings", {})[device_id] = {
             "station": station,
             "started_at": _to_iso(started_at),
+            "source": source,
         }
 
     def clear_active_external_watering(self, device_id: str) -> None:
