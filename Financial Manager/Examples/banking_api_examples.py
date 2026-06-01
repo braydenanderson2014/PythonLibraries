@@ -43,7 +43,7 @@ def example_mock_provider():
     )
     
     if success:
-        print("✓ Successfully linked mock account")
+        print("✓ Successfully linked Demo Bank account")
         
         # View linked accounts
         linked = manager.get_linked_accounts()
@@ -62,17 +62,20 @@ def example_plaid_provider():
     """Use Plaid provider (requires Plaid API key)"""
     manager = BankingAPIManager(user_id="user_123")
     
-    # First, configure Plaid credentials in banking_config.json
-    # Then, get user's access token from Plaid OAuth flow
+    # First, configure Plaid credentials in banking_api_config.json.
+    # Next, create a link token for your UI flow.
+    link_token = manager.create_plaid_link_token()
+    print(f"Link token: {link_token}")
     
-    plaid_access_token = "access_token_from_plaid_oauth"  # Replace with real token
+    # After Plaid Link finishes, pass the returned public token here.
+    plaid_public_token = "public_token_from_plaid_link"  # Replace with real token
     
-    # Link account from Plaid
+    # Link account from Plaid. The manager exchanges the public token internally.
     success = manager.link_account(
         provider_name='plaid',
         app_account_id='plaid_acc_001',
         app_account_name='My Plaid-linked Bank Account',
-        access_token=plaid_access_token
+        public_token=plaid_public_token
     )
     
     if success:
@@ -81,7 +84,7 @@ def example_plaid_provider():
         # List all linked accounts
         for account in manager.get_linked_accounts():
             print(f"\nAccount: {account['bank_account_name']}")
-            print(f"  Bank: {account['bank_account_name']}")
+            print(f"  Institution: {account.get('institution_name', account['bank_account_name'])}")
             print(f"  Type: {account['bank_account_type']}")
             print(f"  Last 4: {account['bank_account_mask']}")
             print(f"  Last Synced: {account['last_sync'] or 'Never'}")

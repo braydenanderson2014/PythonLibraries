@@ -1,13 +1,41 @@
 {
   "providers": {
     "plaid": {
-      "enabled": false,
+      "enabled": true,
       "client_id": "",
       "secret": "",
-      "environment": "sandbox"
+      "environment": "sandbox",
+      "client_name": "Financial Manager",
+      "products": [
+        "transactions"
+      ],
+      "country_codes": [
+        "US"
+      ],
+      "language": "en",
+      "redirect_uri": "",
+      "webhook": ""
     },
     "mock": {
-      "enabled": true
+      "enabled": true,
+      "display_name": "Demo Bank"
+    },
+    "finicity": {
+      "enabled": false,
+      "partner_id": "",
+      "partner_secret": "",
+      "app_key": ""
+    },
+    "stripe": {
+      "enabled": false,
+      "api_key": ""
+    },
+    "open_banking": {
+      "enabled": false,
+      "provider_type": "truelayer",
+      "client_id": "",
+      "client_secret": "",
+      "base_url": ""
     }
   }
 }

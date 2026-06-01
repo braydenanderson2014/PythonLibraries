@@ -5,6 +5,7 @@ This module provides integration with banking APIs (Plaid, Yodlee, Open Banking,
 to allow users to link their real bank accounts and automatically import transactions.
 """
 
+import copy
 import json
 import os
 import requests
@@ -21,6 +22,71 @@ except ImportError:
 
 # Configure logging
 logger = Logger()
+
+
+DEFAULT_PROVIDER_CONFIG = {
+    'plaid': {
+        'enabled': False,
+        'client_id': '',
+        'secret': '',
+        'environment': 'sandbox',
+        'client_name': 'Financial Manager',
+        'products': ['transactions'],
+        'country_codes': ['US'],
+        'language': 'en',
+        'redirect_uri': '',
+        'webhook': ''
+    },
+    'finicity': {
+        'enabled': False,
+        'partner_id': '',
+        'partner_secret': '',
+        'app_key': ''
+    },
+    'stripe': {
+        'enabled': False,
+        'api_key': ''
+    },
+    'open_banking': {
+        'enabled': False,
+        'provider_type': 'truelayer',
+        'client_id': '',
+        'client_secret': '',
+        'base_url': ''
+    },
+    'mock': {
+        'enabled': True,
+        'display_name': 'Demo Bank'
+    }
+}
+
+PROVIDER_METADATA = {
+    'plaid': {
+        'display_name': 'Plaid',
+        'description': 'Connect your live bank accounts with Plaid Link.',
+        'link_mode': 'plaid_link'
+    },
+    'finicity': {
+        'display_name': 'Finicity',
+        'description': 'Connect accounts through the Finicity aggregation API.',
+        'link_mode': 'external'
+    },
+    'stripe': {
+        'display_name': 'Stripe Treasury',
+        'description': 'Import connected bank payout activity from Stripe.',
+        'link_mode': 'direct'
+    },
+    'open_banking': {
+        'display_name': 'Open Banking',
+        'description': 'Connect banks that support Open Banking providers.',
+        'link_mode': 'external'
+    },
+    'mock': {
+        'display_name': 'Demo Bank',
+        'description': 'Simulated bank feed for testing and demos.',
+        'link_mode': 'direct'
+    }
+}
 
 
 class BankingAPIProvider:
@@ -76,8 +142,54 @@ class PlaidProvider(BankingAPIProvider):
             return False
         logger.info("PlaidProvider", "Plaid authentication validation passed")
         return True
+
+    def create_link_token(self, user_id: str, client_name: str = 'Financial Manager',
+                          products: List[str] = None, country_codes: List[str] = None,
+                          language: str = 'en', redirect_uri: str = None,
+                          webhook: str = None) -> Optional[str]:
+        """Create a Plaid Link token for the current user."""
+        if not self.authenticate():
+            return None
+
+        request_data = {
+            'client_id': self.client_id,
+            'secret': self.secret,
+            'client_name': client_name,
+            'language': language,
+            'country_codes': country_codes or ['US'],
+            'products': products or ['transactions'],
+            'user': {
+                'client_user_id': user_id or 'financial-manager-user'
+            }
+        }
+
+        if redirect_uri:
+            request_data['redirect_uri'] = redirect_uri
+        if webhook:
+            request_data['webhook'] = webhook
+
+        logger.info("PlaidProvider", f"Creating Plaid link token for user {user_id}")
+        try:
+            response = requests.post(
+                f"{self.BASE_URL}/link/token/create",
+                json=request_data,
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            link_token = data.get('link_token')
+
+            if not link_token:
+                logger.error("PlaidProvider", "Plaid did not return a link token")
+                return None
+
+            logger.debug("PlaidProvider", "Plaid link token created successfully")
+            return link_token
+        except Exception as e:
+            logger.error("PlaidProvider", f"Failed to create link token: {e}")
+            return None
     
-    def exchange_public_token(self, public_token: str) -> str:
+    def exchange_public_token(self, public_token: str) -> Optional[Dict[str, str]]:
         """Exchange public token for access token (Plaid Link flow)"""
         logger.info("PlaidProvider", "Exchanging public token for access token")
         try:
@@ -87,12 +199,16 @@ class PlaidProvider(BankingAPIProvider):
                     "client_id": self.client_id,
                     "secret": self.secret,
                     "public_token": public_token
-                }
+                },
+                timeout=30
             )
             response.raise_for_status()
             data = response.json()
             logger.debug("PlaidProvider", "Public token exchanged successfully")
-            return data['access_token']
+            return {
+                'access_token': data.get('access_token'),
+                'item_id': data.get('item_id')
+            }
         except Exception as e:
             logger.error("PlaidProvider", f"Failed to exchange public token: {e}")
             return None
@@ -107,10 +223,12 @@ class PlaidProvider(BankingAPIProvider):
                     "client_id": self.client_id,
                     "secret": self.secret,
                     "access_token": access_token
-                }
+                },
+                timeout=30
             )
             response.raise_for_status()
             data = response.json()
+            item = data.get('item', {})
             
             accounts = []
             for account in data.get('accounts', []):
@@ -123,7 +241,8 @@ class PlaidProvider(BankingAPIProvider):
                     'mask': account.get('mask'),  # Last 4 digits
                     'balance_current': account['balances'].get('current'),
                     'balance_available': account['balances'].get('available'),
-                    'currency': account['balances'].get('iso_currency_code', 'USD')
+                    'currency': account['balances'].get('iso_currency_code', 'USD'),
+                    'institution_id': item.get('institution_id')
                 })
             
             logger.info("PlaidProvider", f"Retrieved {len(accounts)} accounts from Plaid")
@@ -150,7 +269,8 @@ class PlaidProvider(BankingAPIProvider):
             
             response = requests.post(
                 f"{self.BASE_URL}/transactions/get",
-                json=request_data
+                json=request_data,
+                timeout=30
             )
             response.raise_for_status()
             data = response.json()
@@ -211,25 +331,27 @@ class MockBankingProvider(BankingAPIProvider):
         return [
             {
                 'account_id': 'mock_checking_001',
-                'name': 'Mock Checking Account',
-                'official_name': 'Mock Bank Checking',
+                'name': 'Demo Bank Checking',
+                'official_name': 'Demo Bank Checking',
                 'type': 'depository',
                 'subtype': 'checking',
                 'mask': '1234',
                 'balance_current': 5000.00,
                 'balance_available': 4800.00,
-                'currency': 'USD'
+                'currency': 'USD',
+                'institution_name': 'Demo Bank'
             },
             {
                 'account_id': 'mock_savings_001',
-                'name': 'Mock Savings Account',
-                'official_name': 'Mock Bank Savings',
+                'name': 'Demo Bank Savings',
+                'official_name': 'Demo Bank Savings',
                 'type': 'depository',
                 'subtype': 'savings',
                 'mask': '5678',
                 'balance_current': 15000.00,
                 'balance_available': 15000.00,
-                'currency': 'USD'
+                'currency': 'USD',
+                'institution_name': 'Demo Bank'
             }
         ]
     
@@ -780,48 +902,49 @@ class BankingAPIManager:
     def load_config(self):
         """Load banking API configuration"""
         logger.debug("BankingAPIManager", "Loading banking API configuration")
+        config_updated = False
         if os.path.exists(BANKING_API_CONFIG_FILE):
             try:
                 with open(BANKING_API_CONFIG_FILE, 'r') as f:
                     self.config = json.load(f)
+                config_updated = self._merge_default_config()
                 logger.info("BankingAPIManager", f"Loaded banking API config from {BANKING_API_CONFIG_FILE}")
             except Exception as e:
                 logger.error("BankingAPIManager", f"Failed to load banking API config: {str(e)}")
-                self.config = {}
+                self.config = self._build_default_config()
+                config_updated = True
         else:
             logger.debug("BankingAPIManager", "No config file found, creating default config")
-            # Create default config
-            self.config = {
-                'providers': {
-                    'plaid': {
-                        'enabled': False,
-                        'client_id': '',
-                        'secret': '',
-                        'environment': 'sandbox'
-                    },
-                    'finicity': {
-                        'enabled': False,
-                        'partner_id': '',
-                        'partner_secret': '',
-                        'app_key': ''
-                    },
-                    'stripe': {
-                        'enabled': False,
-                        'api_key': ''
-                    },
-                    'open_banking': {
-                        'enabled': False,
-                        'provider_type': 'truelayer',
-                        'client_id': '',
-                        'client_secret': '',
-                        'base_url': ''
-                    },
-                    'mock': {
-                        'enabled': True  # Enable mock by default for testing
-                    }
-                }
-            }
+            self.config = self._build_default_config()
+            config_updated = True
+
+        if config_updated:
             self.save_config()
+
+    def _build_default_config(self) -> Dict[str, Any]:
+        """Create the default banking provider configuration."""
+        return {
+            'providers': copy.deepcopy(DEFAULT_PROVIDER_CONFIG)
+        }
+
+    def _merge_default_config(self) -> bool:
+        """Ensure missing provider defaults are added to existing config."""
+        config_updated = False
+        providers = self.config.setdefault('providers', {})
+
+        for provider_name, defaults in DEFAULT_PROVIDER_CONFIG.items():
+            current = providers.get(provider_name)
+            if current is None:
+                providers[provider_name] = copy.deepcopy(defaults)
+                config_updated = True
+                continue
+
+            for key, value in defaults.items():
+                if key not in current:
+                    current[key] = copy.deepcopy(value)
+                    config_updated = True
+
+        return config_updated
     
     def save_config(self):
         """Save banking API configuration"""
@@ -891,6 +1014,7 @@ class BankingAPIManager:
     def _initialize_providers(self):
         """Initialize banking API providers based on config"""
         logger.debug("BankingAPIManager", "Initializing banking API providers")
+        self.providers = {}
         provider_config = self.config.get('providers', {})
         providers_initialized = []
         
@@ -929,6 +1053,48 @@ class BankingAPIManager:
             providers_initialized.append('mock')
         
         logger.info("BankingAPIManager", f"Initialized {len(providers_initialized)} providers: {', '.join(providers_initialized)}")
+
+    def get_provider_display_name(self, provider_name: str) -> str:
+        """Return the UI label for a provider."""
+        config_label = self.config.get('providers', {}).get(provider_name, {}).get('display_name')
+        if config_label:
+            return config_label
+
+        metadata = PROVIDER_METADATA.get(provider_name, {})
+        return metadata.get('display_name', provider_name.replace('_', ' ').title())
+
+    def get_available_providers(self) -> List[Dict[str, Any]]:
+        """Return enabled providers with display metadata for the UI."""
+        provider_details = []
+
+        for provider_name in self.providers:
+            metadata = PROVIDER_METADATA.get(provider_name, {})
+            provider_details.append({
+                'provider_name': provider_name,
+                'display_name': self.get_provider_display_name(provider_name),
+                'description': metadata.get('description', ''),
+                'link_mode': metadata.get('link_mode', 'direct')
+            })
+
+        return provider_details
+
+    def create_plaid_link_token(self) -> Optional[str]:
+        """Create a Plaid link token using the configured Plaid provider."""
+        provider = self.providers.get('plaid')
+        if not provider:
+            logger.error("BankingAPIManager", "Plaid provider is not enabled")
+            return None
+
+        plaid_config = self.config.get('providers', {}).get('plaid', {})
+        return provider.create_link_token(
+            user_id=self.user_id or 'financial-manager-user',
+            client_name=plaid_config.get('client_name', 'Financial Manager'),
+            products=plaid_config.get('products') or ['transactions'],
+            country_codes=plaid_config.get('country_codes') or ['US'],
+            language=plaid_config.get('language', 'en'),
+            redirect_uri=plaid_config.get('redirect_uri') or None,
+            webhook=plaid_config.get('webhook') or None
+        )
     
     def link_account(self, provider_name: str, app_account_id: str, app_account_name: str, 
                      **provider_params) -> bool:
@@ -940,7 +1106,7 @@ class BankingAPIManager:
             app_account_id: Internal account ID in Financial Manager
             app_account_name: Account name in Financial Manager
             **provider_params: Provider-specific parameters:
-                - plaid: access_token
+                - plaid: public_token or access_token
                 - finicity: customer_id
                 - stripe: (uses API key from config)
                 - open_banking: user_id
@@ -960,11 +1126,26 @@ class BankingAPIManager:
         try:
             if provider_name == 'plaid':
                 access_token = provider_params.get('access_token')
+                public_token = provider_params.get('public_token')
+                item_id = provider_params.get('item_id')
+
                 if not access_token:
-                    logger.error("BankingAPIManager", "Plaid requires 'access_token' parameter")
-                    return False
+                    if not public_token:
+                        logger.error("BankingAPIManager", "Plaid requires 'public_token' or 'access_token' parameter")
+                        return False
+
+                    exchange_result = provider.exchange_public_token(public_token)
+                    if not exchange_result or not exchange_result.get('access_token'):
+                        logger.error("BankingAPIManager", "Failed to exchange Plaid public token")
+                        return False
+
+                    access_token = exchange_result['access_token']
+                    item_id = exchange_result.get('item_id')
+
                 logger.debug("BankingAPIManager", f"Fetching accounts from Plaid with access token")
                 bank_accounts = provider.get_accounts(access_token)
+                provider_params['access_token'] = access_token
+                provider_params['item_id'] = item_id
                 
             elif provider_name == 'finicity':
                 customer_id = provider_params.get('customer_id')
@@ -1005,8 +1186,10 @@ class BankingAPIManager:
                 'link_id': link_id,
                 'user_id': self.user_id,
                 'provider': provider_name,
+                'provider_display_name': self.get_provider_display_name(provider_name),
                 'bank_account_id': bank_account['account_id'],
                 'bank_account_name': bank_account['name'],
+                'institution_name': bank_account.get('institution_name') or self.get_provider_display_name(provider_name),
                 'bank_account_mask': bank_account.get('mask'),
                 'bank_account_type': bank_account.get('type'),
                 'app_account_id': app_account_id,
@@ -1020,6 +1203,8 @@ class BankingAPIManager:
             # Store provider-specific parameters
             if provider_name == 'plaid':
                 link_data['access_token'] = provider_params.get('access_token')
+                if provider_params.get('item_id'):
+                    link_data['item_id'] = provider_params.get('item_id')
             elif provider_name == 'finicity':
                 link_data['customer_id'] = provider_params.get('customer_id')
             elif provider_name == 'open_banking':

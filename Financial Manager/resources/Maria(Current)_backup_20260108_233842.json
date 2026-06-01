@@ -1,5 +1,5 @@
 {
-  "backup_date": "2026-01-08T23:38:55.469921",
+  "backup_date": "2026-05-30T21:35:22.596804",
   "tenant_name": "Eduardo/Maria(Current)",
   "tenant_data": {
     "name": "Eduardo/Maria(Current)",
@@ -12,7 +12,7 @@
     ],
     "rent_due_date": "1",
     "account_status": "active",
-    "delinquency_balance": 2950.0,
+    "delinquency_balance": 1600.0,
     "overpayment_credit": 0.0,
     "service_credit": 0.0,
     "payment_history": [
@@ -247,16 +247,6 @@
         "notes": ""
       },
       {
-        "amount": 150.0,
-        "type": "Cash",
-        "date": "2025-12-27",
-        "payment_month": "2025-05",
-        "year": 2025,
-        "month": 5,
-        "is_credit_usage": true,
-        "notes": "Random Month Chosen"
-      },
-      {
         "amount": 100.0,
         "type": "Overpayment Credit (Applied: $100.00)",
         "date": "2026-01-08",
@@ -265,9 +255,179 @@
         "month": 9,
         "is_credit_usage": true,
         "notes": "Random Month"
+      },
+      {
+        "amount": 150.0,
+        "type": "Overpayment Credit (Applied: $150.00)",
+        "date": "2026-01-08",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": true,
+        "notes": "Random Month Chosen"
+      },
+      {
+        "amount": 900.0,
+        "type": "Cash",
+        "date": "2026-01-13",
+        "payment_month": "2025-10",
+        "year": 2025,
+        "month": 10,
+        "is_credit_usage": false,
+        "notes": "RANDOM MONTH TO PAY OFF"
+      },
+      {
+        "amount": 100.0,
+        "type": "Overpayment Credit (Applied: $100.00)",
+        "date": "2026-01-29",
+        "payment_month": "2025-05",
+        "year": 2025,
+        "month": 5,
+        "is_credit_usage": true,
+        "notes": "RANDOM MONTH TO PAY OFF"
+      },
+      {
+        "amount": 50.0,
+        "type": "Overpayment Credit (Applied: $50.00)",
+        "date": "2026-01-29",
+        "payment_month": "2025-05",
+        "year": 2025,
+        "month": 5,
+        "is_credit_usage": true,
+        "notes": "RANDOM MONTH TO PAY OFF"
+      },
+      {
+        "amount": 50.0,
+        "type": "Overpayment Credit (Applied: $50.00)",
+        "date": "2026-01-29",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": true,
+        "notes": "RANDOM MONTH TO APPLY"
+      },
+      {
+        "amount": 1500.0,
+        "type": "Cash",
+        "date": "2026-02-04",
+        "payment_month": "2026-01",
+        "year": 2026,
+        "month": 1,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 150.0,
+        "type": "Overpayment Credit (Applied: $150.00)",
+        "date": "2026-02-04",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": true,
+        "notes": "RANDOM ASSIGNED"
+      },
+      {
+        "amount": 1000.0,
+        "type": "Zelle",
+        "date": "2026-03-07",
+        "payment_month": "2025-09",
+        "year": 2025,
+        "month": 9,
+        "is_credit_usage": false,
+        "notes": "2 payments of 500 $ targeted to pay off random delinquent months"
+      },
+      {
+        "amount": 350.0,
+        "type": "Cash",
+        "date": "2026-03-07",
+        "payment_month": "2025-12",
+        "year": 2025,
+        "month": 12,
+        "is_credit_usage": true,
+        "notes": "RANDOM TARGETED MONTH TO PAY OFF"
+      },
+      {
+        "amount": 450.0,
+        "type": "Cash",
+        "date": "2026-03-07",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": true,
+        "notes": "RANDOM TARGETED MONTH TO APPLY OVERCREDIT"
+      },
+      {
+        "amount": 500.0,
+        "type": "Zelle",
+        "date": "2026-03-08",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 600.0,
+        "type": "Zelle",
+        "date": "2026-04-01",
+        "payment_month": "2026-02",
+        "year": 2026,
+        "month": 2,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 650.0,
+        "type": "Zelle",
+        "date": "2026-04-02",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 200.0,
+        "type": "Overpayment Credit (Applied: $200.00)",
+        "date": "2026-04-02",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": true,
+        "notes": "Random applied to current month"
+      },
+      {
+        "amount": 250.0,
+        "type": "Zelle",
+        "date": "2026-04-04",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": "Applied for Delinquet month"
+      },
+      {
+        "amount": 1300.0,
+        "type": "Zelle",
+        "date": "2026-04-28",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": ""
+      },
+      {
+        "amount": 50.0,
+        "type": "Zelle",
+        "date": "2026-05-22",
+        "payment_month": "2026-04",
+        "year": 2026,
+        "month": 4,
+        "is_credit_usage": false,
+        "notes": "Late"
       }
     ],
     "notes": "",
-    "last_modified": "2026-01-08T23:38:55.470012"
+    "last_modified": "2026-05-30T21:35:22.596915"
   }
 }

@@ -197,7 +197,12 @@
         "year": 2025,
         "month": 12,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Venmo",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-12-14"
       },
       {
         "amount": 1600.0,
@@ -207,7 +212,12 @@
         "year": 2026,
         "month": 1,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Venmo",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2025-12-26"
       },
       {
         "amount": 1600.0,
@@ -217,7 +227,12 @@
         "year": 2026,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Venmo",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2026-01-24"
       },
       {
         "amount": 1600.0,
@@ -227,7 +242,12 @@
         "year": 2026,
         "month": 3,
         "is_credit_usage": false,
-        "notes": "May Not have date Accurate"
+        "notes": "May Not have date Accurate",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Zelle",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2026-02-25"
       },
       {
         "amount": 1600.0,
@@ -237,7 +257,12 @@
         "year": 2026,
         "month": 4,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Venmo",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2026-03-24"
       },
       {
         "amount": 1600.0,
@@ -247,7 +272,12 @@
         "year": 2026,
         "month": 6,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Bilt",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 1600.0,
@@ -257,7 +287,12 @@
         "year": 2026,
         "month": 5,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "cHW93EmxKz",
+        "payment_type": "Bilt",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2026-04-20"
       }
     ],
     "service_credit": 0.0,
@@ -690,7 +725,12 @@
         "year": 2025,
         "month": 1,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2025-01-01"
       },
       {
         "amount": 950.0,
@@ -700,7 +740,12 @@
         "year": 2025,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2025-02-01"
       },
       {
         "amount": 400.0,
@@ -710,7 +755,12 @@
         "year": 2025,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2025-02-01"
       },
       {
         "amount": 1350.0,
@@ -720,7 +770,12 @@
         "year": 2025,
         "month": 3,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-03-02"
       },
       {
         "amount": 1350.0,
@@ -730,7 +785,12 @@
         "year": 2025,
         "month": 4,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid in Full",
+        "details": "",
+        "date_received": "2025-04-01"
       },
       {
         "amount": 600.0,
@@ -740,7 +800,12 @@
         "year": 2025,
         "month": 5,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-05-02"
       },
       {
         "amount": 600.0,
@@ -750,7 +815,12 @@
         "year": 2025,
         "month": 5,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-05-19"
       },
       {
         "amount": 750.0,
@@ -760,7 +830,12 @@
         "year": 2025,
         "month": 6,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment",
+        "details": "",
+        "date_received": "2025-05-16"
       },
       {
         "amount": 750.0,
@@ -770,7 +845,12 @@
         "year": 2025,
         "month": 6,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment",
+        "details": "",
+        "date_received": "2025-05-30"
       },
       {
         "amount": 484.0,
@@ -780,7 +860,12 @@
         "year": 2025,
         "month": 7,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-06-29"
       },
       {
         "amount": 266.0,
@@ -790,7 +875,12 @@
         "year": 2025,
         "month": 7,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-06-30"
       },
       {
         "amount": 550.0,
@@ -800,7 +890,12 @@
         "year": 2025,
         "month": 7,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-07-12"
       },
       {
         "amount": 50.0,
@@ -810,7 +905,12 @@
         "year": 2025,
         "month": 7,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-07-31"
       },
       {
         "amount": 800.0,
@@ -820,7 +920,12 @@
         "year": 2025,
         "month": 8,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-07-26"
       },
       {
         "amount": 600.0,
@@ -830,7 +935,12 @@
         "year": 2025,
         "month": 8,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-08-24"
       },
       {
         "amount": 550.0,
@@ -840,7 +950,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-10-12"
       },
       {
         "amount": -550.0,
@@ -850,7 +965,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-10-12"
       },
       {
         "amount": 1000.0,
@@ -860,7 +980,12 @@
         "year": 2025,
         "month": 12,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2025-12-27"
       },
       {
         "amount": 700.0,
@@ -870,7 +995,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-10-10"
       },
       {
         "amount": 500.0,
@@ -880,7 +1010,12 @@
         "year": 2025,
         "month": 10,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-10-29"
       },
       {
         "amount": 150.0,
@@ -890,7 +1025,12 @@
         "year": 2025,
         "month": 10,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-10-31"
       },
       {
         "amount": 500.0,
@@ -900,7 +1040,12 @@
         "year": 2025,
         "month": 11,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2025-11-03"
       },
       {
         "amount": 900.0,
@@ -910,7 +1055,12 @@
         "year": 2025,
         "month": 11,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-01-07"
       },
       {
         "amount": 100.0,
@@ -920,7 +1070,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": true,
-        "notes": "Random Month"
+        "notes": "Random Month",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $100.00)",
+        "status": "Overpayment / Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-01-08"
       },
       {
         "amount": 150.0,
@@ -930,7 +1085,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": true,
-        "notes": "Random Month Chosen"
+        "notes": "Random Month Chosen",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $150.00)",
+        "status": "Overpayment / Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-01-08"
       },
       {
         "amount": 900.0,
@@ -940,7 +1100,12 @@
         "year": 2025,
         "month": 10,
         "is_credit_usage": false,
-        "notes": "RANDOM MONTH TO PAY OFF"
+        "notes": "RANDOM MONTH TO PAY OFF",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-01-13"
       },
       {
         "amount": 100.0,
@@ -950,7 +1115,12 @@
         "year": 2025,
         "month": 5,
         "is_credit_usage": true,
-        "notes": "RANDOM MONTH TO PAY OFF"
+        "notes": "RANDOM MONTH TO PAY OFF",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $100.00)",
+        "status": "Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-01-29"
       },
       {
         "amount": 50.0,
@@ -960,7 +1130,12 @@
         "year": 2025,
         "month": 5,
         "is_credit_usage": true,
-        "notes": "RANDOM MONTH TO PAY OFF"
+        "notes": "RANDOM MONTH TO PAY OFF",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $50.00)",
+        "status": "Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-01-29"
       },
       {
         "amount": 50.0,
@@ -970,7 +1145,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": true,
-        "notes": "RANDOM MONTH TO APPLY"
+        "notes": "RANDOM MONTH TO APPLY",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $50.00)",
+        "status": "Overpayment / Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-01-29"
       },
       {
         "amount": 1500.0,
@@ -980,7 +1160,12 @@
         "year": 2026,
         "month": 1,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-02-04"
       },
       {
         "amount": 150.0,
@@ -990,7 +1175,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": true,
-        "notes": "RANDOM ASSIGNED"
+        "notes": "RANDOM ASSIGNED",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $150.00)",
+        "status": "Overpayment / Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-02-04"
       },
       {
         "amount": 1000.0,
@@ -1000,7 +1190,12 @@
         "year": 2025,
         "month": 9,
         "is_credit_usage": false,
-        "notes": "2 payments of 500 $ targeted to pay off random delinquent months"
+        "notes": "2 payments of 500 $ targeted to pay off random delinquent months",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-03-07"
       },
       {
         "amount": 350.0,
@@ -1010,7 +1205,12 @@
         "year": 2025,
         "month": 12,
         "is_credit_usage": true,
-        "notes": "RANDOM TARGETED MONTH TO PAY OFF"
+        "notes": "RANDOM TARGETED MONTH TO PAY OFF",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-03-07"
       },
       {
         "amount": 450.0,
@@ -1020,7 +1220,12 @@
         "year": 2026,
         "month": 2,
         "is_credit_usage": true,
-        "notes": "RANDOM TARGETED MONTH TO APPLY OVERCREDIT"
+        "notes": "RANDOM TARGETED MONTH TO APPLY OVERCREDIT",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Cash",
+        "status": "Overpayment / Paid Late",
+        "details": "Service Credit Applied",
+        "date_received": "2026-03-07"
       },
       {
         "amount": 500.0,
@@ -1030,7 +1235,12 @@
         "year": 2026,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-03-08"
       },
       {
         "amount": 600.0,
@@ -1040,7 +1250,12 @@
         "year": 2026,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Overpayment / Paid Late",
+        "details": "",
+        "date_received": "2026-04-01"
       },
       {
         "amount": 650.0,
@@ -1050,7 +1265,12 @@
         "year": 2026,
         "month": 3,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Delinquent",
+        "details": "",
+        "date_received": "2026-04-02"
       },
       {
         "amount": 200.0,
@@ -1060,7 +1280,12 @@
         "year": 2026,
         "month": 3,
         "is_credit_usage": true,
-        "notes": "Random applied to current month"
+        "notes": "Random applied to current month",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Overpayment Credit (Applied: $200.00)",
+        "status": "Delinquent",
+        "details": "Service Credit Applied",
+        "date_received": "2026-04-02"
       },
       {
         "amount": 250.0,
@@ -1070,7 +1295,12 @@
         "year": 2026,
         "month": 3,
         "is_credit_usage": false,
-        "notes": "Applied for Delinquet month"
+        "notes": "Applied for Delinquet month",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Delinquent",
+        "details": "",
+        "date_received": "2026-04-04"
       },
       {
         "amount": 1300.0,
@@ -1080,7 +1310,12 @@
         "year": 2026,
         "month": 4,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-04-28"
       },
       {
         "amount": 50.0,
@@ -1090,7 +1325,12 @@
         "year": 2026,
         "month": 4,
         "is_credit_usage": false,
-        "notes": "Late"
+        "notes": "Late",
+        "tenant_id": "iBZA8nOmUm",
+        "payment_type": "Zelle",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       }
     ],
     "service_credit": 0.0,
@@ -1238,7 +1478,12 @@
         "year": 2026,
         "month": 1,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 135.0,
@@ -1248,7 +1493,12 @@
         "year": 2026,
         "month": 1,
         "is_credit_usage": false,
-        "notes": "late fees"
+        "notes": "late fees",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 1470.0,
@@ -1258,7 +1508,12 @@
         "year": 2026,
         "month": 2,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 1485.0,
@@ -1268,7 +1523,12 @@
         "year": 2026,
         "month": 3,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 1480.0,
@@ -1278,7 +1538,12 @@
         "year": 2026,
         "month": 4,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": 1350.0,
@@ -1288,7 +1553,12 @@
         "year": 2026,
         "month": 5,
         "is_credit_usage": false,
-        "notes": ""
+        "notes": "",
+        "tenant_id": "7mutZhNFBc",
+        "payment_type": "Cash",
+        "status": "Paid Late",
+        "details": "",
+        "date_received": "2026-05-22"
       },
       {
         "amount": -135.0,

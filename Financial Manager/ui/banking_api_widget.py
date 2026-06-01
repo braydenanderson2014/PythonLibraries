@@ -4,14 +4,18 @@ Banking API Integration UI Widget
 Provides user interface for linking bank accounts and syncing transactions.
 """
 
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog,
     QFormLayout, QLineEdit, QComboBox, QSpinBox, QCheckBox,
     QMessageBox, QGroupBox, QTextEdit, QProgressBar
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QIcon
 from datetime import datetime, date
 from assets.Logger import Logger
 logger = Logger()
@@ -23,6 +27,148 @@ except ImportError:
     import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from src.banking_api import BankingAPIManager
+
+
+PLAID_LINK_HELPER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Financial Manager Plaid Link</title>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f4efe5;
+            --panel: #fffaf2;
+            --ink: #1f2933;
+            --accent: #006d77;
+            --accent-soft: #e4f3f0;
+            --border: #d8cbb8;
+        }
+        body {
+            margin: 0;
+            font-family: Georgia, 'Times New Roman', serif;
+            background: radial-gradient(circle at top left, #fffdf7, var(--bg));
+            color: var(--ink);
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+        .panel {
+            width: min(680px, 100%);
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: 0 18px 48px rgba(31, 41, 51, 0.12);
+            padding: 28px;
+        }
+        h1 {
+            margin: 0 0 12px;
+            font-size: 2rem;
+        }
+        p {
+            line-height: 1.55;
+            margin: 0 0 14px;
+        }
+        .status {
+            padding: 14px 16px;
+            background: var(--accent-soft);
+            border-radius: 14px;
+            margin: 18px 0;
+            min-height: 24px;
+        }
+        button {
+            border: 0;
+            border-radius: 999px;
+            background: var(--accent);
+            color: white;
+            font: inherit;
+            padding: 12px 20px;
+            cursor: pointer;
+        }
+        code {
+            display: block;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background: #f7f1e6;
+            border-radius: 14px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            min-height: 22px;
+        }
+    </style>
+</head>
+<body>
+    <main class="panel">
+        <h1>Connect with Plaid</h1>
+        <p>This page launches Plaid Link for Financial Manager. When the connection succeeds, the app will capture the resulting public token automatically.</p>
+        <button id="launch">Open Plaid Link</button>
+        <div class="status" id="status">Preparing Plaid Link...</div>
+        <p>If your browser blocks the popup, click the button again.</p>
+        <code id="token"></code>
+    </main>
+    <script>
+        const linkToken = __LINK_TOKEN__;
+        const statusEl = document.getElementById('status');
+        const tokenEl = document.getElementById('token');
+
+        function setStatus(message) {
+            statusEl.textContent = message;
+        }
+
+        async function postJson(path, payload) {
+            const response = await fetch(path, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Local callback failed with ${response.status}`);
+            }
+        }
+
+        const handler = Plaid.create({
+            token: linkToken,
+            onSuccess: async (publicToken, metadata) => {
+                tokenEl.textContent = publicToken;
+                setStatus('Plaid Link completed. Return to Financial Manager to finish linking the account.');
+                try {
+                    await postJson('/api/plaid/success', {
+                        public_token: publicToken,
+                        metadata,
+                    });
+                } catch (error) {
+                    setStatus(`Plaid Link succeeded, but the local callback failed: ${error.message}`);
+                }
+            },
+            onExit: async (error, metadata) => {
+                if (!error) {
+                    setStatus('Plaid Link closed before completion.');
+                    return;
+                }
+
+                setStatus(error.display_message || error.error_message || 'Plaid Link exited with an error.');
+                try {
+                    await postJson('/api/plaid/error', { error, metadata });
+                } catch (postError) {
+                    setStatus(`Plaid Link exited and the local callback failed: ${postError.message}`);
+                }
+            },
+        });
+
+        document.getElementById('launch').addEventListener('click', () => handler.open());
+
+        window.addEventListener('load', () => {
+            setStatus('Ready. Launching Plaid Link...');
+            handler.open();
+        });
+    </script>
+</body>
+</html>
+"""
 
 
 class SyncWorker(QThread):
@@ -55,49 +201,150 @@ class SyncWorker(QThread):
             self.error.emit(str(e))
 
 
+class PlaidLinkHelperServer:
+    """Serve a local Plaid Link helper page and capture its public token."""
+
+    def __init__(self, link_token):
+        self.link_token = link_token
+        self.public_token = None
+        self.metadata = {}
+        self.error_message = None
+        self._server = None
+        self._thread = None
+
+    def start(self):
+        """Start the helper server and return the launch URL."""
+        if self._server:
+            return f"http://127.0.0.1:{self._server.server_address[1]}/"
+
+        helper = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _send_html(self, body, status=200):
+                payload = body.encode('utf-8')
+                self.send_response(status)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def _send_json(self, payload, status=200):
+                body = json.dumps(payload).encode('utf-8')
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.path not in ('/', '/index.html'):
+                    self.send_error(404)
+                    return
+
+                page = PLAID_LINK_HELPER_HTML.replace(
+                    '__LINK_TOKEN__',
+                    json.dumps(helper.link_token)
+                )
+                self._send_html(page)
+
+            def do_POST(self):
+                if self.path not in ('/api/plaid/success', '/api/plaid/error'):
+                    self.send_error(404)
+                    return
+
+                raw_length = self.headers.get('Content-Length', '0')
+                try:
+                    content_length = int(raw_length)
+                except ValueError:
+                    content_length = 0
+
+                raw_body = self.rfile.read(content_length) if content_length else b'{}'
+                try:
+                    payload = json.loads(raw_body.decode('utf-8') or '{}')
+                except json.JSONDecodeError:
+                    payload = {}
+
+                if self.path == '/api/plaid/success':
+                    helper.public_token = payload.get('public_token')
+                    helper.metadata = payload.get('metadata') or {}
+                    helper.error_message = None
+                else:
+                    error = payload.get('error') or {}
+                    helper.error_message = (
+                        error.get('display_message')
+                        or error.get('error_message')
+                        or 'Plaid Link closed before completion.'
+                    )
+
+                self._send_json({'ok': True})
+
+            def log_message(self, format, *args):
+                return
+
+        self._server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        return f"http://127.0.0.1:{self._server.server_address[1]}/"
+
+    def stop(self):
+        """Stop the helper server."""
+        if not self._server:
+            return
+
+        self._server.shutdown()
+        self._server.server_close()
+        self._server = None
+        self._thread = None
+
+
 class LinkAccountDialog(QDialog):
-    """Dialog for linking a new bank account"""
-    
+    """Dialog for linking a new bank account."""
+
     def __init__(self, api_manager, bank_accounts, parent=None):
         super().__init__(parent)
         logger.debug("LinkAccountDialog", "Initializing LinkAccountDialog")
         self.api_manager = api_manager
         self.bank_accounts = bank_accounts
+        self.provider_lookup = {}
+        self.plaid_helper = None
+        self.plaid_poll_timer = QTimer(self)
+        self.plaid_poll_timer.setInterval(500)
+        self.plaid_poll_timer.timeout.connect(self.check_plaid_link_status)
         self.setWindowTitle("Link Bank Account")
         self.setModal(True)
-        self.setMinimumWidth(500)
-        
+        self.setMinimumWidth(560)
+
         self.setup_ui()
         logger.info("LinkAccountDialog", f"LinkAccountDialog initialized with {len(bank_accounts)} available accounts")
-    
+
     def setup_ui(self):
         layout = QVBoxLayout()
-        
-        # Info label
+
         info_label = QLabel(
             "Link a real bank account to automatically import transactions.\n"
-            "Note: Mock provider is for testing without real credentials."
+            "Demo Bank remains available as a sample institution for testing."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
-        
-        # Form
+
         form_layout = QFormLayout()
-        
-        # Provider selection
+
         self.provider_combo = QComboBox()
-        available_providers = list(self.api_manager.providers.keys())
-        self.provider_combo.addItems(available_providers)
-        self.provider_combo.currentTextChanged.connect(self.on_provider_changed)
+        for provider in self.api_manager.get_available_providers():
+            self.provider_lookup[provider['provider_name']] = provider
+            self.provider_combo.addItem(provider['display_name'], userData=provider['provider_name'])
+        self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
         form_layout.addRow("Banking Provider:", self.provider_combo)
-        
-        # Access token (for Plaid)
+
         self.token_input = QLineEdit()
-        self.token_input.setPlaceholderText("Enter access token (for Plaid after Link flow)")
-        self.token_label = QLabel("Access Token:")
+        self.token_input.setPlaceholderText("Paste the Plaid public token or access token")
+        self.token_label = QLabel("Plaid Token:")
         form_layout.addRow(self.token_label, self.token_input)
-        
-        # App account selection
+
+        self.plaid_link_button = QPushButton("Open Plaid Link")
+        self.plaid_link_button.clicked.connect(self.start_plaid_link_flow)
+        form_layout.addRow("", self.plaid_link_button)
+
         self.account_combo = QComboBox()
         for account in self.bank_accounts:
             self.account_combo.addItem(
@@ -105,98 +352,185 @@ class LinkAccountDialog(QDialog):
                 userData=account
             )
         form_layout.addRow("Link to App Account:", self.account_combo)
-        
+
         layout.addLayout(form_layout)
-        
-        # Instructions
+
         self.instructions_text = QTextEdit()
         self.instructions_text.setReadOnly(True)
-        self.instructions_text.setMaximumHeight(100)
+        self.instructions_text.setMaximumHeight(120)
         layout.addWidget(QLabel("Instructions:"))
         layout.addWidget(self.instructions_text)
-        
-        # Buttons
+
         button_layout = QHBoxLayout()
-        
+
         self.link_button = QPushButton("Link Account")
         self.link_button.clicked.connect(self.link_account)
-        
+
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
-        
+
         button_layout.addStretch()
         button_layout.addWidget(cancel_button)
         button_layout.addWidget(self.link_button)
-        
+
         layout.addLayout(button_layout)
-        
+
         self.setLayout(layout)
-        
-        # Update UI based on provider
-        self.on_provider_changed(self.provider_combo.currentText())
-    
-    def on_provider_changed(self, provider_name):
-        """Update UI based on selected provider"""
+        self.on_provider_changed()
+
+    def current_provider_name(self):
+        """Return the internal provider name for the current selection."""
+        return self.provider_combo.currentData() or self.provider_combo.currentText()
+
+    def on_provider_changed(self, *_):
+        """Update the dialog based on the selected provider."""
+        provider_name = self.current_provider_name()
+
+        if provider_name != 'plaid':
+            self.cleanup_plaid_helper()
+
+        self.link_button.setEnabled(provider_name in ('plaid', 'mock'))
+
         if provider_name == 'mock':
             self.token_input.setEnabled(False)
             self.token_input.clear()
             self.token_label.setEnabled(False)
+            self.plaid_link_button.setVisible(False)
             self.instructions_text.setPlainText(
-                "Mock provider creates test accounts with sample data.\n"
-                "No credentials needed - just select which app account to link to."
+                "Demo Bank behaves like a normal institution option, but it returns sample transactions.\n"
+                "No credentials are required; just select the app account you want to connect."
             )
-        elif provider_name == 'plaid':
+            return
+
+        if provider_name == 'plaid':
             self.token_input.setEnabled(True)
             self.token_label.setEnabled(True)
+            self.plaid_link_button.setVisible(True)
             self.instructions_text.setPlainText(
                 "For Plaid:\n"
-                "1. Complete Plaid Link flow (separate web interface)\n"
-                "2. Exchange public token for access token\n"
-                "3. Paste access token here\n"
-                "Note: This requires proper Plaid credentials in settings."
+                "1. Click 'Open Plaid Link' to launch a local Plaid Link helper page\n"
+                "2. Complete the Link flow in your browser\n"
+                "3. Financial Manager will capture the resulting public token automatically\n"
+                "4. Click 'Link Account' to exchange the token and store the connection\n"
+                "Note: Plaid client_id and secret must be configured first."
             )
-    
-    def link_account(self):
-        """Link the selected account"""
-        logger.debug("LinkAccountDialog", "Linking account")
-        provider_name = self.provider_combo.currentText()
-        access_token = self.token_input.text() if provider_name != 'mock' else 'mock_token'
-        
-        if provider_name == 'plaid' and not access_token:
-            logger.warning("LinkAccountDialog", "Linking failed: missing access token")
-            QMessageBox.warning(self, "Missing Token", "Please enter an access token.")
             return
-        
+
+        self.token_input.setEnabled(False)
+        self.token_input.clear()
+        self.token_label.setEnabled(False)
+        self.plaid_link_button.setVisible(False)
+        self.instructions_text.setPlainText(
+            "This provider uses a provider-specific setup flow that is not exposed in this dialog yet.\n"
+            "Plaid and Demo Bank are ready to use here."
+        )
+
+    def start_plaid_link_flow(self):
+        """Create a Plaid link token and open a local helper page."""
+        logger.debug("LinkAccountDialog", "Starting Plaid Link flow")
+        link_token = self.api_manager.create_plaid_link_token()
+        if not link_token:
+            QMessageBox.critical(
+                self,
+                "Plaid Link Error",
+                "Could not create a Plaid link token. Check your Plaid credentials and environment settings."
+            )
+            return
+
+        self.cleanup_plaid_helper()
+        self.plaid_helper = PlaidLinkHelperServer(link_token)
+        helper_url = self.plaid_helper.start()
+        self.plaid_poll_timer.start()
+        self.instructions_text.setPlainText(
+            "Plaid Link helper is running locally. Finish the bank login flow in your browser.\n"
+            "When the public token is captured, it will populate this dialog automatically."
+        )
+        QDesktopServices.openUrl(QUrl(helper_url))
+
+    def check_plaid_link_status(self):
+        """Poll the helper server for a completed Plaid Link flow."""
+        if not self.plaid_helper:
+            return
+
+        if self.plaid_helper.public_token:
+            public_token = self.plaid_helper.public_token
+            self.token_input.setText(public_token)
+            self.instructions_text.setPlainText(
+                "Plaid Link completed successfully. Review the selected app account and click 'Link Account' to finish linking the bank feed."
+            )
+            self.cleanup_plaid_helper()
+            QMessageBox.information(
+                self,
+                "Plaid Ready",
+                "Plaid Link completed. The public token has been captured and is ready to link."
+            )
+            return
+
+        if self.plaid_helper.error_message:
+            error_message = self.plaid_helper.error_message
+            self.cleanup_plaid_helper()
+            QMessageBox.warning(self, "Plaid Link Closed", error_message)
+
+    def cleanup_plaid_helper(self):
+        """Stop any active Plaid helper instance."""
+        self.plaid_poll_timer.stop()
+        if self.plaid_helper:
+            self.plaid_helper.stop()
+            self.plaid_helper = None
+
+    def link_account(self):
+        """Link the selected account."""
+        logger.debug("LinkAccountDialog", "Linking account")
+        provider_name = self.current_provider_name()
+        token_value = self.token_input.text().strip()
+
+        if provider_name == 'plaid' and not token_value:
+            logger.warning("LinkAccountDialog", "Linking failed: missing Plaid token")
+            QMessageBox.warning(self, "Missing Token", "Complete Plaid Link or paste a Plaid token first.")
+            return
+
         account_data = self.account_combo.currentData()
         if not account_data:
             logger.warning("LinkAccountDialog", "Linking failed: no app account selected")
             QMessageBox.warning(self, "No Account", "Please select an app account.")
             return
-        
+
+        provider_params = {}
+        if provider_name == 'plaid':
+            if token_value.startswith('access-'):
+                provider_params['access_token'] = token_value
+            else:
+                provider_params['public_token'] = token_value
+
         logger.debug("LinkAccountDialog", f"Linking account {account_data['account_id']} to {provider_name}")
-        # Link the account
         success = self.api_manager.link_account(
             provider_name=provider_name,
-            access_token=access_token,
             app_account_id=account_data['account_id'],
-            app_account_name=account_data['name']
+            app_account_name=account_data['name'],
+            **provider_params
         )
-        
+
         if success:
+            self.cleanup_plaid_helper()
             logger.info("LinkAccountDialog", f"Account linked successfully from {provider_name}")
             QMessageBox.information(
-                self, 
-                "Success", 
-                f"Successfully linked account(s) from {provider_name}!"
+                self,
+                "Success",
+                f"Successfully linked account(s) from {self.provider_combo.currentText()}!"
             )
             self.accept()
-        else:
-            logger.error("LinkAccountDialog", f"Failed to link account from {provider_name}")
-            QMessageBox.critical(
-                self, 
-                "Error", 
-                f"Failed to link account. Check logs for details."
-            )
+            return
+
+        logger.error("LinkAccountDialog", f"Failed to link account from {provider_name}")
+        QMessageBox.critical(self, "Error", "Failed to link account. Check logs for details.")
+
+    def reject(self):
+        self.cleanup_plaid_helper()
+        super().reject()
+
+    def closeEvent(self, event):
+        self.cleanup_plaid_helper()
+        super().closeEvent(event)
 
 
 class BankingAPIWidget(QWidget):
@@ -282,13 +616,17 @@ class BankingAPIWidget(QWidget):
         
         config_info = QLabel(
             "Configure banking providers in settings.\n"
-            "Mock provider is enabled by default for testing."
+            "Plaid brings in live data, while Demo Bank remains available for testing."
         )
         config_info.setWordWrap(True)
         config_layout.addWidget(config_info)
         
         # Show configured providers
-        providers_label = QLabel(f"Available providers: {', '.join(self.api_manager.providers.keys())}")
+        provider_names = ', '.join(
+            provider['display_name']
+            for provider in self.api_manager.get_available_providers()
+        )
+        providers_label = QLabel(f"Available providers: {provider_names}")
         config_layout.addWidget(providers_label)
         
         config_group.setLayout(config_layout)
@@ -308,7 +646,12 @@ class BankingAPIWidget(QWidget):
         
         for row, account in enumerate(accounts):
             # Bank name
-            self.accounts_table.setItem(row, 0, QTableWidgetItem(account['bank_account_name']))
+            bank_name = (
+                account.get('institution_name')
+                or account.get('provider_display_name')
+                or account['bank_account_name']
+            )
+            self.accounts_table.setItem(row, 0, QTableWidgetItem(bank_name))
             
             # Account type
             acc_type = account.get('bank_account_type', 'Unknown')
