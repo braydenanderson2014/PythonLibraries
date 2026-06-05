@@ -423,8 +423,8 @@
         12
       ]
     ],
-    "total_rent_paid": 24040.0,
-    "delinquency_balance": 1600.0,
+    "total_rent_paid": 23700.0,
+    "delinquency_balance": 2200.0,
     "delinquent_months": [
       [
         2026,
@@ -433,6 +433,10 @@
       [
         2026,
         5
+      ],
+      [
+        2026,
+        6
       ]
     ],
     "account_status": "active",
@@ -648,16 +652,19 @@
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
         "due_date": "2026-05-01",
-        "late_note": "Late and still owes $1350.00"
+        "payment_type": "Zelle",
+        "payment_date": "2026-06-04",
+        "late_note": "Late and still owes $600.00"
       },
       "2026-06": {
-        "status": "Pending",
-        "display_status": "Pending",
-        "was_late": false,
+        "status": "Delinquent",
+        "display_status": "Delinquent",
+        "was_late": true,
         "paid_late": false,
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
-        "due_date": "2026-06-01"
+        "due_date": "2026-06-01",
+        "late_note": "Late and still owes $1350.00"
       },
       "2026-07": {
         "status": "Pending",
@@ -1331,6 +1338,16 @@
         "status": "Paid Late",
         "details": "",
         "date_received": "2026-05-22"
+      },
+      {
+        "amount": 750.0,
+        "type": "Zelle",
+        "date": "2026-06-04",
+        "payment_month": "2026-05",
+        "year": 2026,
+        "month": 5,
+        "is_credit_usage": false,
+        "notes": ""
       }
     ],
     "service_credit": 0.0,
