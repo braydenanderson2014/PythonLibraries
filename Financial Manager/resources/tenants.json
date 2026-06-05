@@ -4,7 +4,7 @@
     "tenant_id": "cHW93EmxKz",
     "rental_period": {
       "start_date": "2025-12-13",
-      "end_date": "2026-09-01",
+      "end_date": "2026-08-19",
       "lease_type": "Fixed Term"
     },
     "deposit_amount": 700.0,
@@ -20,7 +20,9 @@
       "[2025-12-23] Monthly override removed for 2025-12 - Override removed",
       "[2026-04-02 21:29:05] Deposit changed from $0.00 to $700.00. Reason: Never added",
       "[2026-05-22 19:00:51] Tenant details updated: Rental period changed from 2025-12-13 to 2026-06-13 \u2192 2025-12-13 to 2026-08-13",
-      "[2026-05-22 19:01:33] Tenant details updated: Rental period changed from 2025-12-13 to 2026-08-13 \u2192 2025-12-13 to 2026-09-01"
+      "[2026-05-22 19:01:33] Tenant details updated: Rental period changed from 2025-12-13 to 2026-08-13 \u2192 2025-12-13 to 2026-09-01",
+      "[2026-06-04] 2025-12 override updated: rent amount $550.00, due day 14, late status set to automatic - Rental date started on the 14th.",
+      "[2026-06-04 21:56:26] Tenant details updated: Rental period changed from 2025-12-13 to 2026-09-01 \u2192 2025-12-13 to 2026-08-19"
     ],
     "rent_amount": 1600.0,
     "monthly_exceptions": {
@@ -62,10 +64,6 @@
       [
         2026,
         8
-      ],
-      [
-        2026,
-        9
       ]
     ],
     "total_rent_paid": 10150.0,
@@ -75,16 +73,15 @@
     "monthly_status": {
       "2025-12": {
         "status": "Paid in Full",
-        "display_status": "Paid Late",
-        "was_late": true,
-        "paid_late": true,
+        "display_status": "Paid in Full",
+        "was_late": false,
+        "paid_late": false,
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
-        "due_date": "2025-12-01",
+        "due_date": "2025-12-14",
         "paid_in_full_date": "2025-12-14",
         "payment_type": "Venmo",
-        "payment_date": "2025-12-14",
-        "late_note": "Paid after due date on 2025-12-14"
+        "payment_date": "2025-12-14"
       },
       "2026-01": {
         "status": "Paid in Full",
@@ -175,19 +172,14 @@
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
         "due_date": "2026-08-01"
-      },
-      "2026-09": {
-        "status": "Pending",
-        "display_status": "Pending",
-        "was_late": false,
-        "paid_late": false,
-        "late_fee_charged": false,
-        "late_fee_amount": 0.0,
-        "due_date": "2026-09-01"
       }
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
+    "monthly_due_day_overrides": {
+      "2025-12": 14
+    },
+    "monthly_late_status_overrides": {},
     "payment_history": [
       {
         "amount": 550.0,
@@ -311,7 +303,7 @@
       "admin"
     ],
     "user_id": "admin",
-    "last_modified": "2026-05-22T19:01:33.709487"
+    "last_modified": "2026-06-04T21:56:26.891499"
   },
   "iBZA8nOmUm": {
     "name": "Eduardo/Maria(Current)",
@@ -723,6 +715,8 @@
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
+    "monthly_due_day_overrides": {},
+    "monthly_late_status_overrides": {},
     "payment_history": [
       {
         "amount": 1350.0,
@@ -1486,6 +1480,8 @@
     },
     "overpayment_credit": 0.0,
     "rent_due_date": "1",
+    "monthly_due_day_overrides": {},
+    "monthly_late_status_overrides": {},
     "payment_history": [
       {
         "amount": 1350.0,

@@ -4375,7 +4375,16 @@ class RentManagementTab(QWidget):
         if not self.selected_tenant:
             return
         
-        dialog = MonthlyOverrideDialog(self, self.selected_tenant.rent_amount, self.selected_tenant.name)
+        dialog = MonthlyOverrideDialog(
+            self,
+            self.selected_tenant.rent_amount,
+            self.selected_tenant.name,
+            rental_period=getattr(self.selected_tenant, 'rental_period', None),
+            default_due_day=getattr(self.selected_tenant, 'due_day', 1),
+            monthly_overrides=getattr(self.selected_tenant, 'monthly_exceptions', None),
+            due_day_overrides=getattr(self.selected_tenant, 'monthly_due_day_overrides', None),
+            late_status_overrides=getattr(self.selected_tenant, 'monthly_late_status_overrides', None),
+        )
         if dialog.exec() == dialog.DialogCode.Accepted:
             override_data = dialog.get_override_data()
             self.process_monthly_override(override_data)
@@ -4451,10 +4460,18 @@ class RentManagementTab(QWidget):
             
             month_str = override_data.get('month')  # Format: "YYYY-MM"
             amount = override_data.get('override_amount')
+            apply_rent_override = bool(override_data.get('apply_rent_override', True))
+            apply_due_day_override = bool(override_data.get('apply_due_day_override', False))
+            due_day_override = override_data.get('due_day_override')
+            late_status_override = override_data.get('late_status_override', 'auto')
             notes = override_data.get('notes', '')
             remove_requested = override_data.get('remove_requested', False)
             
-            print(f"DEBUG: month_str={month_str}, amount={amount}, notes={notes}, remove_requested={remove_requested}")
+            print(
+                f"DEBUG: month_str={month_str}, amount={amount}, apply_rent_override={apply_rent_override}, "
+                f"apply_due_day_override={apply_due_day_override}, due_day_override={due_day_override}, "
+                f"late_status_override={late_status_override}, notes={notes}, remove_requested={remove_requested}"
+            )
             
             if not month_str:
                 QMessageBox.critical(self, "Error", "No month selected. Please select a month.")
@@ -4471,18 +4488,19 @@ class RentManagementTab(QWidget):
                 return
             
             if remove_requested:
-                # Remove override by setting it to None or the base rent
                 success = self.rent_tracker.set_monthly_override(
                     tenant_name=self.selected_tenant.name,
                     year=year,
                     month=month,
-                    override_amount=None,  # This should remove the override
+                    override_amount=None,
+                    due_day_override=None,
+                    late_status_override='auto',
                     notes=f"Removed override. {notes}" if notes else "Override removed"
                 )
                 
                 if success:
                     QMessageBox.information(self, "Override Removed", 
-                        f"Monthly rent override for {month_str} has been removed.")
+                        f"All monthly overrides for {month_str} have been removed.")
                 else:
                     QMessageBox.critical(self, "Error", "Failed to remove monthly override.")
             else:
@@ -4491,13 +4509,32 @@ class RentManagementTab(QWidget):
                     tenant_name=self.selected_tenant.name,
                     year=year,
                     month=month,
-                    override_amount=amount,
+                    override_amount=amount if apply_rent_override else None,
+                    due_day_override=due_day_override if apply_due_day_override else None,
+                    late_status_override=late_status_override,
                     notes=notes
                 )
                 
                 if success:
+                    change_lines = []
+                    if apply_rent_override:
+                        change_lines.append(f"Rent override: ${amount:.2f}")
+                    else:
+                        change_lines.append("Rent override: base rent")
+
+                    if apply_due_day_override:
+                        change_lines.append(f"Due day override: {int(due_day_override)}")
+                    else:
+                        change_lines.append(f"Due day override: tenant default ({getattr(self.selected_tenant, 'due_day', 1)})")
+
+                    if late_status_override == 'on_time':
+                        change_lines.append("Late status: treat fully paid month as on-time")
+                    else:
+                        change_lines.append("Late status: automatic")
+
                     QMessageBox.information(self, "Override Applied", 
-                        f"Monthly rent override for {month_str} set to ${amount:.2f}\n"
+                        f"Monthly overrides for {month_str} were updated.\n\n"
+                        f"{"\n".join(change_lines)}\n\n"
                         f"Reason: {notes if notes else 'None'}")
                 else:
                     QMessageBox.critical(self, "Error", "Failed to apply monthly override.")
@@ -4615,7 +4652,16 @@ class RentManagementTab(QWidget):
             return
             
         print(f"DEBUG: Opening monthly override dialog for tenant: {self.selected_tenant.name}")
-        dialog = MonthlyOverrideDialog(self, self.selected_tenant.rent_amount, self.selected_tenant.name)
+        dialog = MonthlyOverrideDialog(
+            self,
+            self.selected_tenant.rent_amount,
+            self.selected_tenant.name,
+            rental_period=getattr(self.selected_tenant, 'rental_period', None),
+            default_due_day=getattr(self.selected_tenant, 'due_day', 1),
+            monthly_overrides=getattr(self.selected_tenant, 'monthly_exceptions', None),
+            due_day_overrides=getattr(self.selected_tenant, 'monthly_due_day_overrides', None),
+            late_status_overrides=getattr(self.selected_tenant, 'monthly_late_status_overrides', None),
+        )
         if dialog.exec() == dialog.DialogCode.Accepted:
             override_data = dialog.get_override_data()
             print(f"DEBUG: Dialog accepted, calling process_monthly_override with data: {override_data}")

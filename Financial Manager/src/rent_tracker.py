@@ -14,6 +14,9 @@ from bank import Bank
 from action_queue import ActionQueue
 from assets.Logger import Logger
 logger = Logger()
+
+_MONTHLY_OVERRIDE_UNSET = object()
+
 class RentTracker:
     def _month_key(self, year, month):
         return f"{int(year):04d}-{int(month):02d}"
@@ -75,20 +78,72 @@ class RentTracker:
         tenant.monthly_status.pop((int(year), int(month)), None)
         tenant.monthly_status[month_key] = entry
 
+    def _get_rental_period_bounds(self, tenant):
+        rental_period = getattr(tenant, 'rental_period', None)
+        if not rental_period:
+            return None, None
+
+        if isinstance(rental_period, dict):
+            start_raw = rental_period.get('start_date')
+            end_raw = rental_period.get('end_date')
+        elif isinstance(rental_period, (list, tuple)) and len(rental_period) >= 2:
+            start_raw, end_raw = rental_period[0], rental_period[1]
+        else:
+            return None, None
+
+        start_date = self._parse_payment_date(start_raw)
+        end_date = self._parse_payment_date(end_raw)
+        return start_date, end_date
+
+    def _get_month_due_day_override(self, tenant, year, month):
+        overrides = getattr(tenant, 'monthly_due_day_overrides', None) or {}
+        raw_value = overrides.get(self._month_key(year, month))
+        if raw_value in (None, ''):
+            return None
+
+        try:
+            due_day = int(raw_value)
+        except Exception:
+            return None
+
+        if 1 <= due_day <= 31:
+            return due_day
+        return None
+
+    def _get_month_late_status_override(self, tenant, year, month):
+        overrides = getattr(tenant, 'monthly_late_status_overrides', None) or {}
+        raw_value = str(overrides.get(self._month_key(year, month), '') or '').strip().lower()
+        if raw_value == 'on_time':
+            return raw_value
+        return None
+
+    def _get_effective_due_date(self, tenant, year, month):
+        override_due_day = self._get_month_due_day_override(tenant, year, month)
+
+        try:
+            default_due_day = int(getattr(tenant, 'rent_due_date', 1) or 1)
+        except Exception:
+            default_due_day = 1
+
+        month_last_day = calendar.monthrange(year, month)[1]
+        due_day = override_due_day if override_due_day is not None else default_due_day
+        due_day = min(max(due_day, 1), month_last_day)
+        due_date = date(year, month, due_day)
+
+        rental_start, _ = self._get_rental_period_bounds(tenant)
+        if rental_start and rental_start.year == year and rental_start.month == month and due_date < rental_start:
+            due_date = rental_start
+
+        return due_date
+
     def get_month_payment_snapshot(self, tenant, year, month, payment_history_override=None):
         year = int(year)
         month = int(month)
 
-        try:
-            due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
-        except Exception:
-            due_day_raw = 1
-
-        last_day = calendar.monthrange(year, month)[1]
-        due_day = min(max(due_day_raw, 1), last_day)
-        due_date = date(year, month, due_day)
+        due_date = self._get_effective_due_date(tenant, year, month)
         today = date.today()
         expected_rent = float(self.get_effective_rent(tenant, year, month) or 0.0)
+        late_status_override = self._get_month_late_status_override(tenant, year, month)
 
         month_payments = []
         net_payment_total = 0.0
@@ -175,9 +230,15 @@ class RentTracker:
             else:
                 status = 'Pending'
 
-        paid_late = bool(paid_in_full_date and paid_in_full_date > due_date)
+        computed_paid_late = bool(paid_in_full_date and paid_in_full_date > due_date)
         currently_late = bool(today > due_date and rent_payment_total + 1e-9 < expected_rent)
+        paid_late = computed_paid_late
         was_late = bool(paid_late or currently_late or late_fee_charge_total > 0.0)
+
+        manual_on_time = late_status_override == 'on_time' and remaining_balance <= 0.01
+        if manual_on_time:
+            paid_late = False
+            was_late = False
 
         display_status = status
         if status == 'Paid in Full' and paid_late:
@@ -186,7 +247,11 @@ class RentTracker:
             display_status = 'Overpayment / Paid Late'
 
         late_note = ''
-        if paid_late:
+        if manual_on_time:
+            late_note = 'Late status manually overridden to on-time'
+            if late_fee_charge_total > 0.0:
+                late_note = f"{late_note}; late fee history ${late_fee_charge_total:.2f}"
+        elif paid_late:
             if late_fee_charge_total > 0.0:
                 late_note = f"Paid late; late fees assessed ${late_fee_charge_total:.2f}"
             elif paid_in_full_date:
@@ -209,6 +274,7 @@ class RentTracker:
             'display_status': display_status,
             'was_late': was_late,
             'paid_late': paid_late,
+            'late_status_override': late_status_override,
             'late_note': late_note,
             'late_fee_charge_total': late_fee_charge_total,
             'paid_in_full_date': paid_in_full_date.isoformat() if paid_in_full_date else None,
@@ -976,7 +1042,16 @@ class RentTracker:
         logger.info("RentTracker", f"Rent modification saved for {tenant_name}")
         return True
     
-    def set_monthly_override(self, tenant_name, year, month, override_amount, notes=""):
+    def set_monthly_override(
+        self,
+        tenant_name,
+        year,
+        month,
+        override_amount,
+        notes="",
+        due_day_override=_MONTHLY_OVERRIDE_UNSET,
+        late_status_override=_MONTHLY_OVERRIDE_UNSET,
+    ):
         """Set a monthly rent override"""
         logger.debug("RentTracker", f"Setting monthly override for {tenant_name}: {year}-{month:02d} = ${override_amount}")
         tenant = self.get_tenant_by_name(tenant_name)
@@ -985,23 +1060,62 @@ class RentTracker:
             return False
         
         monthly_key = f"{year}-{month:02d}"
+        change_descriptions = []
+
+        if not hasattr(tenant, 'monthly_due_day_overrides') or tenant.monthly_due_day_overrides is None:
+            tenant.monthly_due_day_overrides = {}
+        if not hasattr(tenant, 'monthly_late_status_overrides') or tenant.monthly_late_status_overrides is None:
+            tenant.monthly_late_status_overrides = {}
         
         if override_amount is None:
             # Remove the override
             if monthly_key in tenant.monthly_exceptions:
                 del tenant.monthly_exceptions[monthly_key]
                 logger.info("RentTracker", f"Removed monthly override for {tenant_name}: {monthly_key}")
+            change_descriptions.append('rent amount reset to base rent')
         else:
             # Set the override
             tenant.monthly_exceptions[monthly_key] = override_amount
             logger.info("RentTracker", f"Set monthly override for {tenant_name}: {monthly_key} = ${override_amount}")
+            change_descriptions.append(f"rent amount ${override_amount:.2f}")
+
+        if due_day_override is not _MONTHLY_OVERRIDE_UNSET:
+            if due_day_override in (None, ''):
+                tenant.monthly_due_day_overrides.pop(monthly_key, None)
+                change_descriptions.append('due day reset to tenant default')
+            else:
+                try:
+                    normalized_due_day = int(due_day_override)
+                except Exception:
+                    logger.warning("RentTracker", f"Invalid monthly due day override for {tenant_name}: {due_day_override}")
+                    return False
+
+                if normalized_due_day < 1 or normalized_due_day > 31:
+                    logger.warning("RentTracker", f"Monthly due day override out of range for {tenant_name}: {normalized_due_day}")
+                    return False
+
+                tenant.monthly_due_day_overrides[monthly_key] = normalized_due_day
+                change_descriptions.append(f"due day {normalized_due_day}")
+
+        if late_status_override is not _MONTHLY_OVERRIDE_UNSET:
+            normalized_status_override = str(late_status_override or '').strip().lower()
+            if normalized_status_override in ('', 'auto', 'none'):
+                tenant.monthly_late_status_overrides.pop(monthly_key, None)
+                change_descriptions.append('late status set to automatic')
+            elif normalized_status_override == 'on_time':
+                tenant.monthly_late_status_overrides[monthly_key] = normalized_status_override
+                change_descriptions.append('late status overridden to on-time')
+            else:
+                logger.warning(
+                    "RentTracker",
+                    f"Unsupported monthly late status override for {tenant_name}: {late_status_override}"
+                )
+                return False
         
         if notes:
             timestamp = date.today().isoformat()
-            if override_amount is None:
-                override_note = f"[{timestamp}] Monthly override removed for {year}-{month:02d} - {notes}"
-            else:
-                override_note = f"[{timestamp}] Monthly override for {year}-{month:02d}: ${override_amount:.2f} - {notes}"
+            change_summary = ', '.join(change_descriptions) if change_descriptions else 'Monthly override updated'
+            override_note = f"[{timestamp}] {year}-{month:02d} override updated: {change_summary} - {notes}"
             if hasattr(tenant, 'add_note'):
                 tenant.add_note(override_note)
             else:
@@ -1484,7 +1598,6 @@ class RentTracker:
             self.tenant_manager.save()
             return {'success': True, 'removed_count': removed_count, 'added_count': 0, 'applied_months': []}
 
-        due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
         grace_days = int(config.get('grace_period_days', 0) or 0)
         mode = config.get('mode', 'fixed')
         non_late_payments_through_date = self._filter_payment_history_through_date(non_late_payments, through_date)
@@ -1511,9 +1624,11 @@ class RentTracker:
             if not self._month_within_late_fee_range(config, year, month):
                 continue
 
+            if self._get_month_late_status_override(tenant, year, month) == 'on_time':
+                continue
+
             month_last_day = calendar.monthrange(year, month)[1]
-            due_day = min(max(1, due_day_raw), month_last_day)
-            due_date = date(year, month, due_day)
+            due_date = self._get_effective_due_date(tenant, year, month)
             eligible_date = due_date + timedelta(days=grace_days)
             if through_date < eligible_date:
                 continue
@@ -1721,7 +1836,6 @@ class RentTracker:
             through_date = date.today()
 
         applied_months = []
-        due_day_raw = int(getattr(tenant, 'rent_due_date', 1) or 1)
         grace_days = int(config.get('grace_period_days', 0) or 0)
         mode = config.get('mode', 'fixed')
         payment_history = list(getattr(tenant, 'payment_history', []) or [])
@@ -1733,9 +1847,10 @@ class RentTracker:
             if not self._month_within_late_fee_range(config, year, month):
                 continue
 
-            month_last_day = calendar.monthrange(year, month)[1]
-            due_day = min(max(1, due_day_raw), month_last_day)
-            due_date = date(year, month, due_day)
+            if self._get_month_late_status_override(tenant, year, month) == 'on_time':
+                continue
+
+            due_date = self._get_effective_due_date(tenant, year, month)
             eligible_date = due_date + timedelta(days=grace_days)
             if through_date < eligible_date:
                 continue

@@ -17,7 +17,8 @@ class Tenant:
     def __init__(self, name, rental_period, rent_amount, deposit_amount=0.0, contact_info=None, notes=None, tenant_id=None,
                  monthly_exceptions=None, months_to_charge=None, total_rent_paid=0.0, delinquency_balance=0.0,
                  delinquent_months=None, account_status='active', monthly_status=None, overpayment_credit=0.0, rent_due_date=None, payment_history=None,
-                 service_credit=0.0, service_credit_history=None, late_fee_config=None, user_id=None, user_ids=None, last_modified=None):
+                 service_credit=0.0, service_credit_history=None, late_fee_config=None, user_id=None, user_ids=None, last_modified=None,
+                 monthly_due_day_overrides=None, monthly_late_status_overrides=None):
         self.name = name
         self.tenant_id = tenant_id if tenant_id is not None else generate_tenant_id()
         self.rental_period = rental_period  # (start_date, end_date)
@@ -53,6 +54,8 @@ class Tenant:
         self.monthly_status = monthly_status or {}
         self.overpayment_credit = overpayment_credit
         self.rent_due_date = rent_due_date
+        self.monthly_due_day_overrides = monthly_due_day_overrides or {}
+        self.monthly_late_status_overrides = monthly_late_status_overrides or {}
         self.payment_history = payment_history or []  # Add payment_history initialization
         self.service_credit = service_credit  # Available service credit balance
         self.service_credit_history = service_credit_history or []  # Track service credit transactions
@@ -141,6 +144,8 @@ class Tenant:
             'monthly_status': monthly_status_str,
             'overpayment_credit': self.overpayment_credit,
             'rent_due_date': self.rent_due_date,
+            'monthly_due_day_overrides': self.monthly_due_day_overrides,
+            'monthly_late_status_overrides': self.monthly_late_status_overrides,
             'payment_history': self.payment_history,  # Add payment_history to save data
             'service_credit': self.service_credit,
             'service_credit_history': self.service_credit_history,
@@ -389,6 +394,11 @@ class TenantManager:
                     # Migration: Add payment_history if it doesn't exist
                     if 'payment_history' not in t:
                         t['payment_history'] = []
+
+                    if 'monthly_due_day_overrides' not in t or not isinstance(t.get('monthly_due_day_overrides'), dict):
+                        t['monthly_due_day_overrides'] = {}
+                    if 'monthly_late_status_overrides' not in t or not isinstance(t.get('monthly_late_status_overrides'), dict):
+                        t['monthly_late_status_overrides'] = {}
                     
                     # Migration: Add service credit fields if they don't exist
                     if 'service_credit' not in t:
