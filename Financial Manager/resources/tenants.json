@@ -22,11 +22,13 @@
       "[2026-05-22 19:00:51] Tenant details updated: Rental period changed from 2025-12-13 to 2026-06-13 \u2192 2025-12-13 to 2026-08-13",
       "[2026-05-22 19:01:33] Tenant details updated: Rental period changed from 2025-12-13 to 2026-08-13 \u2192 2025-12-13 to 2026-09-01",
       "[2026-06-04] 2025-12 override updated: rent amount $550.00, due day 14, late status set to automatic - Rental date started on the 14th.",
-      "[2026-06-04 21:56:26] Tenant details updated: Rental period changed from 2025-12-13 to 2026-09-01 \u2192 2025-12-13 to 2026-08-19"
+      "[2026-06-04 21:56:26] Tenant details updated: Rental period changed from 2025-12-13 to 2026-09-01 \u2192 2025-12-13 to 2026-08-19",
+      "[2026-06-30] 2026-08 override updated: rent amount $153.00, due day reset to tenant default, late status set to automatic - End of Lease, Leaving Approx 3rd"
     ],
     "rent_amount": 1600.0,
     "monthly_exceptions": {
-      "2025-12": 550.0
+      "2025-12": 550.0,
+      "2026-08": 153.0
     },
     "months_to_charge": [
       [
@@ -66,7 +68,7 @@
         8
       ]
     ],
-    "total_rent_paid": 10150.0,
+    "total_rent_paid": 11750.0,
     "delinquency_balance": 0.0,
     "delinquent_months": [],
     "account_status": "active",
@@ -156,13 +158,16 @@
         "payment_date": "2026-05-22"
       },
       "2026-07": {
-        "status": "Pending",
-        "display_status": "Pending",
+        "status": "Paid in Full",
+        "display_status": "Paid in Full",
         "was_late": false,
         "paid_late": false,
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
-        "due_date": "2026-07-01"
+        "due_date": "2026-07-01",
+        "paid_in_full_date": "2026-06-25",
+        "payment_type": "Bilt",
+        "payment_date": "2026-06-25"
       },
       "2026-08": {
         "status": "Pending",
@@ -285,6 +290,16 @@
         "status": "Paid in Full",
         "details": "",
         "date_received": "2026-04-20"
+      },
+      {
+        "amount": 1600.0,
+        "type": "Bilt",
+        "date": "2026-06-25",
+        "payment_month": "2026-07",
+        "year": 2026,
+        "month": 7,
+        "is_credit_usage": false,
+        "notes": ""
       }
     ],
     "service_credit": 0.0,
