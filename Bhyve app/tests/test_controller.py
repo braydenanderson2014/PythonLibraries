@@ -749,6 +749,136 @@ class ManualWateringRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(report.decisions[0].action, "noop")
             bhyve_client.stop_manual_watering.assert_not_called()
 
+    async def test_conflicting_starts_are_queued_instead_of_dropped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_rule = TemperatureRule(
+                name="Front Lawn",
+                device_id="device-1",
+                station=1,
+                start_above=80,
+                stop_below=70,
+                manual_run_minutes=5,
+                enabled=True,
+                max_runs_per_day=5,
+                cooldown_minutes=None,
+                allowed_hours_local=None,
+            )
+            second_rule = TemperatureRule(
+                name="Back Lawn",
+                device_id="device-1",
+                station=2,
+                start_above=80,
+                stop_below=70,
+                manual_run_minutes=6,
+                enabled=True,
+                max_runs_per_day=5,
+                cooldown_minutes=None,
+                allowed_hours_local=None,
+            )
+            config = AppConfig(
+                path=Path("config.json"),
+                bhyve=self.config.bhyve,
+                weather=self.config.weather,
+                controller=ControllerSettings(
+                    schedule_guard_minutes=30,
+                    default_cooldown_minutes=120,
+                    default_max_runs_per_day=3,
+                    automatic_weather_delay_enabled=False,
+                    automatic_weather_delay_probability_threshold=60,
+                    automatic_weather_delay_lookahead_hours=12,
+                    manual_weather_delay_until=None,
+                    state_file=Path(temp_dir) / "state.json",
+                ),
+                rules=[first_rule, second_rule],
+            )
+            service = BhyveTemperatureService(config)
+            service.start_manual_watering = AsyncMock()  # type: ignore[method-assign]
+
+            session = Mock()
+            session.close = AsyncMock()
+            bhyve_client = Mock()
+            bhyve_client.get_devices = AsyncMock(return_value=[build_device(watering_status=None)])
+            weather_client = Mock()
+            now = datetime(2026, 5, 26, 12, 0, tzinfo=timezone.utc)
+            snapshot = Mock()
+            snapshot.temperature = Mock(value=92, unit="fahrenheit", observed_at=now)
+            snapshot.forecast = build_forecast(now, [0])
+            weather_client.get_weather_snapshot = AsyncMock(return_value=snapshot)
+            service._build_clients = AsyncMock(return_value=(session, bhyve_client, weather_client))
+
+            report = await service.run_cycle(apply_changes=True)
+
+            service.start_manual_watering.assert_awaited_once_with("device-1", 1, 5, wait_for_scheduled_stop=False)
+            queued = service._state.get_queued_runs("device-1")
+            self.assertEqual(len(queued), 1)
+            self.assertEqual(int(queued[0]["station"]), 2)
+            self.assertIn("queued_waiting_for_device", [decision.reason for decision in report.decisions])
+
+    async def test_queued_run_starts_when_device_becomes_available(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_rule = TemperatureRule(
+                name="Front Lawn",
+                device_id="device-1",
+                station=1,
+                start_above=80,
+                stop_below=70,
+                manual_run_minutes=5,
+                enabled=True,
+                max_runs_per_day=5,
+                cooldown_minutes=None,
+                allowed_hours_local=None,
+            )
+            second_rule = TemperatureRule(
+                name="Back Lawn",
+                device_id="device-1",
+                station=2,
+                start_above=80,
+                stop_below=70,
+                manual_run_minutes=6,
+                enabled=True,
+                max_runs_per_day=5,
+                cooldown_minutes=None,
+                allowed_hours_local=None,
+            )
+            config = AppConfig(
+                path=Path("config.json"),
+                bhyve=self.config.bhyve,
+                weather=self.config.weather,
+                controller=ControllerSettings(
+                    schedule_guard_minutes=30,
+                    default_cooldown_minutes=120,
+                    default_max_runs_per_day=3,
+                    automatic_weather_delay_enabled=False,
+                    automatic_weather_delay_probability_threshold=60,
+                    automatic_weather_delay_lookahead_hours=12,
+                    manual_weather_delay_until=None,
+                    state_file=Path(temp_dir) / "state.json",
+                ),
+                rules=[first_rule, second_rule],
+            )
+            service = BhyveTemperatureService(config)
+            service.start_manual_watering = AsyncMock()  # type: ignore[method-assign]
+
+            session = Mock()
+            session.close = AsyncMock()
+            bhyve_client = Mock()
+            bhyve_client.get_devices = AsyncMock(return_value=[build_device(watering_status=None)])
+            weather_client = Mock()
+            now = datetime(2026, 5, 26, 12, 0, tzinfo=timezone.utc)
+            snapshot = Mock()
+            snapshot.temperature = Mock(value=92, unit="fahrenheit", observed_at=now)
+            snapshot.forecast = build_forecast(now, [0])
+            weather_client.get_weather_snapshot = AsyncMock(return_value=snapshot)
+            service._build_clients = AsyncMock(return_value=(session, bhyve_client, weather_client))
+
+            await service.run_cycle(apply_changes=True)
+            service.start_manual_watering.reset_mock()
+
+            report = await service.run_cycle(apply_changes=True)
+
+            service.start_manual_watering.assert_awaited_once_with("device-1", 2, 6.0, wait_for_scheduled_stop=False)
+            self.assertIn("queued_run_started", [decision.reason for decision in report.decisions])
+
 
 class EvaluateScheduleRuleTests(unittest.TestCase):
     """Tests for evaluate_schedule_rule."""

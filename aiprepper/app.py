@@ -6,8 +6,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QImageReader, QPixmap
+from PyQt6.QtCore import QObject, QPoint, QRect, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QImage, QImageReader, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -968,6 +968,113 @@ class CropPreviewLabel(QLabel):
         super().mouseReleaseEvent(event)
 
 
+class ImageLoader(QObject):
+    """Loads and scales an image in a background thread. QImage is thread-safe; QPixmap is not."""
+
+    loaded = pyqtSignal(str, object, object)  # (path_str, full_QImage_or_None, scaled_QImage_or_None)
+
+    def __init__(self, image_path: Path, display_w: int, display_h: int) -> None:
+        super().__init__()
+        self._image_path = image_path
+        self._display_w = display_w
+        self._display_h = display_h
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        full_img = QImage(str(self._image_path))
+        if self._cancelled or full_img.isNull():
+            self.loaded.emit(str(self._image_path), None, None)
+            return
+        scaled = full_img.scaled(
+            self._display_w,
+            self._display_h,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if self._cancelled:
+            self.loaded.emit(str(self._image_path), None, None)
+            return
+        self.loaded.emit(str(self._image_path), full_img, scaled)
+
+
+class AIWorker(QObject):
+    """Runs AI image analysis in a background thread to keep the UI responsive."""
+
+    progress = pyqtSignal(int, str)  # (completed_count, current_filename)
+    batch_item_done = pyqtSignal(str, str, str, bool, bool)
+    # args: (image_path_str, description, error, was_skipped, was_backfilled)
+    single_done = pyqtSignal(str, str, str)  # (image_path_str, description, error)
+    finished = pyqtSignal()
+
+    def __init__(
+        self,
+        images_batch: list,
+        analyzer: object,
+        candidate_tags: list,
+        use_candidate_selector: bool,
+        candidate_top_k: int,
+        batch_mode: bool = True,
+    ) -> None:
+        super().__init__()
+        self._images_batch = images_batch
+        self._analyzer = analyzer
+        self._candidate_tags = candidate_tags
+        self._use_candidate_selector = use_candidate_selector
+        self._candidate_top_k = candidate_top_k
+        self._batch_mode = batch_mode
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def run(self) -> None:
+        if self._batch_mode:
+            self._run_batch()
+        else:
+            self._run_single()
+        self.finished.emit()
+
+    def _run_single(self) -> None:
+        image_path, _, _ = self._images_batch[0]
+        description, error = analyze_image_with_ai_verbose(
+            image_path,
+            self._analyzer,
+            candidate_tags=self._candidate_tags,
+            candidate_top_k=self._candidate_top_k,
+            use_tag_selector=self._use_candidate_selector,
+        )
+        self.single_done.emit(str(image_path), description or "", error or "")
+
+    def _run_batch(self) -> None:
+        for i, (image_path, ai_sidecar_path, standard_sidecar_path) in enumerate(self._images_batch):
+            if self._cancel:
+                break
+            self.progress.emit(i, image_path.name)
+            if ai_sidecar_path.exists():
+                backfilled = False
+                if not standard_sidecar_path.exists():
+                    try:
+                        ai_text = ai_sidecar_path.read_text(encoding="utf-8").strip()
+                        if ai_text:
+                            standard_sidecar_path.write_text(ai_text + "\n", encoding="utf-8")
+                            backfilled = True
+                    except OSError:
+                        pass
+                self.batch_item_done.emit(str(image_path), "", "", True, backfilled)
+                continue
+            description, error = analyze_image_with_ai_verbose(
+                image_path,
+                self._analyzer,
+                candidate_tags=self._candidate_tags,
+                candidate_top_k=self._candidate_top_k,
+                use_tag_selector=self._use_candidate_selector,
+            )
+            self.batch_item_done.emit(str(image_path), description or "", error or "", False, False)
+
+
 class TaggerWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -996,6 +1103,30 @@ class TaggerWindow(QMainWindow):
         self._loaded_ai_range_start = 1
         self._loaded_ai_range_end = 1
         self._last_folder: Path | None = None
+
+        self._ai_thread: QThread | None = None
+        self._ai_worker: AIWorker | None = None
+        self._batch_stats: dict = {}
+        self._batch_progress: QProgressDialog | None = None
+
+        self._image_thread: QThread | None = None
+        self._image_worker: ImageLoader | None = None
+        self._pending_image_path: Path | None = None
+
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(120)
+        self._resize_timer.timeout.connect(self._do_resize_show)
+
+        self._image_load_timer = QTimer(self)
+        self._image_load_timer.setSingleShot(True)
+        self._image_load_timer.setInterval(50)
+        self._image_load_timer.timeout.connect(self._start_image_load)
+
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(500)
+        self._save_timer.timeout.connect(self.save_settings)
 
         self.load_settings()
 
@@ -1186,7 +1317,7 @@ class TaggerWindow(QMainWindow):
             "nude, naked, clothed, red shirt, blue jeans, sneakers, barefoot, green trees"
         )
         self.candidate_tags_input.setMaximumHeight(80)
-        self.candidate_tags_input.textChanged.connect(self.save_settings)
+        self.candidate_tags_input.textChanged.connect(self._save_timer.start)
         right_col.addWidget(self.candidate_tags_input)
 
         self.backup_crop_checkbox = QCheckBox("Backup original before crop")
@@ -1382,20 +1513,9 @@ class TaggerWindow(QMainWindow):
             return
 
         image_path = self.images[self.current_index]
-        pix = QPixmap(str(image_path))
+        self._pending_image_path = image_path
 
-        if pix.isNull():
-            self.preview_label.setText("Unable to load image preview")
-            self.current_original_pixmap = None
-        else:
-            self.current_original_pixmap = pix
-            scaled = pix.scaled(
-                self.preview_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.preview_label.set_preview_pixmap(scaled)
-
+        # Update labels and caption instantly — no I/O cost
         self.file_label.setText(f"File: {image_path.name}")
         self.index_label.setText(f"Image {self.current_index + 1} / {len(self.images)}")
 
@@ -1406,10 +1526,56 @@ class TaggerWindow(QMainWindow):
         existing_caption = self.read_caption_for_image(image_path)
         self.caption_combo.lineEdit().setText(existing_caption)
 
+        # Show placeholder while image loads, cancel any stale in-flight load
+        self.preview_label.clear_selection()
+        self.preview_label.setText("Loading...")
+        self.current_original_pixmap = None
+        if self._image_worker is not None:
+            self._image_worker.cancel()
+
+        # Debounce: wait 50ms in case the user is navigating quickly
+        self._image_load_timer.start()
+        self.update_ui_state()
+
+    def _start_image_load(self) -> None:
+        """Called by debounce timer — starts the background image load."""
+        if self._pending_image_path is None:
+            return
+        image_path = self._pending_image_path
+        display_w = max(1, self.preview_label.width())
+        display_h = max(1, self.preview_label.height())
+
+        thread = QThread(self)
+        worker = ImageLoader(image_path, display_w, display_h)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._on_image_loaded)
+        worker.loaded.connect(thread.quit)
+
+        self._image_thread = thread
+        self._image_worker = worker
+        thread.start()
+
+    def _on_image_loaded(self, image_path_str: str, full_image: object, scaled_image: object) -> None:
+        """Receives the loaded image from the background thread."""
+        # Ignore if the user navigated away before this load completed
+        if self._pending_image_path is None or image_path_str != str(self._pending_image_path):
+            return
+
+        if full_image is None:
+            self.preview_label.setText("Unable to load image preview")
+            self.current_original_pixmap = None
+        else:
+            self.current_original_pixmap = QPixmap.fromImage(full_image)
+            self.preview_label.set_preview_pixmap(QPixmap.fromImage(scaled_image))
+
         self.update_ui_state()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        self._resize_timer.start()
+
+    def _do_resize_show(self) -> None:
         if self.images and self.current_index >= 0:
             self.show_current_image()
 
@@ -1667,12 +1833,24 @@ class TaggerWindow(QMainWindow):
             except OSError:
                 pass
 
-        if self.current_dir is not None:
-            self.scan_images()
-            if variant_path in self.images:
-                self.current_index = self.images.index(variant_path)
-            self.show_current_image()
+        # Splice into the sorted images list rather than rescanning the whole folder.
+        # Images are sorted by name.lower(), so find the correct insertion point.
+        variant_name_lower = variant_path.name.lower()
+        insert_index = len(self.images)
+        for i, p in enumerate(self.images):
+            if p.name.lower() > variant_name_lower:
+                insert_index = i
+                break
+        self.images.insert(insert_index, variant_path)
+        self.current_index = insert_index
 
+        total = len(self.images)
+        for spinbox in (self.jump_spinbox, self.ai_range_start, self.ai_range_end):
+            spinbox.blockSignals(True)
+            spinbox.setMaximum(total)
+            spinbox.blockSignals(False)
+
+        self.show_current_image()
         self.status_label.setText(f"Saved crop variant: {variant_path.name}")
 
     def backup_exists_for(self, image_path: Path) -> Path | None:
@@ -1786,7 +1964,7 @@ class TaggerWindow(QMainWindow):
             QMessageBox.warning(self, "Fetch AI Files", message)
 
     def run_batch_ai_analysis(self) -> None:
-        """Run AI analysis on a range of images."""
+        """Run AI analysis on a range of images using a background thread."""
         if not self.images:
             QMessageBox.warning(self, "Batch AI", "No images loaded.")
             return
@@ -1820,79 +1998,126 @@ class TaggerWindow(QMainWindow):
         ) and bool(candidate_tags)
         candidate_top_k = self.candidate_top_k_spinbox.value() if hasattr(self, "candidate_top_k_spinbox") else 6
 
-        progress = QProgressDialog(
-            "Running AI analysis...", "Cancel", 0, end - start + 1, self
-        )
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-
-        successful = 0
-        failed = 0
-        skipped = 0
-        attempted = 0
-        backfilled_standard = 0
-        failure_samples: list[str] = []
-
-        queue = list(range(start - 1, end))
-        total_items = len(queue)
-
-        while queue:
-            if progress.wasCanceled():
-                break
-
-            idx = queue.pop(0)
-
-            image_path = self.images[idx]
-            progress.setLabelText(f"Processing: {image_path.name}")
-            progress.setValue(total_items - len(queue))
-            QApplication.processEvents()
-
-            ai_sidecar_path = self.ai_label_path(image_path)
-            if ai_sidecar_path.exists():
-                standard_sidecar_path = self.sidecar_path(image_path)
-                if not standard_sidecar_path.exists():
-                    try:
-                        ai_text = ai_sidecar_path.read_text(encoding="utf-8").strip()
-                        if ai_text:
-                            standard_sidecar_path.write_text(ai_text + "\n", encoding="utf-8")
-                            backfilled_standard += 1
-                    except OSError:
-                        pass
-                skipped += 1
-                continue
-
-            attempted += 1
-            ai_description, ai_error = analyze_image_with_ai_verbose(
-                image_path,
-                self.ai_analyzer,
-                candidate_tags=candidate_tags,
-                candidate_top_k=candidate_top_k,
-                use_tag_selector=use_candidate_selector,
+        images_batch = [
+            (
+                self.images[idx],
+                self.ai_label_path(self.images[idx]),
+                self.sidecar_path(self.images[idx]),
             )
-            if ai_description:
-                saved_ok, save_error = self.save_ai_sidecars(image_path, ai_description)
-                if saved_ok:
-                    self.add_caption_to_history(ai_description)
-                    successful += 1
-                else:
-                    failed += 1
-                    if len(failure_samples) < 3:
-                        failure_samples.append(f"{image_path.name}: save error ({save_error})")
-            else:
-                failed += 1
-                if len(failure_samples) < 3:
-                    details = ai_error or "no caption returned"
-                    failure_samples.append(f"{image_path.name}: {details}")
+            for idx in range(start - 1, end)
+        ]
+        total_items = len(images_batch)
 
-        progress.close()
+        self._batch_stats = {
+            "successful": 0,
+            "failed": 0,
+            "skipped": 0,
+            "attempted": 0,
+            "backfilled_standard": 0,
+            "failure_samples": [],
+        }
+
+        self._batch_progress = QProgressDialog(
+            "Running AI analysis...", "Cancel", 0, total_items, self
+        )
+        self._batch_progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self._batch_progress.canceled.connect(self._cancel_batch_ai)
+        self._batch_progress.show()
+
+        self._cleanup_ai_thread()
+        self._ai_thread = QThread(self)
+        self._ai_worker = AIWorker(
+            images_batch=images_batch,
+            analyzer=self.ai_analyzer,
+            candidate_tags=candidate_tags,
+            use_candidate_selector=use_candidate_selector,
+            candidate_top_k=candidate_top_k,
+            batch_mode=True,
+        )
+        self._ai_worker.moveToThread(self._ai_thread)
+        self._ai_thread.started.connect(self._ai_worker.run)
+        self._ai_worker.progress.connect(self._on_batch_progress)
+        self._ai_worker.batch_item_done.connect(self._on_batch_item_done)
+        self._ai_worker.finished.connect(self._on_batch_finished)
+        self._ai_worker.finished.connect(self._ai_thread.quit)
+
+        self.batch_ai_button.setEnabled(False)
+        self.ai_button.setEnabled(False)
+        self._ai_thread.start()
+
+    def _cleanup_ai_thread(self) -> None:
+        if self._ai_thread is not None:
+            self._ai_thread.quit()
+            self._ai_thread.wait(3000)
+            self._ai_thread = None
+            self._ai_worker = None
+
+    def _cancel_batch_ai(self) -> None:
+        if self._ai_worker is not None:
+            self._ai_worker.cancel()
+
+    def _on_batch_progress(self, completed: int, filename: str) -> None:
+        if self._batch_progress is not None:
+            self._batch_progress.setLabelText(f"Processing: {filename}")
+            self._batch_progress.setValue(completed)
+
+    def _on_batch_item_done(
+        self, image_path_str: str, description: str, error: str, was_skipped: bool, was_backfilled: bool
+    ) -> None:
+        stats = self._batch_stats
+        if was_skipped:
+            stats["skipped"] += 1
+            if was_backfilled:
+                stats["backfilled_standard"] += 1
+            return
+
+        stats["attempted"] += 1
+        if description:
+            image_path = Path(image_path_str)
+            saved_ok, save_error = self.save_ai_sidecars(image_path, description)
+            if saved_ok:
+                clean = description.strip()
+                if clean:
+                    if clean in self.caption_history:
+                        self.caption_history.remove(clean)
+                    self.caption_history.append(clean)
+                stats["successful"] += 1
+            else:
+                stats["failed"] += 1
+                if len(stats["failure_samples"]) < 3:
+                    stats["failure_samples"].append(f"{image_path.name}: save error ({save_error})")
+        else:
+            stats["failed"] += 1
+            if len(stats["failure_samples"]) < 3:
+                details = error or "no caption returned"
+                stats["failure_samples"].append(f"{Path(image_path_str).name}: {details}")
+
+    def _on_batch_finished(self) -> None:
+        if self._batch_progress is not None:
+            self._batch_progress.close()
+            self._batch_progress = None
+
+        self._cleanup_ai_thread()
+        self.refresh_caption_combo()
+        self.batch_ai_button.setEnabled(bool(self.images))
+        has_image = bool(self.images) and self.current_index >= 0
+        self.ai_button.setEnabled(has_image)
+
+        stats = self._batch_stats
+        successful = stats["successful"]
+        failed = stats["failed"]
+        skipped = stats["skipped"]
+        attempted = stats["attempted"]
+        backfilled_standard = stats["backfilled_standard"]
+        failure_samples = stats["failure_samples"]
+
         msg = (
             f"Backend: {self.ai_backend}\n"
             f"Batch complete: {successful} analyzed, {skipped} skipped, "
             f"{failed} failed, {attempted} attempted."
         )
-
         if backfilled_standard > 0:
             msg += f"\nStandard sidecars backfilled: {backfilled_standard}."
-
         if failure_samples:
             msg += "\n\nSample failures:\n- " + "\n- ".join(failure_samples)
 
@@ -2002,14 +2227,6 @@ class TaggerWindow(QMainWindow):
             return
 
         image_path = self.images[self.current_index]
-        existing_sidecar = self.sidecar_path(image_path)
-        existing_caption = ""
-        if existing_sidecar.exists():
-            try:
-                existing_caption = existing_sidecar.read_text(encoding="utf-8").strip()
-            except OSError:
-                pass
-
         self.status_label.setText(f"Analyzing image with AI ({self.ai_backend})...")
         self.status_label.update()
 
@@ -2021,21 +2238,47 @@ class TaggerWindow(QMainWindow):
         ) and bool(candidate_tags)
         candidate_top_k = self.candidate_top_k_spinbox.value() if hasattr(self, "candidate_top_k_spinbox") else 6
 
-        ai_description = analyze_image_with_ai(
-            image_path,
-            self.ai_analyzer,
+        images_batch = [
+            (image_path, self.ai_label_path(image_path), self.sidecar_path(image_path))
+        ]
+        self._cleanup_ai_thread()
+        self._ai_thread = QThread(self)
+        self._ai_worker = AIWorker(
+            images_batch=images_batch,
+            analyzer=self.ai_analyzer,
             candidate_tags=candidate_tags,
+            use_candidate_selector=use_candidate_selector,
             candidate_top_k=candidate_top_k,
-            use_tag_selector=use_candidate_selector,
+            batch_mode=False,
         )
-        if not ai_description:
+        self._ai_worker.moveToThread(self._ai_thread)
+        self._ai_thread.started.connect(self._ai_worker.run)
+        self._ai_worker.single_done.connect(self._on_single_ai_done)
+        self._ai_worker.finished.connect(self._on_single_ai_finished)
+        self._ai_worker.finished.connect(self._ai_thread.quit)
+
+        self.ai_button.setEnabled(False)
+        self.batch_ai_button.setEnabled(False)
+        self._ai_thread.start()
+
+    def _on_single_ai_done(self, image_path_str: str, description: str, error: str) -> None:
+        image_path = Path(image_path_str)
+        if not description:
             QMessageBox.critical(self, "AI Analysis Failed", "Could not analyze image.")
             self.status_label.setText("AI analysis failed.")
             return
 
-        final_label = ai_description
+        existing_caption = ""
+        existing_sidecar = self.sidecar_path(image_path)
+        if existing_sidecar.exists():
+            try:
+                existing_caption = existing_sidecar.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
+        final_label = description
         if existing_caption:
-            final_label = f"{ai_description} (existing: {existing_caption})"
+            final_label = f"{description} (existing: {existing_caption})"
 
         dialog = AILabelDialog(self, final_label, image_path.name)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -2049,6 +2292,12 @@ class TaggerWindow(QMainWindow):
                 self.status_label.setText("Failed to save AI label.")
         else:
             self.status_label.setText("AI label discarded.")
+
+    def _on_single_ai_finished(self) -> None:
+        self._cleanup_ai_thread()
+        has_image = bool(self.images) and self.current_index >= 0
+        self.ai_button.setEnabled(has_image)
+        self.batch_ai_button.setEnabled(bool(self.images))
 
     def get_candidate_tags(self) -> list[str]:
         if not hasattr(self, "candidate_tags_input"):

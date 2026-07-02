@@ -430,16 +430,16 @@
         12
       ]
     ],
-    "total_rent_paid": 24300.0,
-    "delinquency_balance": 1600.0,
+    "total_rent_paid": 25550.0,
+    "delinquency_balance": 2200.0,
     "delinquent_months": [
       [
         2026,
-        3
+        6
       ],
       [
         2026,
-        6
+        7
       ]
     ],
     "account_status": "active",
@@ -623,16 +623,17 @@
         "late_note": "Paid after due date on 2026-04-01"
       },
       "2026-03": {
-        "status": "Delinquent",
-        "display_status": "Delinquent",
+        "status": "Overpayment",
+        "display_status": "Overpayment / Paid Late",
         "was_late": true,
-        "paid_late": false,
+        "paid_late": true,
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
         "due_date": "2026-03-01",
+        "paid_in_full_date": "2026-07-02",
         "payment_type": "Zelle",
-        "payment_date": "2026-04-04",
-        "late_note": "Late and still owes $250.00"
+        "payment_date": "2026-07-02",
+        "late_note": "Paid after due date on 2026-07-02"
       },
       "2026-04": {
         "status": "Paid in Full",
@@ -668,16 +669,19 @@
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
         "due_date": "2026-06-01",
-        "late_note": "Late and still owes $1350.00"
+        "payment_type": "Overpayment Credit (Applied: $500.00)",
+        "payment_date": "2026-07-02",
+        "late_note": "Late and still owes $850.00"
       },
       "2026-07": {
-        "status": "Pending",
-        "display_status": "Pending",
-        "was_late": false,
+        "status": "Delinquent",
+        "display_status": "Delinquent",
+        "was_late": true,
         "paid_late": false,
         "late_fee_charged": false,
         "late_fee_amount": 0.0,
-        "due_date": "2026-07-01"
+        "due_date": "2026-07-01",
+        "late_note": "Late and still owes $1350.00"
       },
       "2026-08": {
         "status": "Pending",
@@ -1364,6 +1368,26 @@
         "month": 5,
         "is_credit_usage": false,
         "notes": ""
+      },
+      {
+        "amount": 750.0,
+        "type": "Zelle",
+        "date": "2026-07-02",
+        "payment_month": "2026-03",
+        "year": 2026,
+        "month": 3,
+        "is_credit_usage": false,
+        "notes": "Generating overpayment to take care of delinquent months"
+      },
+      {
+        "amount": 500.0,
+        "type": "Overpayment Credit (Applied: $500.00)",
+        "date": "2026-07-02",
+        "payment_month": "2026-06",
+        "year": 2026,
+        "month": 6,
+        "is_credit_usage": true,
+        "notes": "Using Overpayment credit"
       }
     ],
     "service_credit": 0.0,

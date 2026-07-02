@@ -1,0 +1,4 @@
+* Queue for manual actions. That way if a sprinkler station is running, we can queue other stations we want to run.
+* Scheduler. If we accidentally assign 2 or more stations to run at the same time, the scheudler can run them accordingly and create a delay between them to ensure proper running.
+UI should be more mobile friendly, and could use a tab layout instead of displaying everything all at once. That way things like programs can live in a programs tab, manual watering, can live in a manual watering section, etc.
+The ability to use device level commands to run (on bluetooth) when the internet or bhyve systems are down would be nice.

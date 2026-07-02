@@ -15,6 +15,7 @@ const state = {
   autoRefreshInFlight: false,
   autoRefreshMessage: "Automatic status refresh is idle.",
   activeWatering: [],
+  activeTabPanelId: "settings-panel",
 };
 
 const elements = {};
@@ -22,6 +23,7 @@ const elements = {};
 document.addEventListener("DOMContentLoaded", async () => {
   cacheElements();
   bindEvents();
+  syncCompactTabState();
   startClock();
   await loadConfig({ runImmediateAutomation: true });
 });
@@ -34,6 +36,7 @@ function cacheElements() {
   elements.settingsPanel = document.getElementById("settings-panel");
   elements.rulesPanel = document.getElementById("rules-panel");
   elements.settingsOverlay = document.getElementById("settings-overlay");
+  elements.compactTabs = document.getElementById("compact-tabs");
   elements.openSettings = document.getElementById("open-settings");
   elements.closeSettings = document.getElementById("close-settings");
   elements.saveStatus = document.getElementById("save-status");
@@ -93,6 +96,7 @@ function cacheElements() {
   elements.autoWeatherDelayEnabled = document.getElementById("auto-weather-delay-enabled");
   elements.autoWeatherDelayThreshold = document.getElementById("auto-weather-delay-threshold");
   elements.autoWeatherDelayHours = document.getElementById("auto-weather-delay-hours");
+  elements.compactTabButtons = Array.from(document.querySelectorAll(".compact-tab"));
 }
 
 function bindEvents() {
@@ -130,6 +134,54 @@ function bindEvents() {
   // Persist config edits when a field loses focus or a selection changes.
   elements.settingsPanel.addEventListener("change", handleConfigFieldChange);
   elements.rulesPanel.addEventListener("change", handleConfigFieldChange);
+
+  elements.compactTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveCompactPanel(button.dataset.tabTarget || "settings-panel");
+    });
+  });
+
+  window.addEventListener("resize", syncCompactTabState);
+}
+
+function isCompactLayout() {
+  return window.matchMedia("(max-width: 1100px)").matches;
+}
+
+function syncCompactTabState() {
+  if (!isCompactLayout()) {
+    document.body.classList.remove("compact-tabs-active");
+    document.body.removeAttribute("data-active-panel");
+    return;
+  }
+
+  document.body.classList.add("compact-tabs-active");
+  document.body.setAttribute("data-active-panel", state.activeTabPanelId || "settings-panel");
+  elements.compactTabButtons.forEach((button) => {
+    const target = button.dataset.tabTarget || "";
+    const isActive = target === state.activeTabPanelId;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function setActiveCompactPanel(panelId) {
+  state.activeTabPanelId = panelId;
+  if (panelId === "settings-panel") {
+    openSettingsDrawer();
+  } else {
+    closeSettingsDrawer();
+  }
+  syncCompactTabState();
+
+  if (!isCompactLayout()) {
+    return;
+  }
+  const target = document.getElementById(panelId);
+  if (!target) {
+    return;
+  }
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function openSettingsDrawer() {
@@ -145,11 +197,11 @@ function closeSettingsDrawer() {
 
 function scrollToPanel(panelId) {
   if (panelId === "settings-panel") {
-    openSettingsDrawer();
+    setActiveCompactPanel(panelId);
     return;
   }
 
-  closeSettingsDrawer();
+  setActiveCompactPanel(panelId);
   const target = document.getElementById(panelId);
   if (!target) {
     return;
@@ -159,15 +211,18 @@ function scrollToPanel(panelId) {
 
 function applyInterfaceMode(meta) {
   state.dashboardMode = !Boolean(meta?.is_default_template);
+  state.activeTabPanelId = state.dashboardMode ? "preview-panel" : "settings-panel";
   document.body.classList.toggle("dashboard-mode", state.dashboardMode);
   document.body.classList.toggle("setup-mode", !state.dashboardMode);
   if (!state.dashboardMode) {
     closeSettingsDrawer();
   }
+  syncCompactTabState();
   updateInterfaceCopy();
 }
 
 function updateInterfaceCopy() {
+  const programsTab = elements.compactTabs?.querySelector('[data-tab-target="rules-panel"]');
   if (state.dashboardMode) {
     elements.heroTitle.textContent = "Operations Dashboard";
     elements.heroCopy.textContent = "Keep status front and center, review forecast risk and delay state, run manual watering, and keep the underlying controller settings tucked inside the settings drawer until you need them.";
@@ -180,6 +235,9 @@ function updateInterfaceCopy() {
     document.getElementById("add-rule").textContent = "New Program";
     document.getElementById("preview-decisions").textContent = "Refresh Status";
     document.getElementById("load-devices").textContent = "Refresh Devices";
+    if (programsTab) {
+      programsTab.textContent = "Programs";
+    }
   } else {
     elements.heroTitle.textContent = "Control Room";
     elements.heroCopy.textContent = "Configure the controller, discover device and zone IDs, review status and forecast decisions, and run manual watering without editing JSON by hand.";
@@ -192,6 +250,9 @@ function updateInterfaceCopy() {
     document.getElementById("add-rule").textContent = "Add Rule";
     document.getElementById("preview-decisions").textContent = "Refresh Status";
     document.getElementById("load-devices").textContent = "Load Devices";
+    if (programsTab) {
+      programsTab.textContent = "Rules";
+    }
   }
 }
 

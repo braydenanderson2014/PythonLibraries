@@ -9,7 +9,7 @@ from typing import Any
 
 from aiohttp import ClientSession
 
-from .bhyve_client import BhyveClient
+from .bhyve_client import BhyveClient, BhyveClientError
 from .config import AppConfig, ControllerSettings, DevicePolicy, ScheduleRule, TemperatureRule
 from .state_store import StateStore
 from .weather import OpenMeteoClient, TemperatureReading, WeatherForecast
@@ -323,6 +323,10 @@ def describe_trigger_blocker(rule: TemperatureRule | ScheduleRule, decision: Dec
         return f"{rule.name} is waiting for the next scheduled day."
     if decision.reason == "temperature_below_minimum":
         return f"{rule.name} is paused because the temperature is below the minimum threshold."
+    if decision.reason == "queued_waiting_for_device":
+        return f"{rule.name} is queued and will run after the current station finishes on this device."
+    if decision.reason == "already_queued_waiting_for_device":
+        return f"{rule.name} is already queued and will run after the current station finishes on this device."
     return None
 
 
@@ -352,6 +356,13 @@ def forecast_rule_trigger(
             at=now,
             rule_name=rule.name,
             detail=f"{rule.name}: temperature has dropped — watering will stop shortly.",
+        )
+
+    if decision.reason in {"queued_waiting_for_device", "already_queued_waiting_for_device"}:
+        return TriggerForecast(
+            at=None,
+            rule_name=rule.name,
+            detail=f"{rule.name} is queued and will start when the current run on this device completes.",
         )
 
     # Schedule-rule-specific forecasts.
@@ -934,6 +945,12 @@ class BhyveTemperatureService:
         }
         force_stopped_devices: set[str] = set()
 
+        # Reload state from disk right before external-watering detection so that any
+        # manual-UI runs started during this cycle (race window) are already tagged
+        # source="manual_ui" and won't be misclassified as timer-initiated.
+        if apply_changes:
+            self._state.load()
+
         # Detect external (non-program) watering sessions and record them in history.
         if apply_changes:
             for device_id, device in devices_by_id.items():
@@ -984,7 +1001,11 @@ class BhyveTemperatureService:
                     device_id,
                     station_num,
                 )
-                await self.stop_manual_watering(device_id)
+                try:
+                    await self.stop_manual_watering(device_id)
+                except BhyveClientError as exc:
+                    LOGGER.warning("Could not stop unlisted station on %s (API error, will retry next cycle): %s", device_id, exc)
+                    continue
                 self._state.clear_active_external_watering(device_id)
                 device.setdefault("status", {})["watering_status"] = None
                 force_stopped_devices.add(device_id)
@@ -1000,6 +1021,85 @@ class BhyveTemperatureService:
                     )
                 )
                 state_changed = True
+
+        # Start one queued run per available device before evaluating new starts.
+        if apply_changes:
+            for device_id, device in devices_by_id.items():
+                if device_id in busy_devices:
+                    continue
+                queued = self._state.pop_next_queued_run(device_id)
+                if queued is None:
+                    continue
+
+                station = int(queued.get("station") or 0)
+                rule_name = str(queued.get("rule_name") or f"queued:{device_id}")
+                requested_minutes = float(queued.get("requested_minutes") or 0.0)
+                if station <= 0 or requested_minutes <= 0:
+                    state_changed = True
+                    continue
+
+                try:
+                    await self.start_manual_watering(
+                        device_id,
+                        station,
+                        requested_minutes,
+                        wait_for_scheduled_stop=wait_for_scheduled_stops,
+                    )
+                except BhyveClientError as exc:
+                    LOGGER.warning(
+                        "Could not start queued watering for %s station %s (API error, keeping queued): %s",
+                        device_id,
+                        station,
+                        exc,
+                    )
+                    self._state.enqueue_run(
+                        device_id=device_id,
+                        station=station,
+                        rule_name=rule_name,
+                        requested_minutes=requested_minutes,
+                        queued_at=now,
+                    )
+                    state_changed = True
+                    continue
+
+                self._state.set_active_run(
+                    device_id,
+                    station,
+                    rule_name=rule_name,
+                    started_at=temperature.observed_at,
+                    requested_minutes=requested_minutes,
+                    trigger_temperature=temperature.value,
+                )
+                self._state.record_run(
+                    device_id,
+                    station,
+                    temperature.observed_at,
+                    source="program",
+                    rule_name=rule_name,
+                )
+                device_status = device.setdefault("status", {})
+                device_status["watering_status"] = {
+                    "current_station": str(station),
+                    "source": "program",
+                }
+                busy_devices.add(device_id)
+                decisions.append(
+                    Decision(
+                        rule_name,
+                        device_id,
+                        station,
+                        "start",
+                        "queued_run_started",
+                        applied=True,
+                    )
+                )
+                state_changed = True
+                LOGGER.info(
+                    "Started queued watering for %s station %s (%s)",
+                    device_id,
+                    station,
+                    rule_name,
+                )
 
         for rule in self._config.rules:
             device = devices_by_id.get(rule.device_id)
@@ -1117,7 +1217,11 @@ class BhyveTemperatureService:
                     if self._state.get_active_run(rule.device_id, current_station_value) is None:
                         _ext = self._state.get_active_external_watering(rule.device_id)
                         if not (_ext and _ext.get("source") == "manual_ui"):
-                            await self.stop_manual_watering(rule.device_id)
+                            try:
+                                await self.stop_manual_watering(rule.device_id)
+                            except BhyveClientError as exc:
+                                LOGGER.warning("Could not stop external watering on %s (API error, will retry next cycle): %s", rule.device_id, exc)
+                                continue
                             self._state.clear_active_external_watering(rule.device_id)
                             device.setdefault("status", {})["watering_status"] = None
                             force_stopped_devices.add(rule.device_id)
@@ -1174,8 +1278,22 @@ class BhyveTemperatureService:
                 )
 
             if decision.action == "start" and rule.device_id in busy_devices:
-                decision.action = "noop"
-                decision.reason = "device_already_handled_this_cycle"
+                if apply_changes:
+                    was_queued = self._state.enqueue_run(
+                        device_id=rule.device_id,
+                        station=rule.station,
+                        rule_name=rule.name,
+                        requested_minutes=rule.manual_run_minutes,
+                        queued_at=now,
+                    )
+                    decision.action = "noop"
+                    decision.reason = "queued_waiting_for_device" if was_queued else "already_queued_waiting_for_device"
+                    if was_queued:
+                        state_changed = True
+                else:
+                    is_queued = self._state.has_queued_run(rule.device_id, rule.station, rule.name)
+                    decision.action = "noop"
+                    decision.reason = "already_queued_waiting_for_device" if is_queued else "device_already_handled_this_cycle"
 
             trigger_forecast = forecast_rule_trigger(
                 rule,
@@ -1198,12 +1316,18 @@ class BhyveTemperatureService:
                     trigger_forecasts.append(TriggerForecast(at=None, rule_name=rule.name, detail=blocker))
 
             if apply_changes and decision.action == "start":
-                await self.start_manual_watering(
-                    rule.device_id,
-                    rule.station,
-                    rule.manual_run_minutes,
-                    wait_for_scheduled_stop=wait_for_scheduled_stops,
-                )
+                try:
+                    await self.start_manual_watering(
+                        rule.device_id,
+                        rule.station,
+                        rule.manual_run_minutes,
+                        wait_for_scheduled_stop=wait_for_scheduled_stops,
+                    )
+                except BhyveClientError as exc:
+                    LOGGER.warning("Could not start watering for rule %s (API error, will retry next cycle): %s", rule.name, exc)
+                    decision.applied = False
+                    decisions.append(decision)
+                    continue
                 self._state.set_active_run(
                     rule.device_id,
                     rule.station,

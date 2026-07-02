@@ -24,6 +24,7 @@ class StateStore:
             "history": {},
             "sensor_readings": {},
             "motion_pauses": {},
+            "run_queue": {},
         }
         self.load()
 
@@ -38,6 +39,7 @@ class StateStore:
                 "history": {},
                 "sensor_readings": {},
                 "motion_pauses": {},
+                "run_queue": {},
             }
             return
         self._data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -45,6 +47,7 @@ class StateStore:
         self._data.setdefault("history", {})
         self._data.setdefault("sensor_readings", {})
         self._data.setdefault("motion_pauses", {})
+        self._data.setdefault("run_queue", {})
 
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +56,58 @@ class StateStore:
     def get_active_run(self, device_id: str, station: int) -> dict[str, Any] | None:
         key = self.key(device_id, station)
         return self._data["active_runs"].get(key)
+
+    # ------------------------------------------------------------------
+    # Deferred run queue (per device)
+    # ------------------------------------------------------------------
+
+    def get_queued_runs(self, device_id: str) -> list[dict[str, Any]]:
+        queue = self._data.get("run_queue", {}).get(device_id, [])
+        if not isinstance(queue, list):
+            return []
+        return [item for item in queue if isinstance(item, dict)]
+
+    def has_queued_run(self, device_id: str, station: int, rule_name: str) -> bool:
+        for item in self.get_queued_runs(device_id):
+            if int(item.get("station", 0)) != station:
+                continue
+            if str(item.get("rule_name") or "") != rule_name:
+                continue
+            return True
+        return False
+
+    def enqueue_run(
+        self,
+        *,
+        device_id: str,
+        station: int,
+        rule_name: str,
+        requested_minutes: float,
+        queued_at: datetime,
+    ) -> bool:
+        if self.has_queued_run(device_id, station, rule_name):
+            return False
+        run_queue = self._data.setdefault("run_queue", {})
+        queue = run_queue.setdefault(device_id, [])
+        queue.append(
+            {
+                "station": int(station),
+                "rule_name": str(rule_name),
+                "requested_minutes": float(requested_minutes),
+                "queued_at": _to_iso(queued_at),
+            }
+        )
+        return True
+
+    def pop_next_queued_run(self, device_id: str) -> dict[str, Any] | None:
+        run_queue = self._data.setdefault("run_queue", {})
+        queue = run_queue.get(device_id)
+        if not isinstance(queue, list) or not queue:
+            return None
+        next_item = queue.pop(0)
+        if not queue:
+            run_queue.pop(device_id, None)
+        return next_item if isinstance(next_item, dict) else None
 
     def set_active_run(
         self,
@@ -207,6 +262,10 @@ class StateStore:
         current_date = now.date()
         count = 0
         for entry in history:
+            # Only count runs that the program itself started, not timer or manual-UI runs.
+            source = entry.get("source") if isinstance(entry, dict) else "program"
+            if source not in ("program", "controller"):
+                continue
             parsed = _from_iso(self._entry_started_at(entry))
             if parsed is None:
                 continue
